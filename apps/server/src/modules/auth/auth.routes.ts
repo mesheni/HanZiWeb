@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import jwt from 'jsonwebtoken';
 import { LoginSchema, RegisterSchema } from '@hanzi/shared';
 import * as authService from './auth.service.js';
 
@@ -17,8 +18,8 @@ export async function authRoutes(app: FastifyInstance) {
     // Set refresh token as httpOnly cookie
     reply.setCookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'strict',
       path: '/api/auth',
       maxAge: 30 * 24 * 60 * 60, // 30 days
     });
@@ -37,8 +38,8 @@ export async function authRoutes(app: FastifyInstance) {
     const result = await authService.refreshTokens(refreshToken);
     reply.setCookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: true,
+      sameSite: 'strict',
       path: '/api/auth',
       maxAge: 30 * 24 * 60 * 60,
     });
@@ -49,7 +50,18 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /** POST /auth/logout — выход */
-  app.post('/logout', async (_request, reply) => {
+  app.post('/logout', async (request, reply) => {
+    const refreshToken = request.cookies.refreshToken;
+    if (refreshToken) {
+      try {
+        const decoded = jwt.decode(refreshToken) as { userId: string } | null;
+        if (decoded?.userId) {
+          await authService.logoutUser(decoded.userId);
+        }
+      } catch {
+        // Token decode failed — proceed to clear cookie
+      }
+    }
     reply.clearCookie('refreshToken', { path: '/api/auth' });
     return reply.send({ success: true });
   });

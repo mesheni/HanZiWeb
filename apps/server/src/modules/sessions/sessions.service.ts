@@ -152,7 +152,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   });
 
   // Начисляем XP
-  const xpGain = input.rating === 1 ? 1 : input.rating === 2 ? 3 : 5;
+  const xpGain = { 1: 0, 2: 1, 3: 3, 4: 5 }[input.rating] ?? 0;
   await prisma.user.update({
     where: { id: userId },
     data: { xp: { increment: xpGain } },

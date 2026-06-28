@@ -19,4 +19,10 @@ export async function statsRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data });
     },
   );
+
+  /** GET /stats/streak — вычисление и обновление daily streak */
+  app.get('/streak', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const streak = await statsService.getUserStreak(request.userId);
+    return reply.send({ success: true, data: streak });
+  });
 }

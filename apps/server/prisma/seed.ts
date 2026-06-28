@@ -73,6 +73,55 @@ async function seedLevel(level: number, fileName: string): Promise<void> {
   console.log(`  Created: ${created}, Skipped: ${skipped}`);
 }
 
+/** Creates or finds a system deck for an HSK level. Returns the deck ID. */
+async function ensureSystemDeck(level: number): Promise<string> {
+  const wordCount = await prisma.word.count({ where: { hskLevel: level } });
+  const name = `HSK ${level}`;
+  const description = `Базовая лексика HSK ${level} (${wordCount} слов)`;
+
+  const existing = await prisma.deck.findFirst({ where: { name } });
+  if (existing) {
+    console.log(`  Deck "${name}" already exists (${wordCount} words)`);
+    return existing.id;
+  }
+
+  const deck = await prisma.deck.create({
+    data: { name, description, isSystemDeck: true },
+  });
+  console.log(`  Created deck "${name}" — ${description}`);
+  return deck.id;
+}
+
+/** Links all words of a given HSK level to a deck. Returns number of new links. */
+async function linkWordsToDeck(deckId: string, hskLevel: number): Promise<number> {
+  const words = await prisma.word.findMany({
+    where: { hskLevel },
+    select: { id: true },
+  });
+
+  if (words.length === 0) return 0;
+
+  // Find already-linked words to avoid unique-constraint violations
+  const existing = await prisma.deckWord.findMany({
+    where: { deckId, wordId: { in: words.map((w) => w.id) } },
+    select: { wordId: true },
+  });
+  const existingIds = new Set(existing.map((e) => e.wordId));
+
+  const newEntries = words
+    .filter((w) => !existingIds.has(w.id))
+    .map((w) => ({ deckId, wordId: w.id }));
+
+  if (newEntries.length === 0) {
+    console.log(`  All ${words.length} words already linked to deck`);
+    return 0;
+  }
+
+  await prisma.deckWord.createMany({ data: newEntries });
+  console.log(`  Linked ${newEntries.length} words to deck (${existingIds.size} already linked)`);
+  return newEntries.length;
+}
+
 async function main(): Promise<void> {
   console.log('Starting HSK seed...\n');
 
@@ -85,12 +134,24 @@ async function main(): Promise<void> {
     { level: 6, file: 'hsk6.json' },
   ];
 
+  let totalDecks = 0;
+  let totalLinks = 0;
+
   for (const { level, file } of levels) {
     await seedLevel(level, file);
+    const deckId = await ensureSystemDeck(level);
+    const linked = await linkWordsToDeck(deckId, level);
+    totalDecks++;
+    totalLinks += linked;
+    console.log('');
   }
 
-  const total = await prisma.word.count();
-  console.log(`\nSeed complete. Total words in database: ${total}`);
+  const totalWords = await prisma.word.count();
+  const totalDeckWords = await prisma.deckWord.count();
+  console.log(`Seed complete.`);
+  console.log(`  Total words:      ${totalWords}`);
+  console.log(`  System decks:     ${totalDecks}`);
+  console.log(`  Deck-word links:  ${totalLinks} (total: ${totalDeckWords})`);
 }
 
 main()

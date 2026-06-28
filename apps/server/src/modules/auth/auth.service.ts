@@ -6,18 +6,24 @@ import type { Register, Login } from '@hanzi/shared';
 
 const SALT_ROUNDS = 12;
 
-interface TokenPayload {
-  sub: string;
+interface AccessTokenPayload {
+  userId: string;
+  email: string;
 }
 
-function generateAccessToken(userId: string): string {
-  const config = loadConfig();
-  return jwt.sign({ sub: userId } satisfies TokenPayload, config.JWT_ACCESS_SECRET, { expiresIn: '15m' });
+interface RefreshTokenPayload {
+  userId: string;
+  tokenVersion: number;
 }
 
-function generateRefreshToken(userId: string): string {
+function generateAccessToken(userId: string, email: string): string {
   const config = loadConfig();
-  return jwt.sign({ sub: userId } satisfies TokenPayload, config.JWT_REFRESH_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ userId, email } satisfies AccessTokenPayload, config.JWT_ACCESS_SECRET, { expiresIn: '15m' });
+}
+
+function generateRefreshToken(userId: string, tokenVersion: number): string {
+  const config = loadConfig();
+  return jwt.sign({ userId, tokenVersion } satisfies RefreshTokenPayload, config.JWT_REFRESH_SECRET, { expiresIn: '30d' });
 }
 
 export async function registerUser(input: Register) {
@@ -28,11 +34,11 @@ export async function registerUser(input: Register) {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
   const user = await prisma.user.create({
-    data: { email: input.email, passwordHash },
+    data: { email: input.email, passwordHash, lastActiveDate: new Date() },
   });
 
-  const accessToken = generateAccessToken(user.id);
-  const refreshToken = generateRefreshToken(user.id);
+  const accessToken = generateAccessToken(user.id, user.email);
+  const refreshToken = generateRefreshToken(user.id, 0);
 
   return {
     user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
@@ -55,8 +61,8 @@ export async function loginUser(input: Login) {
   // Обновляем lastActiveDate
   await prisma.user.update({ where: { id: user.id }, data: { lastActiveDate: new Date() } });
 
-  const accessToken = generateAccessToken(user.id);
-  const refreshToken = generateRefreshToken(user.id);
+  const accessToken = generateAccessToken(user.id, user.email);
+  const refreshToken = generateRefreshToken(user.id, user.tokenVersion);
 
   return {
     user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
@@ -67,24 +73,41 @@ export async function loginUser(input: Login) {
 
 export async function refreshTokens(token: string) {
   const config = loadConfig();
-  let payload: TokenPayload;
+  let payload: RefreshTokenPayload;
   try {
-    payload = jwt.verify(token, config.JWT_REFRESH_SECRET) as TokenPayload;
+    payload = jwt.verify(token, config.JWT_REFRESH_SECRET) as RefreshTokenPayload;
   } catch {
     throw Object.assign(new Error('Invalid refresh token'), { statusCode: 401, code: 'INVALID_TOKEN' });
   }
 
-  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  const user = await prisma.user.findUnique({ where: { id: payload.userId } });
   if (!user) {
     throw Object.assign(new Error('User not found'), { statusCode: 401, code: 'USER_NOT_FOUND' });
   }
 
-  const accessToken = generateAccessToken(user.id);
-  const refreshToken = generateRefreshToken(user.id);
+  if (payload.tokenVersion !== user.tokenVersion) {
+    throw Object.assign(new Error('Token revoked'), { statusCode: 401, code: 'TOKEN_REVOKED' });
+  }
+
+  // Rotate: increment tokenVersion to invalidate the old refresh token
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { tokenVersion: { increment: 1 } },
+  });
+
+  const accessToken = generateAccessToken(user.id, user.email);
+  const refreshToken = generateRefreshToken(user.id, updated.tokenVersion);
 
   return {
     user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
     accessToken,
     refreshToken,
   };
+}
+
+export async function logoutUser(userId: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: { tokenVersion: { increment: 1 } },
+  });
 }

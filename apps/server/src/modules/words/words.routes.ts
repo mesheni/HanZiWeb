@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
+import jwt from 'jsonwebtoken';
 import {
   CreateWordSchema,
   UpdateWordSchema,
   WordFiltersSchema,
   type WordFilters,
 } from '@hanzi/shared';
+import { loadConfig } from '../../config.js';
 import * as wordsService from './words.service.js';
 
 export async function wordsRoutes(app: FastifyInstance) {
@@ -15,9 +17,23 @@ export async function wordsRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: result.data, pagination: result.pagination });
   });
 
-  /** GET /words/:id — одно слово */
+  /** GET /words/:id — одно слово (опционально включает userProgress) */
   app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const word = await wordsService.getWord(request.params.id);
+    let userId: string | undefined;
+
+    const authHeader = request.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      try {
+        const config = loadConfig();
+        const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as { sub: string };
+        userId = payload.sub;
+      } catch {
+        // token invalid or expired — proceed without userId
+      }
+    }
+
+    const word = await wordsService.getWord(request.params.id, userId);
     if (!word) {
       return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Word not found' } });
     }

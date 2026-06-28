@@ -13,6 +13,7 @@ model User {
   passwordHash   String
   xp             Int                 @default(0)
   currentStreak  Int                 @default(0)
+  tokenVersion   Int                 @default(0)
   lastActiveDate DateTime?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt

@@ -41,11 +41,26 @@ export async function listWords(filters: WordFilters) {
   return { data, pagination };
 }
 
-export async function getWord(id: string) {
-  return prisma.word.findUnique({
+export async function getWord(id: string, userId?: string) {
+  const word = await prisma.word.findUnique({
     where: { id },
     include: { examples: true },
   });
+
+  if (!word) return null;
+
+  let userProgress: { state: string } | null = null;
+  if (userId) {
+    const progress = await prisma.userWordProgress.findUnique({
+      where: { userId_wordId: { userId, wordId: id } },
+      select: { state: true },
+    });
+    if (progress) {
+      userProgress = { state: progress.state };
+    }
+  }
+
+  return { ...word, userProgress };
 }
 
 export async function createWord(input: CreateWord) {
