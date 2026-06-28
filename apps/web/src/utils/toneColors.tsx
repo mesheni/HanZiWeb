@@ -13,11 +13,11 @@ const TONE_CLASS: Record<ToneNumber, string> = {
 
 /** Карта тон → HEX-цвет (из CSS-переменных) */
 export const TONE_COLORS: Record<ToneNumber, string> = {
-  0: '#6B6E82',
-  1: '#60A5FA',
-  2: '#34D399',
-  3: '#FBBF24',
-  4: '#F87171',
+  0: '#9E9E9E',
+  1: '#4FC3F7',
+  2: '#81C784',
+  3: '#FFB74D',
+  4: '#E57373',
 };
 
 /** Слог с определённым тоном */

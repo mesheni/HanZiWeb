@@ -8,6 +8,20 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      includeAssets: ['icon.svg'],
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^\/api\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'HanZi — Китайские слова',
         short_name: 'HanZi',
@@ -16,6 +30,7 @@ export default defineConfig({
         background_color: '#0C0E16',
         display: 'standalone',
         icons: [
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
         ],

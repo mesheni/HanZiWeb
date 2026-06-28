@@ -1,5 +1,5 @@
 {
-  "name": "HanZi",
+  "name": "HanZi — Китайские слова",
   "short_name": "HanZi",
   "description": "Приложение для заучивания китайских слов с интервальным повторением",
   "start_url": "/",
@@ -9,6 +9,12 @@
   "orientation": "portrait-primary",
   "lang": "ru",
   "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",

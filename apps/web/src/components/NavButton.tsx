@@ -1,30 +1,21 @@
+import { type ElementType } from 'react';
+
 interface NavButtonProps {
-  icon: string;
+  icon: string | ElementType;
   label: string;
   active: boolean;
   onClick: () => void;
 }
 
-export default function NavButton({ icon, label, active, onClick }: NavButtonProps) {
+export default function NavButton({ icon: Icon, label, active, onClick }: NavButtonProps) {
   return (
     <button
       onClick={onClick}
       aria-label={label}
+      className="w-[46px] h-[48px] rounded-[10px] border-none flex flex-col items-center justify-center gap-[3px] transition-all duration-150 mb-0.5 cursor-pointer"
       style={{
-        width: 46,
-        height: 48,
-        borderRadius: 10,
-        border: 'none',
         background: active ? 'var(--accent-bg)' : 'transparent',
         color: active ? 'var(--accent)' : '#48495C',
-        cursor: 'pointer',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 3,
-        transition: 'all 0.15s',
-        marginBottom: 2,
       }}
       onMouseEnter={(e) => {
         if (!active) {
@@ -39,7 +30,11 @@ export default function NavButton({ icon, label, active, onClick }: NavButtonPro
         }
       }}
     >
-      <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
+      {typeof Icon === 'string' ? (
+        <span style={{ fontSize: 18, lineHeight: 1 }}>{Icon}</span>
+      ) : (
+        <Icon size={18} />
+      )}
       <span style={{ fontSize: 9, lineHeight: 1 }}>{label}</span>
     </button>
   );
