@@ -1,0 +1,127 @@
+:root {
+  /* Backgrounds */
+  --bg-primary: #0C0E16;
+  --bg-secondary: #0F1118;
+  --bg-card: #141820;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+
+  /* Borders */
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(220, 38, 38, 0.3);
+
+  /* Text */
+  --text-primary: #EEECEA;
+  --text-secondary: #6B6E82;
+  --text-muted: #45475A;
+  --text-dim: #3A3C52;
+
+  /* Accent */
+  --accent: #DC2626;
+  --accent-hover: #b91c1c;
+  --accent-bg: rgba(220, 38, 38, 0.13);
+  --accent-bg-lite: rgba(220, 38, 38, 0.1);
+
+  /* Tone colors (1=blue, 2=green, 3=orange, 4=red, 0=neutral) */
+  --tone-1: #60A5FA;
+  --tone-2: #34D399;
+  --tone-3: #FBBF24;
+  --tone-4: #F87171;
+  --tone-0: #6B6E82;
+
+  /* Tone backgrounds */
+  --tone-1-bg: rgba(96, 165, 250, 0.12);
+  --tone-2-bg: rgba(52, 211, 153, 0.12);
+  --tone-3-bg: rgba(251, 191, 36, 0.1);
+  --tone-4-bg: rgba(248, 113, 113, 0.12);
+  --tone-0-bg: rgba(107, 110, 130, 0.1);
+
+  /* Spacing */
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 20px;
+
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-cjk: 'Noto Serif SC', var(--font-sans);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* Utility classes */
+.section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 9px;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.badge-new {
+  background: var(--tone-1-bg);
+  color: var(--tone-1);
+}
+
+.badge-review {
+  background: var(--tone-2-bg);
+  color: var(--tone-2);
+}
+
+.badge-hard {
+  background: var(--tone-4-bg);
+  color: var(--tone-4);
+}
+
+/* Tone color classes (used by PinyinDisplay) */
+.tone-0 { color: var(--tone-0); }
+.tone-1 { color: var(--tone-1); }
+.tone-2 { color: var(--tone-2); }
+.tone-3 { color: var(--tone-3); }
+.tone-4 { color: var(--tone-4); }

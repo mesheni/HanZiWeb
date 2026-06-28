@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String              @id @default(uuid())
+  email          String              @unique
+  passwordHash   String
+  xp             Int                 @default(0)
+  currentStreak  Int                 @default(0)
+  lastActiveDate DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  progress       UserWordProgress[]
+  sessions       Session[]
+}
+
+model Word {
+  id          String    @id @default(uuid())
+  character   String
+  pinyin      String
+  translation String
+  hskLevel    Int?
+  audioUrl    String?
+  mnemonic    String?
+  createdAt   DateTime  @default(now())
+
+  examples    Example[]
+  deckWords   DeckWord[]
+  progress    UserWordProgress[]
+  answers     SessionAnswer[]
+}
+
+model Example {
+  id      String @id @default(uuid())
+  wordId  String
+  word    Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  chinese String
+  russian String
+}
+
+model Deck {
+  id            String    @id @default(uuid())
+  name          String
+  description   String?
+  isSystemDeck  Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  words         DeckWord[]
+  sessions      Session[]
+}
+
+model DeckWord {
+  deckId String
+  deck   Deck   @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  wordId String
+  word   Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@id([deckId, wordId])
+}
+
+enum WordState {
+  new
+  learning
+  review
+  graduated
+}
+
+model UserWordProgress {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wordId         String
+  word           Word      @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  state          WordState  @default(new)
+  stability      Float     @default(0)
+  difficulty     Float     @default(0)
+  reps           Int       @default(0)
+  dueDate        DateTime  @default(now())
+  lastReviewDate DateTime?
+
+  @@unique([userId, wordId])
+}
+
+model Session {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckId         String?
+  deck           Deck?     @relation(fields: [deckId], references: [id])
+  cardsTotal     Int
+  cardsCompleted Int       @default(0)
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  answers        SessionAnswer[]
+}
+
+model SessionAnswer {
+  id         String   @id @default(uuid())
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  wordId     String
+  word       Word     @relation(fields: [wordId], references: [id])
+  rating     Int      // 1=Again, 2=Hard, 3=Good, 4=Easy
+  answeredAt DateTime @default(now())
+}
