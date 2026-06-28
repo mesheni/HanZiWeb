@@ -8,40 +8,40 @@
 
 ### 0.1 Проектирование схемы БД (PostgreSQL)
 
-- [ ] **0.1.1** — Спроектировать таблицу `Users`: id (UUID), email, password_hash (bcrypt/argon2), xp (int, default 0), current_streak (int, default 0), last_active_date (date), created_at, updated_at.
-- [ ] **0.1.2** — Спроектировать таблицу `Words`: id (serial), character (varchar), pinyin (varchar, с тонами), translation (text, русский), hsk_level (int 1-6 или 0 для не-HSK), audio_url (text, nullable), mnemonic (text, nullable), created_at.
-- [ ] **0.1.3** — Спроектировать таблицу `Decks`: id (serial), name (varchar), description (text), is_system_deck (boolean, default false), cover_image_url (text, nullable), created_at.
-- [ ] **0.1.4** — Спроектировать таблицу `Deck_Words` (m2m связка): deck_id, word_id, added_at.
-- [ ] **0.1.5** — Спроектировать таблицу `User_Word_Progress` (ядро SRS): user_id, word_id, state (enum: new/learning/review/graduated), due_date (timestamptz), stability (float), difficulty (float), reps (int), last_review_at (timestamptz), elapsed_days (int), scheduled_days (int), created_at.
-- [ ] **0.1.6** — **Принять решение:** использовать **FSRS** (Free Spaced Repetition Scheduler) вместо SM-2. FSRS точнее, требует меньше повторений для запоминания. Задокументировать параметры FSRS в `plan/decisions.md`.
-- [ ] **0.1.7** — Написать Drizzle ORM schema-файл (`packages/backend/src/db/schema.ts`) со всеми таблицами, индексами и foreign keys.
-- [ ] **0.1.8** — Сгенерировать и проверить первую миграцию (`drizzle-kit generate`).
-- [ ] **0.1.9** — Подготовить seed-данные: найти/спарсить CSV-списки слов HSK 1 и HSK 2 (с полями: иероглиф, пиньинь, перевод, уровень). Сохранить в `packages/backend/src/db/seeds/`.
+- [x] **0.1.1** — Спроектировать таблицу `Users`: id (UUID), email, password_hash (bcrypt/argon2), xp (int, default 0), current_streak (int, default 0), last_active_date (date), created_at, updated_at.
+- [x] **0.1.2** — Спроектировать таблицу `Words`: id (serial), character (varchar), pinyin (varchar, с тонами), translation (text, русский), hsk_level (int 1-6 или 0 для не-HSK), audio_url (text, nullable), mnemonic (text, nullable), created_at.
+- [x] **0.1.3** — Спроектировать таблицу `Decks`: id (serial), name (varchar), description (text), is_system_deck (boolean, default false), cover_image_url (text, nullable), created_at.
+- [x] **0.1.4** — Спроектировать таблицу `Deck_Words` (m2m связка): deck_id, word_id, added_at.
+- [x] **0.1.5** — Спроектировать таблицу `User_Word_Progress` (ядро SRS): user_id, word_id, state (enum: new/learning/review/graduated), due_date (timestamptz), stability (float), difficulty (float), reps (int), last_review_at (timestamptz), elapsed_days (int), scheduled_days (int), created_at.
+- [x] **0.1.6** — **Принять решение:** использовать **FSRS** (Free Spaced Repetition Scheduler) вместо SM-2. FSRS точнее, требует меньше повторений для запоминания. Задокументировать параметры FSRS в `plan/decisions.md`.
+- [x] **0.1.7** — Написать Drizzle ORM schema-файл (`packages/backend/src/db/schema.ts`) со всеми таблицами, индексами и foreign keys. **(Реализовано через Prisma ORM вместо Drizzle — решение задокументировано в `plan/decisions.md`).**
+- [x] **0.1.8** — Сгенерировать и проверить первую миграцию (`drizzle-kit generate`). **(Реализовано через Prisma: `apps/server/prisma/migrations/`).**
+- [x] **0.1.9** — Подготовить seed-данные: найти/спарсить CSV-списки слов HSK 1 и HSK 2 (с полями: иероглиф, пиньинь, перевод, уровень). Сохранить в `packages/backend/src/db/seeds/`. **(Адаптировано под Prisma: `apps/server/prisma/seeds/hsk1.json..hsk6.json` — 5452 слова, HSK 1-6, русский перевод).**
 
 ### 0.2 Проектирование API-контрактов
 
-- [ ] **0.2.1** — Составить полный перечень эндпоинтов (REST) с группировкой по модулям: Auth, Words, Decks, Study/SRS, Sync, User/Stats.
-- [ ] **0.2.2** — Описать контракты Auth: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`.
-- [ ] **0.2.3** — Описать контракты Words/Decks: `GET /words` (с query-параметрами фильтрации), `GET /words/:id`, `GET /decks`, `GET /decks/:id`, `POST /decks/:id/subscribe`.
-- [ ] **0.2.4** — Описать контракты SRS: `POST /study/session` (запрос новой сессии), `POST /study/answer` (отправка ответа на карточку).
-- [ ] **0.2.5** — Описать контракт Sync: `POST /sync` (отправка дельты с клиента, получение серверных изменений). Формат: `{ changes: ChangeItem[], lastSyncTimestamp: string }`.
-- [ ] **0.2.6** — Описать контракты User/Stats: `GET /user/me`, `GET /user/stats`, `GET /user/activity` (для heatmap).
-- [ ] **0.2.7** — Сгенерировать OpenAPI/Swagger-спецификацию (`packages/shared/api-spec.yaml`), либо описать схемы через Zod в `packages/shared/src/schemas/`.
-- [ ] **0.2.8** — Создать shared-пакет `packages/shared` с Zod-схемами и TypeScript-типами, доступными и фронту, и бэкенду.
+- [x] **0.2.1** — Составить полный перечень эндпоинтов (REST) с группировкой по модулям: Auth, Words, Decks, Study/SRS, Sync, User/Stats.
+- [x] **0.2.2** — Описать контракты Auth: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`.
+- [x] **0.2.3** — Описать контракты Words/Decks: `GET /words` (с query-параметрами фильтрации), `GET /words/:id`, `GET /decks`, `GET /decks/:id`, `POST /decks/:id/subscribe`.
+- [x] **0.2.4** — Описать контракты SRS: `POST /study/session` (запрос новой сессии), `POST /study/answer` (отправка ответа на карточку).
+- [x] **0.2.5** — Описать контракт Sync: `POST /sync` (отправка дельты с клиента, получение серверных изменений). Формат: `{ changes: ChangeItem[], lastSyncTimestamp: string }`.
+- [x] **0.2.6** — Описать контракты User/Stats: `GET /user/me`, `GET /user/stats`, `GET /user/activity` (для heatmap).
+- [x] **0.2.7** — Сгенерировать OpenAPI/Swagger-спецификацию (`packages/shared/api-spec.yaml`), либо описать схемы через Zod в `packages/shared/src/schemas/`. **(Реализовано: Zod-схемы в `packages/shared/src/schemas/` + REST-спецификация в `packages/shared/api-spec.md`).**
+- [x] **0.2.8** — Создать shared-пакет `packages/shared` с Zod-схемами и TypeScript-типами, доступными и фронту, и бэкенду.
 
 ### 0.3 Настройка репозитория и CI/CD
 
-- [ ] **0.3.1** — Инициализировать монорепозиторий: корневая структура `packages/backend`, `packages/frontend`, `packages/shared`.
-- [ ] **0.3.2** — Настроить `pnpm-workspace.yaml` (pnpm предпочтительнее yarn — быстрее, строже).
-- [ ] **0.3.3** — Создать корневой `package.json` со скриптами: `dev`, `build`, `lint`, `test`, `db:migrate`, `db:seed`.
-- [ ] **0.3.4** — Настроить `tsconfig.json`: корневой базовый + дочерние для каждого пакета.
-- [ ] **0.3.5** — Настроить ESLint + Prettier единообразно для всех пакетов (корневой конфиг).
-- [ ] **0.3.6** — Создать `.github/workflows/ci.yml`: запуск линтеров и TypeScript-проверки на каждый push/PR.
-- [ ] **0.3.7** — Создать `.github/workflows/build.yml`: сборка Docker-образов для backend и frontend, публикация в GitHub Container Registry.
-- [ ] **0.3.8** — Написать `Dockerfile.backend` (многоэтапная сборка: build + production).
-- [ ] **0.3.9** — Написать `Dockerfile.frontend` (сборка статики через Vite, раздача через nginx).
-- [ ] **0.3.10** — Создать `docker-compose.yml` для локальной разработки (postgres + redis + backend + frontend).
-- [ ] **0.3.11** — Создать `.env.example` с документированием всех переменных окружения.
+- [x] **0.3.1** — Инициализировать монорепозиторий: корневая структура `packages/backend`, `packages/frontend`, `packages/shared`. **(Адаптировано: `apps/server`, `apps/web`, `packages/shared`).**
+- [x] **0.3.2** — Настроить `pnpm-workspace.yaml` (pnpm предпочтительнее yarn — быстрее, строже).
+- [x] **0.3.3** — Создать корневой `package.json` со скриптами: `dev`, `build`, `lint`, `test`, `db:migrate`, `db:seed`.
+- [x] **0.3.4** — Настроить `tsconfig.json`: корневой базовый + дочерние для каждого пакета.
+- [x] **0.3.5** — Настроить ESLint + Prettier единообразно для всех пакетов (корневой конфиг).
+- [x] **0.3.6** — Создать `.github/workflows/ci.yml`: запуск линтеров и TypeScript-проверки на каждый push/PR.
+- [x] **0.3.7** — Создать `.github/workflows/build.yml`: сборка Docker-образов для backend и frontend, публикация в GitHub Container Registry.
+- [x] **0.3.8** — Написать `Dockerfile.backend` (многоэтапная сборка: build + production). **(Реализован: `apps/server/Dockerfile`).**
+- [x] **0.3.9** — Написать `Dockerfile.frontend` (сборка статики через Vite, раздача через nginx). **(Реализован: `apps/web/Dockerfile`).**
+- [x] **0.3.10** — Создать `docker-compose.yml` для локальной разработки (postgres + redis + backend + frontend).
+- [x] **0.3.11** — Создать `.env.example` с документированием всех переменных окружения.
 
 ---
 

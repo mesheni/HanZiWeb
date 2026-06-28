@@ -16,6 +16,7 @@ build/
 
 # IDE
 .vscode/
+.vs/
 .idea/
 *.swp
 *.swo
@@ -32,7 +33,9 @@ Thumbs.db
 .turbo/
 
 # Prisma
-apps/server/prisma/migrations/
+# Only ignore migration lock and generated client
+apps/server/prisma/migrations/migration_lock.toml
+apps/server/node_modules/.prisma/
 
 # Logs
 *.log
