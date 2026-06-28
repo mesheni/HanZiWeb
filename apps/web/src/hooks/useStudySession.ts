@@ -1,0 +1,99 @@
+import { useEffect, useRef } from 'react';
+import { useStartSession, useRecordAnswer } from '../queries/sessions';
+import { useStudyStore } from '../stores/studyStore';
+import { useToastStore } from '../stores/toastStore';
+import type { SrsRating } from '@hanzi/shared';
+
+/**
+ * Хук оркестрации учебной сессии:
+ *  - запускает сессию (POST /sessions/start) при монтировании;
+ *  - наполняет studyStore карточками;
+ *  - предоставляет rateCard(), выполняющий POST /sessions/:id/answer
+ *    с optimistic-update (немедленный переход к следующей карточке),
+ *    откатом и toast-ом при ошибке;
+ *  - предоставляет флаг isSessionComplete — все карточки пройдены.
+ */
+export function useStudySession(deckId?: string) {
+  const startMutation = useStartSession();
+  const answerMutation = useRecordAnswer();
+
+  const store = useStudyStore();
+  const addToast = useToastStore((s) => s.addToast);
+
+  // Запоминаем предыдущий индекс для отката
+  const prevIndexRef = useRef<number>(0);
+
+  // Старт сессии — один раз при монтировании
+  useEffect(() => {
+    startMutation.mutate(
+      { deckId, cardLimit: 20, includeNew: true },
+      {
+        onSuccess: (session) => {
+          store.startSession(session.cards, session.id);
+        },
+        onError: () => {
+          addToast('Не удалось начать сессию', 'error');
+        },
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rateCard = (rating: SrsRating) => {
+    const { cards, currentIndex, sessionId } = store;
+
+    const card = cards[currentIndex];
+    if (!card || !sessionId) return;
+
+    // Снимок состояния для отката
+    prevIndexRef.current = currentIndex;
+
+    // Optimistic update: сразу помечаем карточку отвеченной и переходим к следующей
+    store.rateCard(rating);
+    store.nextCard();
+
+    // Фоновый запрос на сервер
+    answerMutation.mutate(
+      {
+        sessionId,
+        wordId: card.word.id,
+        rating,
+      },
+      {
+        onError: () => {
+          // Откат: возвращаемся к карточке, убираем отметку answered
+          useStudyStore.setState((state) => {
+            const updated = [...state.cards];
+            if (updated[prevIndexRef.current]) {
+              updated[prevIndexRef.current] = {
+                ...updated[prevIndexRef.current]!,
+                answered: false,
+                rating: undefined,
+              };
+            }
+            return {
+              cards: updated,
+              currentIndex: prevIndexRef.current,
+              isFlipped: false,
+              progress: {
+                ...state.progress,
+                current: prevIndexRef.current,
+              },
+            };
+          });
+          addToast('Ошибка сохранения ответа. Попробуйте ещё раз.', 'error');
+        },
+      },
+    );
+  };
+
+  const isSessionComplete =
+    store.cards.length > 0 && store.currentIndex >= store.cards.length;
+
+  return {
+    isLoading: startMutation.isPending,
+    isError: startMutation.isError || answerMutation.isError,
+    isSessionComplete,
+    rateCard,
+  };
+}

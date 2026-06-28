@@ -1,206 +1,232 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PinyinDisplay } from '../utils/toneColors';
+import { X } from 'lucide-react';
+import { useStudySession } from '../hooks/useStudySession';
+import { useAudio } from '../hooks/useAudio';
+import { useStudyStore } from '../stores/studyStore';
+import Flashcard from '../components/Flashcard';
+import SessionComplete from '../components/SessionComplete';
+import { ProgressBar } from '../components/ui';
+import type { SrsRating } from '@hanzi/shared';
 
-/** Демо-карточки */
-const DEMO_CARDS = [
-  { ch: '喜欢', py: 'xǐ huān', tr: 'нравиться, любить', zh: '我喜欢学中文。', ru: 'Мне нравится учить китайский.' },
-  { ch: '朋友', py: 'péng yǒu', tr: 'друг', zh: '他是我的好朋友。', ru: 'Он мой хороший друг.' },
-  { ch: '漂亮', py: 'piào liàng', tr: 'красивый, красивая', zh: '她很漂亮！', ru: 'Она очень красивая!' },
-  { ch: '学习', py: 'xué xí', tr: 'учиться, учёба', zh: '我喜欢学习。', ru: 'Я люблю учиться.' },
-  { ch: '高兴', py: 'gāo xìng', tr: 'радостный, рад', zh: '我很高兴见到你。', ru: 'Рад с тобой познакомиться.' },
+interface RatingOption {
+  rating: SrsRating;
+  label: string;
+  hint: string;
+  className: string;
+}
+
+const RATING_OPTIONS: RatingOption[] = [
+  { rating: 1, label: 'Не помню', hint: 'через 1 мин', className: 'rate-again' },
+  { rating: 2, label: 'Трудно', hint: 'через 10 мин', className: 'rate-hard' },
+  { rating: 3, label: 'Помню', hint: 'через 1 день', className: 'rate-good' },
+  { rating: 4, label: 'Легко', hint: 'через 4 дня', className: 'rate-easy' },
 ];
 
 export default function StudyScreen() {
   const navigate = useNavigate();
-  const [cardIndex, setCardIndex] = useState(0);
-  const [cardsCompleted, setCardsCompleted] = useState(6);
-  const [flipped, setFlipped] = useState(false);
-  const totalCards = 20;
+  const { isLoading, isSessionComplete, rateCard } = useStudySession();
 
-  const card = DEMO_CARDS[cardIndex % DEMO_CARDS.length]!;
-  const progress = Math.round((cardsCompleted / totalCards) * 100);
+  const cards = useStudyStore((s) => s.cards);
+  const currentIndex = useStudyStore((s) => s.currentIndex);
+  const isFlipped = useStudyStore((s) => s.isFlipped);
+  const progress = useStudyStore((s) => s.progress);
+  const flipCard = useStudyStore((s) => s.flipCard);
+  const resetSession = useStudyStore((s) => s.resetSession);
 
-  const flip = useCallback(() => setFlipped((f) => !f), []);
+  const currentCard = cards[currentIndex];
+  const wordId = currentCard?.word.id ?? null;
+  const audio = useAudio(wordId);
 
-  const nextCard = useCallback(() => {
-    setFlipped(false);
-    setCardIndex((i) => i + 1);
-    setCardsCompleted((c) => Math.min(c + 1, totalCards));
-  }, []);
+  // Автовоспроизведение аудио при перевороте карточки
+  useEffect(() => {
+    if (isFlipped && audio.isAvailable) {
+      audio.play();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFlipped]);
 
-  const handleRate = useCallback(
-    (_rating: number) => {
-      // TODO: send rating to API
-      nextCard();
-    },
-    [nextCard],
-  );
+  // Клавиатурные сокращения: 1=Again, 2=Hard, 3=Good, 4=Easy, Space=flip
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isSessionComplete) return;
+      if (!currentCard) return;
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        flipCard();
+        return;
+      }
+
+      if (!isFlipped) return; // оценки доступны только после переворота
+
+      const map: Record<string, SrsRating> = {
+        '1': 1,
+        '2': 2,
+        '3': 3,
+        '4': 4,
+      };
+      const rating = map[e.key];
+      if (rating !== undefined) {
+        e.preventDefault();
+        rateCard(rating);
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isSessionComplete, currentCard, isFlipped, flipCard, rateCard]);
+
+  // Статистика для SessionComplete
+  const stats = useMemo(() => {
+    let correct = 0;
+    let incorrect = 0;
+    for (const card of cards) {
+      if (!card.answered) continue;
+      if (card.rating && card.rating >= 3) correct++;
+      else incorrect++;
+    }
+    return { correct, incorrect, total: cards.length };
+  }, [cards]);
+
+  // Подсчёт XP
+  const xpEarned = useMemo(() => {
+    let xp = 0;
+    for (const card of cards) {
+      if (card.answered && card.rating) {
+        xp += { 1: 0, 2: 1, 3: 3, 4: 5 }[card.rating] ?? 0;
+      }
+    }
+    return xp;
+  }, [cards]);
+
+  // При размонтировании сбрасываем стор
+  useEffect(() => {
+    return () => resetSession();
+  }, [resetSession]);
+
+  // Состояния загрузки
+  if (isLoading) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span className="spinner" style={{ width: 28, height: 28 }} />
+      </div>
+    );
+  }
+
+  if (isSessionComplete) {
+    return (
+      <SessionComplete
+        total={stats.total}
+        correct={stats.correct}
+        incorrect={stats.incorrect}
+        xpEarned={xpEarned}
+      />
+    );
+  }
+
+  if (!currentCard) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>Нет карточек для изучения.</p>
+          <button onClick={() => navigate('/')} style={{ color: 'var(--accent)' }}>На главную</button>
+        </div>
+      </div>
+    );
+  }
+
+  const progressPct = Math.round((progress.current / progress.total) * 100);
 
   return (
-    <div style={styles.screen}>
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Progress bar */}
-      <div style={styles.progressBar}>
-        <div style={{ ...styles.progressFill, width: `${progress}%` }} />
+      <div style={{ padding: '8px 22px 0' }}>
+        <ProgressBar value={progressPct} />
       </div>
 
       {/* Header */}
-      <div style={styles.header}>
-        <span style={styles.counter}>{cardsCompleted} / {totalCards}</span>
-        <span style={styles.deckName}>HSK 1 · Базовые слова</span>
-        <button style={styles.closeBtn} onClick={() => navigate('/')} aria-label="Выйти">✕</button>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 22px',
+          borderBottom: '1px solid var(--border-default)',
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          {progress.current + 1} / {progress.total}
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Повторение</span>
+        <button
+          onClick={() => navigate('/')}
+          aria-label="Выйти"
+          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+        >
+          <X size={18} />
+        </button>
       </div>
 
       {/* Card area */}
-      <div style={styles.body}>
-        <div
-          style={{ ...styles.cardScene, perspective: 900 }}
-          onClick={flip}
-          role="button"
-          tabIndex={0}
-          aria-label="Показать ответ"
-        >
-          <div
-            style={{
-              ...styles.cardFlipper,
-              transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-            }}
-          >
-            {/* Front */}
-            <div style={styles.cardFace}>
-              <div style={styles.cardChar}>{card.ch}</div>
-              <div style={styles.cardHint}>нажмите, чтобы открыть</div>
-            </div>
-
-            {/* Back */}
-            <div style={{ ...styles.cardFace, transform: 'rotateY(180deg)' }}>
-              <div style={styles.backChar}>{card.ch}</div>
-              <PinyinDisplay pinyin={card.py} />
-              <div style={styles.backTranslation}>{card.tr}</div>
-              <div style={styles.backExample}>
-                <div style={styles.exZh}>{card.zh}</div>
-                <div style={styles.exRu}>{card.ru}</div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '14px 28px',
+        }}
+      >
+        <Flashcard
+          word={currentCard.word}
+          isFlipped={isFlipped}
+          onFlip={flipCard}
+          onReplayAudio={() => audio.play()}
+          audioLoading={audio.isLoading}
+          hasAudio={audio.isAvailable}
+        />
       </div>
 
-      {/* Footer */}
-      <div style={styles.footer}>
-        {!flipped ? (
-          <button style={styles.showBtn} onClick={flip}>
+      {/* Footer — оценки доступны только после переворота */}
+      <div style={{ padding: '10px 22px 20px', flexShrink: 0 }}>
+        {!isFlipped ? (
+          <button
+            onClick={flipCard}
+            style={{
+              display: 'block',
+              width: '100%',
+              maxWidth: 210,
+              margin: '0 auto',
+              padding: '12px',
+              background: 'var(--accent)',
+              border: 'none',
+              borderRadius: 10,
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
             Показать ответ
           </button>
         ) : (
-          <div style={styles.ratingButtons}>
-            <button style={{ ...styles.rateBtn }} className="rate-again" onClick={() => handleRate(1)}>
-              Не помню
-              <small>через 1 мин</small>
-            </button>
-            <button style={{ ...styles.rateBtn }} className="rate-good" onClick={() => handleRate(3)}>
-              Помню
-              <small>через 1 день</small>
-            </button>
-            <button style={{ ...styles.rateBtn }} className="rate-easy" onClick={() => handleRate(4)}>
-              Легко
-              <small>через 4 дня</small>
-            </button>
+          <div className="rating-row">
+            {RATING_OPTIONS.map((opt) => (
+              <button
+                key={opt.rating}
+                className={`rate-btn ${opt.className}`}
+                onClick={() => rateCard(opt.rating)}
+              >
+                {opt.label}
+                <small>{opt.hint}</small>
+              </button>
+            ))}
           </div>
         )}
       </div>
-
-      <style>{`
-        .card-scene { perspective: 900px; }
-        .rate-again:hover { background: var(--tone-4-bg) !important; border-color: var(--tone-4) !important; color: var(--tone-4) !important; }
-        .rate-good:hover { background: var(--tone-2-bg) !important; border-color: var(--tone-2) !important; color: var(--tone-2) !important; }
-        .rate-easy:hover { background: var(--tone-1-bg) !important; border-color: var(--tone-1) !important; color: var(--tone-1) !important; }
-      `}</style>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  screen: {
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: 2,
-    background: 'rgba(255,255,255,0.05)',
-    flexShrink: 0,
-  },
-  progressFill: {
-    height: '100%',
-    background: 'var(--accent)',
-    transition: 'width 0.4s ease',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '12px 22px',
-    borderBottom: '1px solid var(--border-default)',
-    flexShrink: 0,
-  },
-  counter: { fontSize: 13, color: '#55576B' },
-  deckName: { fontSize: 13, fontWeight: 500 },
-  closeBtn: { background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1, padding: 0 },
-  body: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '14px 28px',
-  },
-  cardScene: {
-    width: '100%',
-    maxWidth: 360,
-    height: 248,
-    cursor: 'pointer',
-  },
-  cardFlipper: {
-    width: '100%',
-    height: '100%',
-    transition: 'transform 0.5s cubic-bezier(0.4,0,0.2,1)',
-    transformStyle: 'preserve-3d',
-    position: 'relative',
-  },
-  cardFace: {
-    position: 'absolute',
-    inset: 0,
-    background: 'var(--bg-card)',
-    border: '1px solid rgba(255,255,255,0.09)',
-    borderRadius: 18,
-    backfaceVisibility: 'hidden',
-    WebkitBackfaceVisibility: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 22,
-  },
-  cardChar: { fontSize: 96, lineHeight: 1, fontWeight: 300, marginBottom: 6 },
-  cardHint: { fontSize: 11, color: '#2E3045', display: 'flex', alignItems: 'center', gap: 5, marginTop: 14 },
-  backChar: { fontSize: 54, fontWeight: 300, lineHeight: 1, marginBottom: 7 },
-  backTranslation: { fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 11, marginTop: 4 },
-  backExample: { borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 10, textAlign: 'center', width: '100%' },
-  exZh: { fontSize: 13, color: '#8889A0', marginBottom: 3 },
-  exRu: { fontSize: 11, color: 'var(--text-dim)' },
-  footer: { padding: '10px 22px 20px', flexShrink: 0 },
-  showBtn: {
-    display: 'block', width: '100%', maxWidth: 210, margin: '0 auto',
-    padding: '12px', background: 'var(--accent)', border: 'none', borderRadius: 10,
-    color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer',
-  },
-  ratingButtons: { display: 'flex', gap: 8 },
-  rateBtn: {
-    flex: 1, padding: '10px 4px', border: '1px solid rgba(255,255,255,0.09)', background: 'var(--bg-card)',
-    borderRadius: 9, color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12, fontWeight: 500,
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transition: 'all 0.13s',
-  },
-};

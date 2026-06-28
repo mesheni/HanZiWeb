@@ -42,3 +42,13 @@ export function useActivity(year: number, month: number) {
     enabled: false,
   });
 }
+
+/**
+ * Хук для получения/обновления daily streak.
+ */
+export function useStreak() {
+  return useQuery({
+    queryKey: ['stats', 'streak'],
+    queryFn: () => apiGet<{ currentStreak: number; lastActiveDate: string | null }>('/stats/streak'),
+  });
+}
