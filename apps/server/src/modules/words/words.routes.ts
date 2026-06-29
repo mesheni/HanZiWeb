@@ -1,53 +1,24 @@
 import { FastifyInstance } from 'fastify';
-import jwt from 'jsonwebtoken';
 import {
   CreateWordSchema,
   UpdateWordSchema,
   WordFiltersSchema,
   type WordFilters,
 } from '@hanzi/shared';
-import { loadConfig } from '../../config.js';
 import * as wordsService from './words.service.js';
 
 export async function wordsRoutes(app: FastifyInstance) {
   /** GET /words — список слов с фильтрацией */
-  app.get<{ Querystring: WordFilters }>('/', async (request, reply) => {
+  app.get<{ Querystring: WordFilters }>('/', { preHandler: [app.authenticateOptional] }, async (request, reply) => {
     const filters = WordFiltersSchema.parse(request.query);
 
-    // Опционально извлекаем userId из JWT (для фильтрации по статусу)
-    let userId: string | undefined;
-    const authHeader = request.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      try {
-        const config = loadConfig();
-        const payload = jwt.verify(authHeader.slice(7), config.JWT_ACCESS_SECRET) as { userId: string };
-        userId = payload.userId;
-      } catch {
-        // token invalid — proceed without userId
-      }
-    }
-
-    const result = await wordsService.listWords(filters, userId);
+    const result = await wordsService.listWords(filters, request.userId || undefined);
     return reply.send({ success: true, data: result.data, pagination: result.pagination });
   });
 
   /** GET /words/:id — одно слово (опционально включает userProgress) */
-  app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    let userId: string | undefined;
-
-    const authHeader = request.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      const token = authHeader.slice(7);
-      try {
-        const config = loadConfig();
-        const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as { userId: string };
-        userId = payload.userId;
-      } catch {
-        // token invalid or expired — proceed without userId
-      }
-    }
-
-    const word = await wordsService.getWord(request.params.id, userId);
+  app.get<{ Params: { id: string } }>('/:id', { preHandler: [app.authenticateOptional] }, async (request, reply) => {
+    const word = await wordsService.getWord(request.params.id, request.userId || undefined);
     if (!word) {
       return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Word not found' } });
     }

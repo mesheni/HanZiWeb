@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useStartSession, useRecordAnswer } from '../queries/sessions';
 import { useStudyStore } from '../stores/studyStore';
 import { useToastStore } from '../stores/toastStore';
+import { useOnlineStatus } from './useOnlineStatus';
 import { getDb } from '../db/database';
 import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
@@ -19,6 +20,7 @@ import type { SrsRating } from '@hanzi/shared';
 export function useStudySession(deckId?: string) {
   const startMutation = useStartSession();
   const answerMutation = useRecordAnswer();
+  const isOnline = useOnlineStatus();
 
   const store = useStudyStore();
   const addToast = useToastStore((s) => s.addToast);
@@ -88,39 +90,41 @@ export function useStudySession(deckId?: string) {
       }
     }
 
-    // Фоновый запрос на сервер
-    answerMutation.mutate(
-      {
-        sessionId,
-        wordId: card.word.id,
-        rating,
-      },
-      {
-        onError: () => {
-          // Откат: возвращаемся к карточке, убираем отметку answered
-          useStudyStore.setState((state) => {
-            const updated = [...state.cards];
-            if (updated[prevIndexRef.current]) {
-              updated[prevIndexRef.current] = {
-                ...updated[prevIndexRef.current]!,
-                answered: false,
-                rating: undefined,
-              };
-            }
-            return {
-              cards: updated,
-              currentIndex: prevIndexRef.current,
-              isFlipped: false,
-              progress: {
-                ...state.progress,
-                current: prevIndexRef.current,
-              },
-            };
-          });
-          addToast('Ошибка сохранения ответа. Попробуйте ещё раз.', 'error');
+    // Фоновый запрос на сервер (только если онлайн)
+    if (isOnline) {
+      answerMutation.mutate(
+        {
+          sessionId,
+          wordId: card.word.id,
+          rating,
         },
-      },
-    );
+        {
+          onError: () => {
+            // Откат: возвращаемся к карточке, убираем отметку answered
+            useStudyStore.setState((state) => {
+              const updated = [...state.cards];
+              if (updated[prevIndexRef.current]) {
+                updated[prevIndexRef.current] = {
+                  ...updated[prevIndexRef.current]!,
+                  answered: false,
+                  rating: undefined,
+                };
+              }
+              return {
+                cards: updated,
+                currentIndex: prevIndexRef.current,
+                isFlipped: false,
+                progress: {
+                  ...state.progress,
+                  current: prevIndexRef.current,
+                },
+              };
+            });
+            addToast('Ошибка сохранения ответа. Попробуйте ещё раз.', 'error');
+          },
+        },
+      );
+    }
   };
 
   const isSessionComplete =

@@ -9,6 +9,7 @@ declare module 'fastify' {
   }
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    authenticateOptional: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
@@ -36,6 +37,19 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
       request.userId = payload.userId;
     } catch {
       return reply.status(401).send({ success: false, error: { code: 'TOKEN_EXPIRED', message: 'Access token expired or invalid' } });
+    }
+  });
+
+  fastify.decorate('authenticateOptional', async function (request: FastifyRequest, _reply: FastifyReply) {
+    const authHeader = request.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) return;
+
+    const token = authHeader.slice(7);
+    try {
+      const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as JwtPayload;
+      request.userId = payload.userId;
+    } catch {
+      // token invalid or expired — proceed without userId
     }
   });
 }

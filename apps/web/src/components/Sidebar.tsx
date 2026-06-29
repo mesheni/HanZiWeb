@@ -26,7 +26,7 @@ export default function Sidebar() {
   const isActive = (route: string) => location.pathname === route;
 
   return (
-    <aside className="w-[62px] bg-bg-secondary border-r border-border-default flex flex-col items-center py-[18px] flex-shrink-0">
+    <aside className="w-[72px] bg-bg-secondary border-r border-border-default flex flex-col items-center py-[18px] flex-shrink-0">
       <div
         onClick={() => navigate('/')}
         className="text-[23px] text-accent font-bold mb-5 leading-none cursor-pointer select-none"

@@ -48,10 +48,15 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
     }
   }
 
-  const json = await res.json();
+  let json: Record<string, unknown>;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`Request failed: ${res.status}`);
+  }
 
   if (!res.ok || !json.success) {
-    throw new Error(json.error?.message ?? `Request failed: ${res.status}`);
+    throw new Error((json.error as Record<string, string>)?.message ?? `Request failed: ${res.status}`);
   }
 
   return json.data as T;

@@ -12,7 +12,7 @@ export default function NavButton({ icon: Icon, label, active, onClick }: NavBut
     <button
       onClick={onClick}
       aria-label={label}
-      className="w-[46px] h-[48px] rounded-[10px] border-none flex flex-col items-center justify-center gap-[3px] transition-all duration-150 mb-0.5 cursor-pointer"
+      className="w-[54px] h-[48px] rounded-[10px] border-none flex flex-col items-center justify-center gap-[3px] transition-all duration-150 mb-0.5 cursor-pointer"
       style={{
         background: active ? 'var(--accent-bg)' : 'transparent',
         color: active ? 'var(--accent)' : '#48495C',
@@ -31,11 +31,11 @@ export default function NavButton({ icon: Icon, label, active, onClick }: NavBut
       }}
     >
       {typeof Icon === 'string' ? (
-        <span style={{ fontSize: 18, lineHeight: 1 }}>{Icon}</span>
+        <span style={{ fontSize: 20, lineHeight: 1 }}>{Icon}</span>
       ) : (
-        <Icon size={18} />
+        <Icon size={20} />
       )}
-      <span style={{ fontSize: 9, lineHeight: 1 }}>{label}</span>
+      <span style={{ fontSize: 10, lineHeight: 1 }}>{label}</span>
     </button>
   );
 }
