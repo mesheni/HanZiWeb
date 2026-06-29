@@ -13,7 +13,21 @@ export async function wordsRoutes(app: FastifyInstance) {
   /** GET /words — список слов с фильтрацией */
   app.get<{ Querystring: WordFilters }>('/', async (request, reply) => {
     const filters = WordFiltersSchema.parse(request.query);
-    const result = await wordsService.listWords(filters);
+
+    // Опционально извлекаем userId из JWT (для фильтрации по статусу)
+    let userId: string | undefined;
+    const authHeader = request.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const config = loadConfig();
+        const payload = jwt.verify(authHeader.slice(7), config.JWT_ACCESS_SECRET) as { sub: string };
+        userId = payload.sub;
+      } catch {
+        // token invalid — proceed without userId
+      }
+    }
+
+    const result = await wordsService.listWords(filters, userId);
     return reply.send({ success: true, data: result.data, pagination: result.pagination });
   });
 

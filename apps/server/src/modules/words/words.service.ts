@@ -2,7 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import type { CreateWord, UpdateWord, WordFilters, Pagination } from '@hanzi/shared';
 import type { Prisma } from '@prisma/client';
 
-export async function listWords(filters: WordFilters) {
+export async function listWords(filters: WordFilters, userId?: string) {
   const where: Prisma.WordWhereInput = {};
 
   if (filters.search) {
@@ -21,6 +21,10 @@ export async function listWords(filters: WordFilters) {
     where.deckWords = { some: { deckId: filters.deckId } };
   }
 
+  if (filters.status && userId) {
+    where.progress = { some: { userId, state: filters.status } };
+  }
+
   const [data, total] = await Promise.all([
     prisma.word.findMany({
       where,
@@ -32,13 +36,31 @@ export async function listWords(filters: WordFilters) {
     prisma.word.count({ where }),
   ]);
 
+  // Если есть userId, подмешиваем статус прогресса к каждому слову
+  let wordsWithStatus = data;
+  if (userId) {
+    const wordIds = data.map((w) => w.id);
+    const progressMap = new Map(
+      (
+        await prisma.userWordProgress.findMany({
+          where: { userId, wordId: { in: wordIds } },
+          select: { wordId: true, state: true },
+        })
+      ).map((p) => [p.wordId, p.state]),
+    );
+    wordsWithStatus = data.map((w) => ({
+      ...w,
+      status: progressMap.get(w.id) ?? 'new',
+    }));
+  }
+
   const pagination: Pagination = {
     total,
     limit: filters.limit,
     offset: filters.offset,
   };
 
-  return { data, pagination };
+  return { data: wordsWithStatus, pagination };
 }
 
 export async function getWord(id: string, userId?: string) {

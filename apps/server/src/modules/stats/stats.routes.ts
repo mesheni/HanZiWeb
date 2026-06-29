@@ -8,13 +8,19 @@ export async function statsRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: stats });
   });
 
-  /** GET /stats/activity?year=2026&month=6 — календарь активности */
+  /** GET /stats/dashboard — данные для главного дашборда */
+  app.get('/dashboard', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const data = await statsService.getDashboard(request.userId);
+    return reply.send({ success: true, data });
+  });
+
+  /** GET /stats/activity?year=2026 — календарь активности (год) */
   app.get<{ Querystring: { year?: string; month?: string } }>(
     '/activity',
     { preHandler: [app.authenticate] },
     async (request, reply) => {
       const year = request.query.year ? parseInt(request.query.year, 10) : new Date().getFullYear();
-      const month = request.query.month ? parseInt(request.query.month, 10) : new Date().getMonth() + 1;
+      const month = request.query.month ? parseInt(request.query.month, 10) : undefined;
       const data = await statsService.getActivityData(request.userId, year, month);
       return reply.send({ success: true, data });
     },

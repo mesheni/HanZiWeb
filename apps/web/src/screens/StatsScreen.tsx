@@ -1,101 +1,217 @@
-import { useMemo } from 'react';
-
-/** Демо-статистика */
-const STATS = {
-  streak: 14,
-  totalWords: 248,
-  accuracy: 84,
-};
-
-/** Дни активности для календаря (июнь 2026) — номера дней, когда были занятия */
-const ACTIVE_DAYS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
-
-const TOPICS = [
-  { name: 'HSK 1', accuracy: 92 },
-  { name: 'HSK 2', accuracy: 76 },
-  { name: 'Еда', accuracy: 88 },
-  { name: 'Числа', accuracy: 95 },
-  { name: 'Транспорт', accuracy: 61 },
-];
+import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useActivity, useOverview } from '../queries/stats';
 
 const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
+function getIntensity(count: number): number {
+  if (count === 0) return 0;
+  if (count <= 5) return 1;
+  if (count <= 15) return 2;
+  if (count <= 30) return 3;
+  return 4;
+}
+
+const INTENSITY_COLORS = [
+  '#1A1F2E',
+  'rgba(220,38,38,0.2)',
+  'rgba(220,38,38,0.4)',
+  'rgba(220,38,38,0.65)',
+  'rgba(220,38,38,0.9)',
+];
+
+interface TooltipData {
+  date: string;
+  count: number;
+  x: number;
+  y: number;
+}
+
+function ActivityCalendar({
+  activityMap,
+  year,
+}: {
+  activityMap: Map<string, number>;
+  year: number;
+}) {
+  const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+
+  return useMemo(() => {
+    // Определяем первый день года (0=Пн, 6=Вс)
+    const firstDay = new Date(year, 0, 1);
+    const startDow = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Пн=0
+    const daysInYear = (new Date(year, 11, 31).getTime() - firstDay.getTime()) / 86400000 + 1;
+
+    const weeks: (number | null)[][] = [];
+    let currentWeek: (number | null)[] = [];
+
+    // Пустые ячейки до первого дня года
+    for (let d = 0; d < startDow; d++) {
+      currentWeek.push(null);
+    }
+
+    for (let dayOfYear = 0; dayOfYear < daysInYear; dayOfYear++) {
+      const date = new Date(year, 0, 1 + dayOfYear);
+      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
+      currentWeek.push(dayOfYear + 1);
+      if (dow === 6) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    }
+    if (currentWeek.length > 0) weeks.push(currentWeek);
+
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    return (
+      <div style={{ position: 'relative' }}>
+        <div style={styles.calendarGrid}>
+          {/* DOW labels */}
+          <div style={styles.dowCol}>
+            {DOW.map((d) => (
+              <span key={d} style={styles.dowLabel}>{d}</span>
+            ))}
+          </div>
+          {/* Week columns */}
+          <div style={styles.weekCols}>
+            {weeks.map((week, wi) => (
+              <div key={wi} style={styles.weekCol}>
+                {week.map((dayNum, di) => {
+                  if (dayNum === null) return <div key={di} style={styles.cell} />;
+                  const dateObj = new Date(year, 0, dayNum);
+                  const dateStr = dateObj.toISOString().slice(0, 10);
+                  const count = activityMap.get(dateStr) ?? 0;
+                  const intensity = getIntensity(count);
+                  const isToday = dateStr === todayStr;
+                  return (
+                    <div
+                      key={di}
+                      style={{
+                        ...styles.cell,
+                        background: INTENSITY_COLORS[intensity],
+                        border: isToday ? '1px solid var(--accent)' : '1px solid transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        const rect = (e.target as HTMLElement).getBoundingClientRect();
+                        setTooltip({
+                          date: dateStr,
+                          count,
+                          x: rect.left + rect.width / 2,
+                          y: rect.top - 8,
+                        });
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Tooltip */}
+        {tooltip && (
+          <div
+            style={{
+              position: 'fixed',
+              left: tooltip.x,
+              top: tooltip.y,
+              transform: 'translate(-50%, -100%)',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 8,
+              padding: '6px 10px',
+              fontSize: 11,
+              color: 'var(--text-primary)',
+              pointerEvents: 'none',
+              zIndex: 100,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {tooltip.date}: {tooltip.count} повторений
+          </div>
+        )}
+        {/* Legend */}
+        <div style={styles.legend}>
+          <span style={{ fontSize: 10, color: 'var(--text-dim)', marginRight: 4 }}>Меньше</span>
+          {INTENSITY_COLORS.map((color, i) => (
+            <div key={i} style={{ ...styles.legendCell, background: color }} />
+          ))}
+          <span style={{ fontSize: 10, color: 'var(--text-dim)', marginLeft: 4 }}>Больше</span>
+        </div>
+      </div>
+    );
+  }, [activityMap, year, tooltip]);
+}
+
 export default function StatsScreen() {
-  const today = 28;
-  const daysInMonth = 30;
-  // Июнь 2026 начинается с понедельника (смещение: 0 пустых ячеек перед 1 числом)
-  const startOffset = 0;
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
 
-  const calendarDays = useMemo(() => {
-    const cells: { day: number | null; isToday: boolean; isActive: boolean }[] = [];
+  const { data: overview } = useOverview();
+  const { data: activityData } = useActivity(year);
 
-    for (let i = 0; i < startOffset; i++) {
-      cells.push({ day: null, isToday: false, isActive: false });
+  const activityMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (activityData) {
+      for (const d of activityData) {
+        map.set(d.date, d.count);
+      }
     }
-    for (let d = 1; d <= daysInMonth; d++) {
-      cells.push({ day: d, isToday: d === today, isActive: ACTIVE_DAYS.has(d) });
-    }
-    return cells;
-  }, []);
+    return map;
+  }, [activityData]);
+
+  const totalReviews = activityData?.reduce((sum, d) => sum + d.count, 0) ?? 0;
+  const streak = overview?.currentStreak ?? 0;
+  const graduated = overview?.byState?.graduated ?? 0;
+  const xp = overview?.xp ?? 0;
 
   return (
     <div style={styles.screen}>
-      {/* Stat cards */}
+      {/* Summary stats */}
       <div style={styles.statGrid}>
         <div style={styles.statCard}>
-          <div style={{ ...styles.statNumber, color: 'var(--accent)' }}>{STATS.streak}</div>
-          <div style={styles.statLabel}>🔥 дней подряд</div>
+          <div style={{ ...styles.statNumber, color: 'var(--tone-3)' }}>{streak}</div>
+          <div style={styles.statLabel}>🔥 текущий стрик</div>
         </div>
         <div style={styles.statCard}>
-          <div style={styles.statNumber}>{STATS.totalWords}</div>
-          <div style={styles.statLabel}>слов изучено</div>
+          <div style={{ ...styles.statNumber, color: 'var(--accent)' }}>{totalReviews}</div>
+          <div style={styles.statLabel}>повторений за {year}</div>
         </div>
         <div style={styles.statCard}>
-          <div style={{ ...styles.statNumber, color: 'var(--tone-2)' }}>{STATS.accuracy}%</div>
-          <div style={styles.statLabel}>точность</div>
+          <div style={styles.statNumber}>{graduated}</div>
+          <div style={styles.statLabel}>слов graduated</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={{ ...styles.statNumber, color: 'var(--tone-2)' }}>{xp}</div>
+          <div style={styles.statLabel}>всего XP</div>
         </div>
       </div>
 
-      {/* Calendar */}
-      <div className="section-label" style={{ marginBottom: 8 }}>Активность · Июнь 2026</div>
-      <div style={styles.calWrap}>
-        <div style={styles.dowRow}>
-          {DOW.map((d) => <span key={d} style={styles.dowCell}>{d}</span>)}
+      {/* Activity Calendar */}
+      <div style={styles.calSection}>
+        <div style={styles.calHeader}>
+          <span className="section-label" style={{ margin: 0 }}>Активность</span>
+          <div style={styles.yearSwitcher}>
+            <button
+              style={styles.yearBtn}
+              onClick={() => setYear((y) => y - 1)}
+              aria-label="Предыдущий год"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span style={styles.yearLabel}>{year}</span>
+            <button
+              style={styles.yearBtn}
+              onClick={() => setYear((y) => (y < currentYear ? y + 1 : y))}
+              disabled={year >= currentYear}
+              aria-label="Следующий год"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
-        <div style={styles.calGrid}>
-          {calendarDays.map((cell, i) => (
-            <div
-              key={i}
-              style={{
-                ...styles.calCell,
-                background: cell.day === null
-                  ? 'transparent'
-                  : cell.isToday
-                    ? 'var(--accent)'
-                    : cell.isActive
-                      ? 'rgba(220,38,38,0.38)'
-                      : 'rgba(255,255,255,0.04)',
-              }}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Topic accuracy */}
-      <div className="section-label" style={{ marginBottom: 8 }}>Точность по темам</div>
-      <div style={styles.accuracyWrap}>
-        {TOPICS.map((t) => {
-          const color = t.accuracy >= 85 ? 'var(--tone-2)' : t.accuracy >= 70 ? 'var(--tone-3)' : 'var(--tone-4)';
-          return (
-            <div key={t.name} style={styles.accuracyRow}>
-              <span style={styles.accLabel}>{t.name}</span>
-              <div style={styles.accBar}>
-                <div style={{ ...styles.accFill, width: `${t.accuracy}%`, background: color }} />
-              </div>
-              <span style={{ ...styles.accPercent, color }}>{t.accuracy}%</span>
-            </div>
-          );
-        })}
+        <ActivityCalendar activityMap={activityMap} year={year} />
       </div>
     </div>
   );
@@ -107,29 +223,57 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '26px 26px 20px',
   },
   statGrid: {
-    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16,
+    display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 18,
   },
   statCard: {
     background: 'var(--bg-card)', border: '1px solid var(--border-default)',
-    borderRadius: 12, padding: 13, textAlign: 'center',
+    borderRadius: 12, padding: 12, textAlign: 'center',
   },
-  statNumber: { fontSize: 28, fontWeight: 600, lineHeight: 1 },
-  statLabel: { fontSize: 10, color: 'var(--text-muted)', marginTop: 4 },
-  calWrap: {
+  statNumber: { fontSize: 22, fontWeight: 600, lineHeight: 1 },
+  statLabel: { fontSize: 9, color: 'var(--text-muted)', marginTop: 4 },
+  calSection: {
     background: 'var(--bg-card)', border: '1px solid var(--border-default)',
-    borderRadius: 12, padding: 14, marginBottom: 10,
+    borderRadius: 12, padding: 16,
   },
-  dowRow: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 },
-  dowCell: { fontSize: 9, color: 'var(--text-dim)', textAlign: 'center' },
-  calGrid: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 },
-  calCell: { aspectRatio: '1', borderRadius: 3 },
-  accuracyWrap: {
-    background: 'var(--bg-card)', border: '1px solid var(--border-default)',
-    borderRadius: 12, padding: 14,
+  calHeader: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
   },
-  accuracyRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 },
-  accLabel: { fontSize: 11, color: '#55576B', width: 76 },
-  accBar: { flex: 1, height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 3, overflow: 'hidden' },
-  accFill: { height: '100%', borderRadius: 3 },
-  accPercent: { fontSize: 11, fontWeight: 500, width: 30, textAlign: 'right' as const },
+  yearSwitcher: {
+    display: 'flex', alignItems: 'center', gap: 4,
+  },
+  yearBtn: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 24, height: 24, borderRadius: 6,
+    background: 'transparent', border: '1px solid var(--border-default)',
+    color: 'var(--text-secondary)', cursor: 'pointer',
+  },
+  yearLabel: {
+    fontSize: 13, fontWeight: 500, minWidth: 40, textAlign: 'center',
+  },
+  calendarGrid: {
+    display: 'flex', gap: 3,
+  },
+  dowCol: {
+    display: 'flex', flexDirection: 'column', gap: 3,
+  },
+  dowLabel: {
+    fontSize: 8, color: 'var(--text-dim)', height: 12, lineHeight: '12px', textAlign: 'right',
+    paddingRight: 4, width: 20,
+  },
+  weekCols: {
+    display: 'flex', gap: 3, overflowX: 'auto', flex: 1,
+  },
+  weekCol: {
+    display: 'flex', flexDirection: 'column', gap: 3,
+  },
+  cell: {
+    width: 12, height: 12, borderRadius: 3, transition: 'all 0.1s',
+  },
+  legend: {
+    display: 'flex', alignItems: 'center', gap: 3, marginTop: 10,
+    justifyContent: 'flex-end',
+  },
+  legendCell: {
+    width: 10, height: 10, borderRadius: 2,
+  },
 };

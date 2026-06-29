@@ -42,9 +42,56 @@ export async function getOverview(userId: string) {
   };
 }
 
-export async function getActivityData(userId: string, year: number, month: number) {
-  const startDate = new Date(Date.UTC(year, month - 1, 1));
-  const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59));
+export async function getDashboard(userId: string) {
+  const [user, progressCounts, totalReviews] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { xp: true },
+    }),
+    prisma.userWordProgress.groupBy({
+      by: ['state'],
+      where: { userId },
+      _count: true,
+    }),
+    prisma.sessionAnswer.count({
+      where: { session: { userId } },
+    }),
+  ]);
+
+  const stateMap: Record<string, number> = {};
+  for (const row of progressCounts) {
+    stateMap[row.state] = row._count;
+  }
+
+  const wordsLearned = (stateMap.GRADUATED ?? 0) + (stateMap.REVIEW ?? 0);
+  const xp = user?.xp ?? 0;
+
+  // Слова, которые нужно повторить сегодня (dueDate <= now, не graduated)
+  const now = new Date();
+  const wordsDueToday = await prisma.userWordProgress.count({
+    where: {
+      userId,
+      dueDate: { lte: now },
+      state: { notIn: ['graduated'] },
+    },
+  });
+
+  const { currentStreak } = await getUserStreak(userId);
+
+  return {
+    streak: currentStreak,
+    wordsDueToday,
+    wordsLearned,
+    totalReviews,
+    xp,
+  };
+}
+
+export async function getActivityData(userId: string, year: number, month?: number) {
+  const startDate = new Date(Date.UTC(year, 0, 1));
+  const endDate = month
+    ? new Date(Date.UTC(year, month, 0, 23, 59, 59))
+    : new Date(Date.UTC(year, 11, 31, 23, 59, 59));
 
   const answers = await prisma.sessionAnswer.findMany({
     where: {
@@ -55,14 +102,14 @@ export async function getActivityData(userId: string, year: number, month: numbe
   });
 
   // Группируем по дням
-  const activityMap = new Map<number, number>();
+  const activityMap = new Map<string, number>();
   for (const a of answers) {
-    const day = a.answeredAt.getUTCDate();
-    activityMap.set(day, (activityMap.get(day) ?? 0) + 1);
+    const date = a.answeredAt.toISOString().slice(0, 10);
+    activityMap.set(date, (activityMap.get(date) ?? 0) + 1);
   }
 
-  return Array.from(activityMap.entries()).map(([day, count]) => ({
-    day,
+  return Array.from(activityMap.entries()).map(([date, count]) => ({
+    date,
     count,
   }));
 }

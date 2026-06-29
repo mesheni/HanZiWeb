@@ -103,6 +103,11 @@ input {
   to { transform: rotate(360deg); }
 }
 
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(255, 183, 77, 0.3); }
+  50% { box-shadow: 0 0 14px rgba(255, 183, 77, 0.6); }
+}
+
 .animate-fade-in {
   animation: fade-in 0.2s ease-out;
 }

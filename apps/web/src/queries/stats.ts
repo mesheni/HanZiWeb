@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client';
 
-interface Overview {
+export interface Overview {
   xp: number;
   currentStreak: number;
   totalWords: number;
@@ -15,31 +15,46 @@ interface Overview {
   };
 }
 
-interface ActivityDay {
-  day: number;
+export interface ActivityDay {
+  date: string;
   count: number;
+}
+
+export interface Dashboard {
+  streak: number;
+  wordsDueToday: number;
+  wordsLearned: number;
+  totalReviews: number;
+  xp: number;
 }
 
 /**
  * Хук для общей статистики.
- * TODO: подключить к реальному API когда бэкенд будет готов.
  */
 export function useOverview() {
   return useQuery({
     queryKey: ['stats', 'overview'],
     queryFn: () => apiGet<Overview>('/stats/overview'),
-    enabled: false,
   });
 }
 
 /**
- * Хук для календаря активности.
+ * Хук для дашборда (главная страница).
  */
-export function useActivity(year: number, month: number) {
+export function useDashboard() {
   return useQuery({
-    queryKey: ['stats', 'activity', year, month],
-    queryFn: () => apiGet<ActivityDay[]>(`/stats/activity?year=${year}&month=${month}`),
-    enabled: false,
+    queryKey: ['stats', 'dashboard'],
+    queryFn: () => apiGet<Dashboard>('/stats/dashboard'),
+  });
+}
+
+/**
+ * Хук для календаря активности (год).
+ */
+export function useActivity(year: number) {
+  return useQuery({
+    queryKey: ['stats', 'activity', year],
+    queryFn: () => apiGet<ActivityDay[]>(`/stats/activity?year=${year}`),
   });
 }
 

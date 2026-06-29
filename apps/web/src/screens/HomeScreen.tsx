@@ -1,70 +1,138 @@
 import { useNavigate } from 'react-router-dom';
+import { useDashboard } from '../queries/stats';
+import { useWords } from '../queries/words';
+import Badge from '../components/ui/Badge';
+import { PinyinDisplay } from '../utils/toneColors';
 
-/** Демо-данные для главной */
-const RECENT_WORDS = [
-  { char: '爱', pinyin: 'ài', pinyinRaw: 'ài', translation: 'любить, любовь', status: 'review' as const, tone: 4 },
-  { char: '朋友', pinyin: 'péng yǒu', pinyinRaw: 'péng yǒu', translation: 'друг', status: 'new' as const, tone: 2 },
-  { char: '很', pinyin: 'hěn', pinyinRaw: 'hěn', translation: 'очень', status: 'hard' as const, tone: 3 },
-];
+function CircularProgress({ value, max = 100, size = 100, strokeWidth = 6 }: { value: number; max?: number; size?: number; strokeWidth?: number }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = Math.min(value / max, 1);
+  const offset = circumference * (1 - progress);
 
-const STATUS_MAP = {
-  new: { className: 'badge-new', label: 'новое' },
-  review: { className: 'badge-review', label: 'повтор' },
-  hard: { className: 'badge-hard', label: 'сложное' },
-};
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border-default)" strokeWidth={strokeWidth} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+      />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="var(--text-primary)" fontSize={size * 0.22} fontWeight={600}>
+        {Math.round(progress * 100)}%
+      </text>
+    </svg>
+  );
+}
 
 export default function HomeScreen() {
   const navigate = useNavigate();
+  const { data: dashboard, isLoading } = useDashboard();
+  const { data: recentData } = useWords({ limit: 5 });
+  const recentWords = recentData?.data ?? [];
+
+  const streak = dashboard?.streak ?? 0;
+  const wordsDueToday = dashboard?.wordsDueToday ?? 0;
+  const wordsLearned = dashboard?.wordsLearned ?? 0;
+  const totalReviews = dashboard?.totalReviews ?? 0;
+  const xp = dashboard?.xp ?? 0;
+
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  const hour = today.getHours();
+  const greeting = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
 
   return (
     <div style={styles.screen}>
-      <div style={styles.greeting}>Добрый вечер</div>
-      <div style={styles.sub}>28 июня · Пора повторить слова</div>
-      <div style={styles.streak}>🔥 14 дней подряд</div>
+      <div style={styles.greeting}>{greeting}</div>
+      <div style={styles.sub}>{dateStr} · {wordsDueToday > 0 ? `${wordsDueToday} слов ждут повторения` : 'На сегодня всё готово'}</div>
 
-      <div style={styles.actionGrid}>
-        <div
-          style={{ ...styles.actionCard, background: 'var(--accent)' }}
-          onClick={() => navigate('/study')}
-          role="button"
-          tabIndex={0}
-        >
-          <div style={styles.acLabel}>Повторить</div>
-          <div style={styles.acNumber}>24</div>
-          <div style={styles.acUnit}>слова ждут</div>
-          <div style={styles.acCta}>Начать →</div>
+      {/* Streak */}
+      <div style={styles.streak}>
+        <span style={styles.flame}>🔥</span>
+        <span style={styles.streakCount}>{streak}</span>
+        <span style={styles.streakLabel}>дней подряд</span>
+      </div>
+
+      {/* CTA */}
+      <div
+        style={styles.ctaCard}
+        onClick={() => navigate('/study')}
+        role="button"
+        tabIndex={0}
+      >
+        <div style={styles.ctaContent}>
+          <div style={styles.ctaLabel}>Начать тренировку</div>
+          <div style={styles.ctaSub}>{wordsDueToday > 0 ? `${wordsDueToday} слов на сегодня` : 'Изучать новые слова'}</div>
         </div>
-        <div
-          style={{ ...styles.actionCard, background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}
-          onClick={() => navigate('/study')}
-          role="button"
-          tabIndex={0}
-        >
-          <div style={styles.acLabel}>Новые слова</div>
-          <div style={styles.acNumber}>5</div>
-          <div style={styles.acUnit}>HSK 2</div>
-          <div style={styles.acCta}>Учить →</div>
+        <div style={styles.ctaArrow}>→</div>
+      </div>
+
+      {/* Stats grid */}
+      <div style={styles.statsGrid}>
+        <div style={styles.statCard}>
+          <div style={{ ...styles.statNumber, color: 'var(--accent)' }}>{wordsLearned}</div>
+          <div style={styles.statLabel}>выучено слов</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statNumber}>{totalReviews}</div>
+          <div style={styles.statLabel}>повторений</div>
+        </div>
+        <div style={styles.statCard}>
+          <div style={styles.statNumber}>{xp}</div>
+          <div style={styles.statLabel}>опыта (XP)</div>
         </div>
       </div>
 
-      <div className="section-label">Последние слова</div>
-
-      <div style={styles.wordRows}>
-        {RECENT_WORDS.map((w) => (
-          <div key={w.char} style={styles.wordRow}>
-            <div style={{ ...styles.wrChar, color: w.tone === 2 ? 'var(--tone-2)' : w.tone === 3 ? 'var(--tone-3)' : w.tone === 4 ? 'var(--tone-4)' : 'var(--tone-1)' }}>
-              {w.char}
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={styles.wrPinyin}>{w.pinyinRaw}</div>
-              <div style={styles.wrTranslation}>{w.translation}</div>
-            </div>
-            <span className={`badge ${STATUS_MAP[w.status].className}`}>
-              {STATUS_MAP[w.status].label}
-            </span>
+      {/* Today's progress ring */}
+      <div style={styles.progressSection}>
+        <div className="section-label">Прогресс за сегодня</div>
+        <div style={styles.progressRow}>
+          <CircularProgress value={totalReviews} max={Math.max(totalReviews, 20)} size={88} strokeWidth={5} />
+          <div style={styles.progressInfo}>
+            <div style={styles.progressInfoNumber}>{wordsDueToday}</div>
+            <div style={styles.progressInfoLabel}>слов к повторению</div>
+            {wordsDueToday > 0 && (
+              <button style={styles.startSmallBtn} onClick={() => navigate('/study')}>
+                Начать →
+              </button>
+            )}
           </div>
-        ))}
+        </div>
       </div>
+
+      {/* Recent words */}
+      {recentWords.length > 0 && (
+        <>
+          <div className="section-label">Последние слова</div>
+          <div style={styles.wordRows}>
+            {recentWords.map((w: any) => (
+              <div key={w.id} style={styles.wordRow}>
+                <div style={styles.wrChar}>{w.character}</div>
+                <div style={{ flex: 1 }}>
+                  <PinyinDisplay pinyin={w.pinyin} />
+                  <div style={styles.wrTranslation}>{w.translation}</div>
+                </div>
+                <Badge status={w.status ?? 'new'} />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {isLoading && (
+        <div style={styles.loading}>
+          <span className="spinner" />
+        </div>
+      )}
     </div>
   );
 }
@@ -89,7 +157,7 @@ const styles: Record<string, React.CSSProperties> = {
   streak: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
     background: 'var(--tone-3-bg)',
     border: '1px solid rgba(251,191,36,0.2)',
     borderRadius: 20,
@@ -98,40 +166,103 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     color: 'var(--tone-3)',
     marginBottom: 18,
+    animation: 'glow-pulse 2s ease-in-out infinite',
   },
-  actionGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: 9,
-    marginBottom: 20,
+  flame: {
+    fontSize: 16,
+    filter: 'drop-shadow(0 0 6px rgba(255,183,77,0.6))',
   },
-  actionCard: {
-    borderRadius: 12,
-    padding: 17,
+  streakCount: {
+    fontSize: 14,
+    fontWeight: 700,
+  },
+  streakLabel: {
+    opacity: 0.7,
+  },
+  ctaCard: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    background: 'var(--accent)',
+    borderRadius: 14,
+    padding: '16px 18px',
     cursor: 'pointer',
-    border: '1px solid transparent',
+    marginBottom: 18,
+    transition: 'transform 0.15s, box-shadow 0.15s',
   },
-  acLabel: {
-    fontSize: 10,
-    textTransform: 'uppercase',
-    letterSpacing: '0.1em',
-    opacity: 0.55,
-    marginBottom: 5,
+  ctaContent: {},
+  ctaLabel: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: '#fff',
   },
-  acNumber: {
-    fontSize: 33,
+  ctaSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
+  },
+  ctaArrow: {
+    fontSize: 20,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: 8,
+    marginBottom: 18,
+  },
+  statCard: {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 12,
+    padding: '12px 8px',
+    textAlign: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
     fontWeight: 600,
     lineHeight: 1,
   },
-  acUnit: {
+  statLabel: {
+    fontSize: 10,
+    color: 'var(--text-muted)',
+    marginTop: 4,
+  },
+  progressSection: {
+    marginBottom: 18,
+  },
+  progressRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 12,
+    padding: 14,
+  },
+  progressInfo: {
+    flex: 1,
+  },
+  progressInfoNumber: {
+    fontSize: 28,
+    fontWeight: 600,
+    lineHeight: 1,
+  },
+  progressInfoLabel: {
     fontSize: 11,
-    opacity: 0.55,
+    color: 'var(--text-secondary)',
     marginTop: 2,
   },
-  acCta: {
-    marginTop: 12,
+  startSmallBtn: {
+    marginTop: 8,
+    padding: '6px 14px',
+    background: 'var(--accent)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 8,
     fontSize: 12,
     fontWeight: 500,
+    cursor: 'pointer',
   },
   wordRows: {
     display: 'flex',
@@ -151,14 +282,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 23,
     width: 32,
     textAlign: 'center',
+    fontFamily: 'var(--font-cjk)',
     lineHeight: 1,
-  },
-  wrPinyin: {
-    fontSize: 11,
-    color: '#55576B',
-    marginBottom: 2,
   },
   wrTranslation: {
     fontSize: 13,
+    marginTop: 2,
+  },
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    padding: 20,
   },
 };
