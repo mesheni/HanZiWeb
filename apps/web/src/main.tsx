@@ -3,7 +3,13 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
+import { initDb } from './db/database';
+import { initSyncEngine } from './db/sync';
 import './styles/global.css';
+
+initDb().then(() => {
+  initSyncEngine();
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {

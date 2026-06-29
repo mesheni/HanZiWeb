@@ -9,6 +9,18 @@ import SessionComplete from '../components/SessionComplete';
 import { ProgressBar } from '../components/ui';
 import type { SrsRating } from '@hanzi/shared';
 
+function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
+  if ('caches' in window) {
+    cards.forEach((card) => {
+      if (card.word.audioUrl) {
+        caches.open('audio-cache').then((cache) => {
+          cache.add(card.word.audioUrl!).catch(() => {});
+        });
+      }
+    });
+  }
+}
+
 interface RatingOption {
   rating: SrsRating;
   label: string;
@@ -98,6 +110,13 @@ export default function StudyScreen() {
       }
     }
     return xp;
+  }, [cards]);
+
+  // Precache audio when cards load
+  useEffect(() => {
+    if (cards.length > 0) {
+      precacheAudioUrls(cards);
+    }
   }, [cards]);
 
   // При размонтировании сбрасываем стор

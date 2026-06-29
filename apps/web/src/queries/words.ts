@@ -1,5 +1,6 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client';
+import { getDb } from '../db/database';
 import type { Word, WordListItem, WordFilters, PaginatedResponse } from '@hanzi/shared';
 
 function buildWordParams(filters: Partial<WordFilters>): URLSearchParams {
@@ -21,9 +22,27 @@ type UseWordsFilters = Partial<WordFilters>;
 export function useWords(filters: UseWordsFilters = {}) {
   return useQuery({
     queryKey: ['words', filters],
-    queryFn: () => {
+    queryFn: async () => {
       const params = buildWordParams({ ...filters });
-      return apiGet<PaginatedResponse<WordListItem>>(`/words?${params.toString()}`);
+      const result = await apiGet<PaginatedResponse<WordListItem>>(`/words?${params.toString()}`);
+      const db = getDb();
+      if (db) {
+        for (const item of result.data) {
+          const w = item as any;
+          await db.words.upsert({
+            id: w.id,
+            character: w.character,
+            pinyin: w.pinyin,
+            translation: w.translation,
+            hskLevel: w.hskLevel,
+            audioUrl: w.audioUrl ?? null,
+            mnemonic: w.mnemonic ?? null,
+            createdAt: w.createdAt ?? new Date().toISOString(),
+            examples: w.examples ?? [],
+          });
+        }
+      }
+      return result;
     },
   });
 }
@@ -41,9 +60,27 @@ type WordInfiniteFilters = Partial<Omit<WordFilters, 'offset' | 'limit'>>;
 export function useInfiniteWords(filters: WordInfiniteFilters = {}) {
   return useInfiniteQuery({
     queryKey: ['words', 'infinite', filters],
-    queryFn: ({ pageParam }) => {
+    queryFn: async ({ pageParam }) => {
       const params = buildWordParams({ ...filters, ...pageParam });
-      return apiGet<PaginatedResponse<WordListItem>>(`/words?${params.toString()}`);
+      const result = await apiGet<PaginatedResponse<WordListItem>>(`/words?${params.toString()}`);
+      const db = getDb();
+      if (db) {
+        for (const item of result.data) {
+          const w = item as any;
+          await db.words.upsert({
+            id: w.id,
+            character: w.character,
+            pinyin: w.pinyin,
+            translation: w.translation,
+            hskLevel: w.hskLevel,
+            audioUrl: w.audioUrl ?? null,
+            mnemonic: w.mnemonic ?? null,
+            createdAt: w.createdAt ?? new Date().toISOString(),
+            examples: w.examples ?? [],
+          });
+        }
+      }
+      return result;
     },
     initialPageParam: { offset: 0, limit: 20 } satisfies PageParam,
     getNextPageParam: (lastPage, _allPages, lastPageParam) => {

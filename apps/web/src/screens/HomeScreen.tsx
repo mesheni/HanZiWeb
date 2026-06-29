@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Download } from 'lucide-react';
 import { useDashboard } from '../queries/stats';
 import { useWords } from '../queries/words';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
+import { getDb } from '../db/database';
 import Badge from '../components/ui/Badge';
 import { PinyinDisplay } from '../utils/toneColors';
 
@@ -35,9 +39,39 @@ function CircularProgress({ value, max = 100, size = 100, strokeWidth = 6 }: { v
 
 export default function HomeScreen() {
   const navigate = useNavigate();
+  const isOnline = useOnlineStatus();
   const { data: dashboard, isLoading } = useDashboard();
   const { data: recentData } = useWords({ limit: 5 });
   const recentWords = recentData?.data ?? [];
+  const [dlState, setDlState] = useState<'idle' | 'loading' | 'done'>('idle');
+
+  const handleDownloadOffline = async () => {
+    setDlState('loading');
+    try {
+      const db = getDb();
+      if (!db) return;
+      const res = await fetch('/api/words?limit=1000');
+      const json = await res.json();
+      const words = json.data?.data ?? [];
+      for (const w of words) {
+        await db.words.upsert({
+          id: w.id,
+          character: w.character,
+          pinyin: w.pinyin,
+          translation: w.translation,
+          hskLevel: w.hskLevel,
+          audioUrl: w.audioUrl,
+          mnemonic: w.mnemonic,
+          createdAt: w.createdAt,
+          examples: w.examples ?? [],
+        });
+      }
+      setDlState('done');
+      setTimeout(() => setDlState('idle'), 3000);
+    } catch {
+      setDlState('idle');
+    }
+  };
 
   const streak = dashboard?.streak ?? 0;
   const wordsDueToday = dashboard?.wordsDueToday ?? 0;
@@ -126,6 +160,33 @@ export default function HomeScreen() {
             ))}
           </div>
         </>
+      )}
+
+      {/* Offline download */}
+      {isOnline && (
+        <button
+          onClick={handleDownloadOffline}
+          disabled={dlState === 'loading'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginTop: 16,
+            padding: '10px 16px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 10,
+            cursor: dlState === 'loading' ? 'default' : 'pointer',
+            fontSize: 13,
+            width: '100%',
+            opacity: dlState === 'done' ? 0.6 : 1,
+          }}
+        >
+          <Download size={16} />
+          {dlState === 'idle' && 'Скачать офлайн-пакет'}
+          {dlState === 'loading' && 'Загрузка...'}
+          {dlState === 'done' && 'Готово'}
+        </button>
       )}
 
       {isLoading && (

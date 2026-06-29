@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import { useStartSession, useRecordAnswer } from '../queries/sessions';
 import { useStudyStore } from '../stores/studyStore';
 import { useToastStore } from '../stores/toastStore';
+import { getDb } from '../db/database';
+import { getSyncEngine } from '../db/sync';
+import { recalcFsrsLocally } from '../db/fsrs';
 import type { SrsRating } from '@hanzi/shared';
 
 /**
@@ -51,6 +54,39 @@ export function useStudySession(deckId?: string) {
     // Optimistic update: сразу помечаем карточку отвеченной и переходим к следующей
     store.rateCard(rating);
     store.nextCard();
+
+    // Сохраняем ответ локально (RxDB) + в очередь синхронизации
+    const db = getDb();
+    if (db) {
+      db.progress.findOne({ selector: { wordId: card.word.id } }).exec().then((existing) => {
+        const currentState = (existing?.state as any) ?? 'new';
+        const currentStability = (existing?.stability as number) ?? 0;
+        const currentDifficulty = (existing?.difficulty as number) ?? 0;
+        let currentReps = (existing?.reps as number) ?? 0;
+
+        const fsrs = recalcFsrsLocally(rating, currentStability, currentDifficulty, currentState);
+
+        db.progress.upsert({
+          id: existing?.id ?? crypto.randomUUID(),
+          userId: '',
+          wordId: card.word.id,
+          state: fsrs.newState,
+          stability: fsrs.newStability,
+          difficulty: fsrs.newDifficulty,
+          reps: currentReps + 1,
+          dueDate: new Date(Date.now() + fsrs.intervalDays * 86400000).toISOString(),
+          lastReviewDate: new Date().toISOString(),
+        });
+      });
+
+      const sync = getSyncEngine();
+      if (sync) {
+        sync.enqueueChange('study_answer', {
+          wordId: card.word.id,
+          rating,
+        });
+      }
+    }
 
     // Фоновый запрос на сервер
     answerMutation.mutate(

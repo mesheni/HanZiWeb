@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, BarChart3, Settings, LogOut } from 'lucide-react';
+import { Home, BookOpen, Library, BarChart3, Settings, LogOut, Wifi, WifiOff } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import NavButton from './NavButton';
 
 const NAV_ITEMS = [
@@ -18,6 +19,7 @@ export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
+  const isOnline = useOnlineStatus();
 
   const isActive = (route: string) => location.pathname === route;
 
@@ -60,6 +62,24 @@ export default function Sidebar() {
         active={false}
         onClick={() => logout()}
       />
+
+      {/* Online indicator */}
+      <div
+        title={isOnline ? 'Онлайн' : 'Офлайн'}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          marginTop: 6,
+          color: isOnline ? '#22c55e' : '#ef4444',
+          background: isOnline ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+        }}
+      >
+        {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
+      </div>
     </aside>
   );
 }

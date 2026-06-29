@@ -12,6 +12,7 @@ import { sessionsRoutes } from './modules/sessions/sessions.routes.js';
 import { statsRoutes } from './modules/stats/stats.routes.js';
 import { decksRoutes } from './modules/decks/decks.routes.js';
 import { audioRoutes } from './modules/audio/audio.routes.js';
+import { syncRoutes } from './modules/sync/sync.routes.js';
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
 
@@ -102,6 +103,7 @@ async function main() {
     await child.register(statsRoutes, { prefix: '/stats' });
     await child.register(decksRoutes, { prefix: '/decks' });
     await child.register(audioRoutes, { prefix: '/audio' });
+    await child.register(syncRoutes, { prefix: '/sync' });
   }, { prefix: '/api' });
 
   // ── Global error handler ──────────────────────────────────────────
