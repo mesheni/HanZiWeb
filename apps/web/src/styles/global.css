@@ -625,3 +625,475 @@ input {
   width: 100%;
   max-width: 320px;
 }
+
+/* ===== Flashcard practice button ===== */
+.flashcard-practice-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-hover);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.flashcard-practice-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--border-accent);
+}
+
+/* ===== Handwriting Practice ===== */
+.handwriting-practice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+}
+
+.handwriting-canvas {
+  width: 300px;
+  height: 300px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.handwriting-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: -60px;
+}
+
+.handwriting-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 400px;
+}
+
+.hw-btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--border-default);
+}
+
+.hw-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.hw-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.hw-btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.hw-btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.hw-btn-outline {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.hw-btn-outline:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ===== Handwriting Screen ===== */
+.handwriting-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.handwriting-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.hw-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.hw-back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.handwriting-title {
+  font-size: 17px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.hw-upgrade-badge {
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.handwriting-search {
+  position: relative;
+  margin: 12px 18px;
+  flex-shrink: 0;
+}
+
+.hw-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+
+.hw-search-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.hw-search-input:focus {
+  border-color: var(--accent);
+}
+
+.hw-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.handwriting-word-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 18px 18px;
+}
+
+.hw-word-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.hw-word-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.hw-word-char {
+  font-family: var(--font-cjk);
+  font-size: 28px;
+  font-weight: 300;
+  width: 44px;
+  text-align: center;
+}
+
+.hw-word-pinyin {
+  font-size: 13px;
+  color: var(--text-secondary);
+  width: 80px;
+}
+
+.hw-word-translation {
+  font-size: 13px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.hw-empty {
+  text-align: center;
+  color: var(--text-muted);
+  margin-top: 40px;
+  font-size: 14px;
+}
+
+.handwriting-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.hw-close-char {
+  margin-top: 12px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.hw-close-char:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ===== Pricing Screen ===== */
+.pricing-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.pricing-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.pricing-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.pricing-back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.pricing-title {
+  font-size: 17px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.pricing-notice {
+  margin: 12px 18px 0;
+  padding: 10px 14px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 10px;
+  color: #fbbf24;
+  font-size: 13px;
+  text-align: center;
+}
+
+.pricing-cards {
+  display: flex;
+  gap: 16px;
+  padding: 24px 18px;
+  justify-content: center;
+}
+
+.pricing-card {
+  flex: 1;
+  max-width: 280px;
+  padding: 24px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.pricing-card-pro {
+  border-color: var(--accent);
+  position: relative;
+}
+
+.pricing-card-popular {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.pricing-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.pricing-card-price {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pricing-card-period {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  margin-bottom: 20px;
+}
+
+.pricing-card-features {
+  list-style: none;
+  padding: 0;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.pricing-feature {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.pricing-feature-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.pricing-card-badge {
+  padding: 8px 18px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pricing-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+
+.pricing-btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pricing-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.pricing-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pricing-error {
+  color: var(--tone-4);
+  font-size: 12px;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.pricing-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  text-align: center;
+  flex: 1;
+}
+
+.pricing-success-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.pricing-success h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.pricing-success p {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}

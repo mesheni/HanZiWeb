@@ -8,6 +8,8 @@ export const UserSchema = z.object({
   email: z.string().email(),
   xp: z.number().int().nonnegative().default(0),
   currentStreak: z.number().int().nonnegative().default(0),
+  subscriptionTier: z.enum(['free', 'pro']).default('free'),
+  subscriptionExpiresAt: z.string().datetime().nullable().default(null),
   lastActiveDate: z.string().datetime().nullable().default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

@@ -41,7 +41,7 @@ export async function registerUser(input: Register) {
   const refreshToken = generateRefreshToken(user.id, 0);
 
   return {
-    user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
+    user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak, subscriptionTier: user.subscriptionTier, subscriptionExpiresAt: user.subscriptionExpiresAt?.toISOString() ?? null },
     accessToken,
     refreshToken,
   };
@@ -65,7 +65,7 @@ export async function loginUser(input: Login) {
   const refreshToken = generateRefreshToken(user.id, user.tokenVersion);
 
   return {
-    user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
+    user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak, subscriptionTier: user.subscriptionTier, subscriptionExpiresAt: user.subscriptionExpiresAt?.toISOString() ?? null },
     accessToken,
     refreshToken,
   };
@@ -99,7 +99,7 @@ export async function refreshTokens(token: string) {
   const refreshToken = generateRefreshToken(user.id, updated.tokenVersion);
 
   return {
-    user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
+    user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak, subscriptionTier: user.subscriptionTier, subscriptionExpiresAt: user.subscriptionExpiresAt?.toISOString() ?? null },
     accessToken,
     refreshToken,
   };

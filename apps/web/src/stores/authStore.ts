@@ -5,6 +5,8 @@ interface User {
   email: string;
   xp: number;
   currentStreak: number;
+  subscriptionTier: 'free' | 'pro';
+  subscriptionExpiresAt: string | null;
 }
 
 interface AuthState {
@@ -16,6 +18,13 @@ interface AuthState {
   login: (user: User, accessToken: string) => void;
   logout: () => void;
   setAccessToken: (token: string) => void;
+}
+
+export function isPro(user: User | null): boolean {
+  if (!user) return false;
+  if (user.subscriptionTier !== 'pro') return false;
+  if (user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date()) return false;
+  return true;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({

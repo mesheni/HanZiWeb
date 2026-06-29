@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, BarChart3, Settings, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Crown } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import NavButton from './NavButton';
@@ -8,10 +8,12 @@ const NAV_ITEMS = [
   { id: 'home', icon: Home, label: 'Главная', route: '/' },
   { id: 'study', icon: BookOpen, label: 'Учить', route: '/study' },
   { id: 'library', icon: Library, label: 'Слова', route: '/library' },
+  { id: 'handwriting', icon: PenLine, label: 'Письмо', route: '/handwriting' },
 ] as const;
 
 const BOTTOM_ITEMS = [
   { id: 'stats', icon: BarChart3, label: 'Итоги', route: '/stats' },
+  { id: 'pricing', icon: Crown, label: 'Pro', route: '/pricing' },
   { id: 'settings', icon: Settings, label: 'Настройки', route: '/settings' },
 ] as const;
 

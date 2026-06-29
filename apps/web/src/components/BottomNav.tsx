@@ -1,10 +1,11 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, BarChart3 } from 'lucide-react';
+import { Home, BookOpen, Library, PenLine, BarChart3 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'home', icon: Home, label: 'Главная', route: '/' },
   { id: 'study', icon: BookOpen, label: 'Учить', route: '/study' },
   { id: 'library', icon: Library, label: 'Слова', route: '/library' },
+  { id: 'handwriting', icon: PenLine, label: 'Письмо', route: '/handwriting' },
   { id: 'stats', icon: BarChart3, label: 'Итоги', route: '/stats' },
 ] as const;
 

@@ -11,12 +11,15 @@ model User {
   id             String              @id @default(uuid())
   email          String              @unique
   passwordHash   String
-  xp             Int                 @default(0)
-  currentStreak  Int                 @default(0)
-  tokenVersion   Int                 @default(0)
-  lastActiveDate DateTime?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  xp                    Int                 @default(0)
+  currentStreak         Int                 @default(0)
+  tokenVersion          Int                 @default(0)
+  subscriptionTier      String              @default("free")
+  subscriptionExpiresAt DateTime?
+  stripeCustomerId      String?
+  lastActiveDate        DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   progress       UserWordProgress[]
   sessions       Session[]

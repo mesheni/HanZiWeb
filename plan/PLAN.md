@@ -254,16 +254,6 @@
 - [ ] **6.2.4** — Добавить кнопку "Потренировать написание" на оборотной стороне карточки (Flashcard back).
 - [ ] **6.2.5** — Создать отдельную страницу `/handwriting` для углублённой практики.
 
-### 6.3 Интеграция Stripe (Pro-тариф)
-
-- [ ] **6.3.1** — Создать аккаунт Stripe. Получить API-ключи (publishable + secret). Настроить webhook endpoint.
-- [ ] **6.3.2** — На фронте: создать страницу `/pricing` с тарифами (Free: базовые функции, Pro: безлимитные колоды, расширенная статистика, handwriting).
-- [ ] **6.3.3** — Реализовать Stripe Checkout Session: при клике "Upgrade to Pro" → запрос на бэкенд (`POST /billing/checkout`) → создание сессии → редирект на Stripe.
-- [ ] **6.3.4** — На бэкенде: реализовать webhook `POST /billing/webhook` для событий `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.
-- [ ] **6.3.5** — Добавить поле `subscription_tier` и `subscription_expires_at` в таблицу `Users`.
-- [ ] **6.3.6** — Создать middleware `requirePro` для pro-фич. Применять к эндпоинтам handwriting и расширенной статистики.
-- [ ] **6.3.7** — На фронте: проверять tier пользователя, скрывать/показывать Pro-фичи, показывать баннер "Upgrade to Pro" на залоченных фичах.
-
 ---
 
 ## Финальная проверка (на каждом этапе)

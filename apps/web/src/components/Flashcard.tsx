@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Volume2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Volume2, PenLine } from 'lucide-react';
 import { PinyinDisplay } from '../utils/toneColors';
 import { cn } from '../utils/cn';
+import { useAuthStore, isPro } from '../stores/authStore';
 import type { Word } from '@hanzi/shared';
 
 type Direction = 'enter-right' | 'exit-left' | 'idle';
@@ -35,6 +37,8 @@ export default function Flashcard({
   audioLoading,
   hasAudio,
 }: FlashcardProps) {
+  const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const [direction, setDirection] = useState<Direction>('idle');
   const prevWordIdRef = useRef<string | null>(word.id);
 
@@ -102,6 +106,21 @@ export default function Flashcard({
               <Volume2 size={14} />
             </div>
           )}
+
+          {/* Кнопка "Потренировать написание" */}
+          <button
+            className="flashcard-practice-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              const path = `/handwriting?char=${encodeURIComponent(word.character)}`;
+              navigate(path);
+            }}
+            aria-label="Потренировать написание"
+            title={!isPro(user) ? 'Доступно в Pro' : 'Потренировать написание'}
+          >
+            <PenLine size={14} />
+            <span>{!isPro(user) ? 'Pro' : 'Писать'}</span>
+          </button>
         </div>
       </div>
     </div>

@@ -13,6 +13,8 @@ import { statsRoutes } from './modules/stats/stats.routes.js';
 import { decksRoutes } from './modules/decks/decks.routes.js';
 import { audioRoutes } from './modules/audio/audio.routes.js';
 import { syncRoutes } from './modules/sync/sync.routes.js';
+import { billingRoutes } from './modules/billing/billing.routes.js';
+import proPlugin from './plugins/pro.js';
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
 
@@ -30,6 +32,7 @@ async function main() {
   await app.register(cookie);
   await app.register(helmet);
   await app.register(authPlugin);
+  await app.register(proPlugin);
 
   // Initialize Redis (lazy-connect — used by rate limit, health check)
   const redis = getRedis();
@@ -104,6 +107,7 @@ async function main() {
     await child.register(decksRoutes, { prefix: '/decks' });
     await child.register(audioRoutes, { prefix: '/audio' });
     await child.register(syncRoutes, { prefix: '/sync' });
+    await child.register(billingRoutes, { prefix: '/billing' });
   }, { prefix: '/api' });
 
   // ── Global error handler ──────────────────────────────────────────

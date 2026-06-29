@@ -8,6 +8,8 @@ import LibraryScreen from './screens/LibraryScreen';
 import StatsScreen from './screens/StatsScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import HandwritingScreen from './screens/HandwritingScreen';
+import PricingScreen from './screens/PricingScreen';
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -42,6 +44,8 @@ export default function App() {
           <Route path="/study" element={<StudyScreen />} />
           <Route path="/library" element={<LibraryScreen />} />
           <Route path="/stats" element={<StatsScreen />} />
+          <Route path="/handwriting" element={<HandwritingScreen />} />
+          <Route path="/pricing" element={<PricingScreen />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
