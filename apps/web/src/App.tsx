@@ -10,7 +10,7 @@ import StatsScreen from './screens/StatsScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import HandwritingScreen from './screens/HandwritingScreen';
-import PricingScreen from './screens/PricingScreen';
+import DonationScreen from './screens/DonationScreen';
 import SettingsScreen from './screens/SettingsScreen';
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
@@ -53,7 +53,7 @@ export default function App() {
           <Route path="/library" element={<LibraryScreen />} />
           <Route path="/stats" element={<StatsScreen />} />
           <Route path="/handwriting" element={<HandwritingScreen />} />
-          <Route path="/pricing" element={<PricingScreen />} />
+          <Route path="/donate" element={<DonationScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
         </Route>
 

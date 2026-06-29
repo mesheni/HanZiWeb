@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Crown } from 'lucide-react';
+import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Heart } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
@@ -12,7 +12,7 @@ const NAV_ITEMS = [
 
 const BOTTOM_ITEMS = [
   { id: 'stats', icon: BarChart3, label: 'Итоги', route: '/stats' },
-  { id: 'pricing', icon: Crown, label: 'Pro', route: '/pricing' },
+  { id: 'donate', icon: Heart, label: 'Помочь', route: '/donate' },
   { id: 'settings', icon: Settings, label: 'Настройки', route: '/settings' },
 ] as const;
 
@@ -59,11 +59,7 @@ export default function Sidebar() {
             onClick={() => navigate(item.route)}
             aria-label={item.label}
           >
-            {item.id === 'pricing' ? (
-              <span className="sidebar-pro-badge">PRO</span>
-            ) : (
-              <item.icon size={20} />
-            )}
+            <item.icon size={20} />
             <span>{item.label}</span>
           </button>
         ))}

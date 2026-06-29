@@ -21,13 +21,7 @@ const envSchema = z.object({
   // В dev это обычно http://localhost:3001/audio/files
   AUDIO_PUBLIC_BASE_URL: z.string().default('http://localhost:3001/audio/files'),
 
-  // --- Stripe (Pro-тариф) ---
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PUBLISHABLE_KEY: z.string().optional(),
-  // URL для редиректа после Stripe Checkout
-  STRIPE_SUCCESS_URL: z.string().default('http://localhost:5173/pricing?success=true'),
-  STRIPE_CANCEL_URL: z.string().default('http://localhost:5173/pricing?canceled=true'),
+
 });
 
 export type Config = z.infer<typeof envSchema>;

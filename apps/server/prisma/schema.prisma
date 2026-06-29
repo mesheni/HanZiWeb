@@ -14,9 +14,6 @@ model User {
   xp                    Int                 @default(0)
   currentStreak         Int                 @default(0)
   tokenVersion          Int                 @default(0)
-  subscriptionTier      String              @default("free")
-  subscriptionExpiresAt DateTime?
-  stripeCustomerId      String?
   lastActiveDate        DateTime?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt

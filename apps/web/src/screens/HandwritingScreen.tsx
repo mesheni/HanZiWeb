@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 import { useWords } from '@/queries/words';
 import HandwritingPractice from '@/components/HandwritingPractice';
-import { useAuthStore, isPro } from '@/stores/authStore';
 
 export default function HandwritingScreen() {
   const navigate = useNavigate();
@@ -11,7 +10,6 @@ export default function HandwritingScreen() {
   const initialChar = searchParams.get('char') || '';
   const [selectedChar, setSelectedChar] = useState(initialChar);
   const [searchQuery, setSearchQuery] = useState('');
-  const user = useAuthStore((s) => s.user);
 
   const { data: words } = useWords({ search: searchQuery || undefined });
 
@@ -22,11 +20,6 @@ export default function HandwritingScreen() {
           <ArrowLeft size={20} />
         </button>
         <h2 className="handwriting-title">Практика письма</h2>
-        {!isPro(user) && (
-          <button className="hw-upgrade-badge" onClick={() => navigate('/pricing')}>
-            Pro
-          </button>
-        )}
       </header>
 
       <div className="handwriting-search">

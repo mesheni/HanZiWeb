@@ -23,8 +23,7 @@ export const AuthResponseSchema = z.object({
     email: z.string().email(),
     xp: z.number().int().nonnegative(),
     currentStreak: z.number().int().nonnegative(),
-    subscriptionTier: z.enum(['free', 'pro']).default('free'),
-    subscriptionExpiresAt: z.string().nullable().default(null),
+
   }),
   accessToken: z.string(),
   /** access-токен живёт 15 минут */
