@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, Input, Card } from '@/components/ui';
 import { apiPost } from '@/api/client';
@@ -13,9 +13,12 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const submitLock = useRef(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading || submitLock.current) return;
+    submitLock.current = true;
     setError('');
     setLoading(true);
 
@@ -28,6 +31,7 @@ export default function LoginScreen() {
       setError(err instanceof Error ? err.message : 'Ошибка входа');
     } finally {
       setLoading(false);
+      submitLock.current = false;
     }
   };
 

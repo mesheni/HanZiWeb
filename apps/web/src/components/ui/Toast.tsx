@@ -30,19 +30,19 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <div
       className={cn(
-        'flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-sm transition-all duration-300',
+        'flex items-center gap-3 px-5 py-4 rounded-2xl border shadow-lg backdrop-blur-sm transition-all duration-300',
         visible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
         typeStyles[toast.type],
       )}
     >
-      <Icon size={16} className="shrink-0" />
-      <span className="text-sm text-text-primary flex-1">{toast.message}</span>
+      <Icon size={18} className="shrink-0" />
+      <span className="text-sm text-text-primary flex-1 leading-snug">{toast.message}</span>
       <button
         onClick={() => removeToast(toast.id)}
-        className="shrink-0 p-0.5 rounded text-text-muted hover:text-text-primary transition-colors"
+        className="shrink-0 p-1 rounded-lg text-text-muted hover:text-text-primary transition-colors"
         aria-label="Закрыть"
       >
-        <X size={14} />
+        <X size={15} />
       </button>
     </div>
   );
@@ -54,7 +54,7 @@ export default function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 max-w-sm">
+    <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-3" style={{ width: 'min(92vw, 420px)' }}>
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} />
       ))}

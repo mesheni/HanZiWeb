@@ -1097,3 +1097,173 @@ input {
   color: var(--text-secondary);
   margin-bottom: 24px;
 }
+
+/* ===================================================================
+   SIDEBAR / DESKTOP NAVIGATION
+   Структура компонента:
+   <div class="app-layout">
+     <aside class="sidebar">
+       <div class="sidebar-logo">汉</div>
+       <nav class="sidebar-nav">
+         <button class="sidebar-btn active">
+           <svg .../>
+           <span>Главная</span>
+         </button>
+         ...
+       </nav>
+       <div class="sidebar-divider"></div>
+       <div class="sidebar-bottom">
+         <button class="sidebar-btn">...</button>
+       </div>
+     </aside>
+     <main class="app-main">...</main>
+   </div>
+   =================================================================== */
+
+/* Корневой лэйаут — не даёт контенту уплывать */
+.app-layout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;         /* предотвращает переполнение flex-children */
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ===== Сайдбар ===== */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 72px;
+  height: 100%;           /* держится на всю высоту родителя */
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-default);
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Логотип */
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60px;
+  font-family: var(--font-cjk);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* Основная группа ссылок */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 8px 8px;
+  flex: 1;
+}
+
+/* Нижняя группа (Итоги, Pro, Настройки, Выйти) */
+.sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 16px;
+}
+
+/* Разделитель */
+.sidebar-divider {
+  height: 1px;
+  margin: 4px 12px;
+  background: var(--border-default);
+  flex-shrink: 0;
+}
+
+/* Кнопка навигации */
+.sidebar-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* Иконка внутри кнопки */
+.sidebar-btn svg,
+.sidebar-btn .sidebar-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* Метка под иконкой */
+.sidebar-btn span {
+  font-size: 10px;
+  font-weight: 500;
+  color: inherit;
+  line-height: 1;
+}
+
+/* Hover */
+.sidebar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Активный пункт */
+.sidebar-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* Вертикальная черта слева у активного пункта */
+.sidebar-btn.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 3px 3px 0;
+}
+
+/* Pro-значок */
+.sidebar-pro-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  margin-top: 1px;
+}

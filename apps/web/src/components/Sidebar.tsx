@@ -2,7 +2,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Crown } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
-import NavButton from './NavButton';
 
 const NAV_ITEMS = [
   { id: 'home', icon: Home, label: 'Главная', route: '/' },
@@ -26,61 +25,76 @@ export default function Sidebar() {
   const isActive = (route: string) => location.pathname === route;
 
   return (
-    <aside className="w-[72px] bg-bg-secondary border-r border-border-default flex flex-col items-center py-[18px] flex-shrink-0">
+    <aside className="sidebar">
       <div
         onClick={() => navigate('/')}
-        className="text-[23px] text-accent font-bold mb-5 leading-none cursor-pointer select-none"
+        className="sidebar-logo cursor-pointer select-none"
         role="button"
         tabIndex={0}
       >
         汉
       </div>
 
-      {NAV_ITEMS.map((item) => (
-        <NavButton
-          key={item.id}
-          icon={item.icon}
-          label={item.label}
-          active={isActive(item.route)}
-          onClick={() => navigate(item.route)}
-        />
-      ))}
+      <nav className="sidebar-nav">
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            className={`sidebar-btn${isActive(item.route) ? ' active' : ''}`}
+            onClick={() => navigate(item.route)}
+            aria-label={item.label}
+          >
+            <item.icon size={20} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
 
-      <div className="flex-1" />
+      <div className="sidebar-divider" />
 
-      {BOTTOM_ITEMS.map((item) => (
-        <NavButton
-          key={item.id}
-          icon={item.icon}
-          label={item.label}
-          active={isActive(item.route)}
-          onClick={() => navigate(item.route)}
-        />
-      ))}
+      <div className="sidebar-bottom">
+        {BOTTOM_ITEMS.map((item) => (
+          <button
+            key={item.id}
+            className={`sidebar-btn${isActive(item.route) ? ' active' : ''}`}
+            onClick={() => navigate(item.route)}
+            aria-label={item.label}
+          >
+            {item.id === 'pricing' ? (
+              <span className="sidebar-pro-badge">PRO</span>
+            ) : (
+              <item.icon size={20} />
+            )}
+            <span>{item.label}</span>
+          </button>
+        ))}
 
-      <NavButton
-        icon={LogOut}
-        label="Выйти"
-        active={false}
-        onClick={() => logout()}
-      />
+        <button
+          className="sidebar-btn"
+          onClick={() => logout()}
+          aria-label="Выйти"
+        >
+          <LogOut size={20} />
+          <span>Выйти</span>
+        </button>
+      </div>
 
-      {/* Online indicator */}
       <div
         title={isOnline ? 'Онлайн' : 'Офлайн'}
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          marginTop: 6,
+          width: 42,
+          height: 42,
+          borderRadius: 12,
+          marginTop: 10,
+          marginLeft: 'auto',
+          marginRight: 'auto',
           color: isOnline ? '#22c55e' : '#ef4444',
           background: isOnline ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
         }}
       >
-        {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
+        {isOnline ? <Wifi size={17} /> : <WifiOff size={17} />}
       </div>
     </aside>
   );

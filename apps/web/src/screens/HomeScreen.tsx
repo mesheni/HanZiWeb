@@ -49,10 +49,32 @@ export default function HomeScreen() {
     setDlState('loading');
     try {
       const db = getDb();
-      if (!db) return;
-      const res = await fetch('/api/words?limit=1000');
-      const json = await res.json();
-      const words = json.data?.data ?? [];
+      if (!db) {
+        setDlState('idle');
+        return;
+      }
+      const words: any[] = [];
+      let offset = 0;
+      const limit = 100;
+
+      while (true) {
+        const res = await fetch(`/api/words?limit=${limit}&offset=${offset}`, {
+          credentials: 'include',
+        });
+        const json = await res.json();
+        const pageWords = json.data ?? [];
+        words.push(...pageWords);
+
+        if (pageWords.length < limit || !json.pagination?.total) {
+          break;
+        }
+
+        offset += limit;
+        if (offset >= json.pagination.total) {
+          break;
+        }
+      }
+
       for (const w of words) {
         await db.words.upsert({
           id: w.id,
@@ -60,9 +82,9 @@ export default function HomeScreen() {
           pinyin: w.pinyin,
           translation: w.translation,
           hskLevel: w.hskLevel,
-          audioUrl: w.audioUrl,
-          mnemonic: w.mnemonic,
-          createdAt: w.createdAt,
+          audioUrl: w.audioUrl ?? null,
+          mnemonic: w.mnemonic ?? null,
+          createdAt: w.createdAt ?? new Date().toISOString(),
           examples: w.examples ?? [],
         });
       }
@@ -108,6 +130,21 @@ export default function HomeScreen() {
           <div style={styles.ctaSub}>{wordsDueToday > 0 ? `${wordsDueToday} слов на сегодня` : 'Изучать новые слова'}</div>
         </div>
         <div style={styles.ctaArrow}>→</div>
+      </div>
+
+      <div style={styles.modeGrid}>
+        <button style={styles.modeCard} onClick={() => navigate('/study?mode=review')}>
+          <div style={styles.modeTitle}>Повторить сегодня</div>
+          <div style={styles.modeText}>Карточки с dueDate &lt;= now</div>
+        </button>
+        <button style={styles.modeCard} onClick={() => navigate('/study?mode=learn')}>
+          <div style={styles.modeTitle}>Учить новые</div>
+          <div style={styles.modeText}>Только новые слова без повтора</div>
+        </button>
+        <button style={styles.modeCard} onClick={() => navigate('/study?mode=mixed')}>
+          <div style={styles.modeTitle}>Смешанная сессия</div>
+          <div style={styles.modeText}>Новые слова + повторение</div>
+        </button>
       </div>
 
       {/* Stats grid */}
@@ -265,6 +302,29 @@ const styles: Record<string, React.CSSProperties> = {
   ctaArrow: {
     fontSize: 20,
     color: 'rgba(255,255,255,0.7)',
+  },
+  modeGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(1, minmax(0, 1fr))',
+    gap: 8,
+    marginBottom: 18,
+  },
+  modeCard: {
+    textAlign: 'left',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 12,
+    padding: '12px 14px',
+    cursor: 'pointer',
+  },
+  modeTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    marginBottom: 3,
+  },
+  modeText: {
+    fontSize: 11,
+    color: 'var(--text-secondary)',
   },
   statsGrid: {
     display: 'grid',

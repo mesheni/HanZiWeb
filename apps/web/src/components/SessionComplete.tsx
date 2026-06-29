@@ -4,12 +4,14 @@ import { Trophy, Flame, Zap } from 'lucide-react';
 import { useConfetti } from '../hooks/useConfetti';
 import { useStreak } from '../queries/stats';
 import { Button } from './ui';
+import type { StudyMode } from '@hanzi/shared';
 
 interface SessionCompleteProps {
   total: number;
   correct: number;
   incorrect: number;
   xpEarned: number;
+  mode?: StudyMode;
 }
 
 /**
@@ -20,6 +22,7 @@ export default function SessionComplete({
   correct,
   incorrect,
   xpEarned,
+  mode = 'mixed',
 }: SessionCompleteProps) {
   const navigate = useNavigate();
   const fireConfetti = useConfetti();
@@ -79,7 +82,7 @@ export default function SessionComplete({
       </div>
 
       <div className="session-complete-buttons">
-        <Button variant="primary" size="lg" className="flex-1" onClick={() => navigate('/study')}>
+        <Button variant="primary" size="lg" className="flex-1" onClick={() => navigate(`/study?mode=${mode}`)}>
           Ещё сессия
         </Button>
         <Button variant="secondary" size="lg" className="flex-1" onClick={() => navigate('/')}>

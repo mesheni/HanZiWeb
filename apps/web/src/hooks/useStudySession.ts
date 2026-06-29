@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useStartSession, useRecordAnswer } from '../queries/sessions';
 import { useStudyStore } from '../stores/studyStore';
 import { useToastStore } from '../stores/toastStore';
@@ -6,7 +6,7 @@ import { useOnlineStatus } from './useOnlineStatus';
 import { getDb } from '../db/database';
 import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
-import type { SrsRating } from '@hanzi/shared';
+import type { SrsRating, StudyMode } from '@hanzi/shared';
 
 /**
  * Хук оркестрации учебной сессии:
@@ -17,35 +17,55 @@ import type { SrsRating } from '@hanzi/shared';
  *    откатом и toast-ом при ошибке;
  *  - предоставляет флаг isSessionComplete — все карточки пройдены.
  */
-export function useStudySession(deckId?: string) {
+export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {}) {
+  const { deckId, mode = 'mixed' } = input;
   const startMutation = useStartSession();
   const answerMutation = useRecordAnswer();
   const isOnline = useOnlineStatus();
 
-  const store = useStudyStore();
+  const startSession = useStudyStore((s) => s.startSession);
+  const cardsCount = useStudyStore((s) => s.cards.length);
+  const currentIndex = useStudyStore((s) => s.currentIndex);
   const addToast = useToastStore((s) => s.addToast);
+  const sessionKey = useMemo(() => `${deckId ?? 'all'}:${mode}`, [deckId, mode]);
 
   // Запоминаем предыдущий индекс для отката
   const prevIndexRef = useRef<number>(0);
+  const startedKeyRef = useRef<string | null>(null);
+  const inFlightKeyRef = useRef<string | null>(null);
+  const attemptedKeyRef = useRef<string | null>(null);
 
   // Старт сессии — один раз при монтировании
   useEffect(() => {
+    if (
+      startedKeyRef.current === sessionKey ||
+      inFlightKeyRef.current === sessionKey ||
+      attemptedKeyRef.current === sessionKey
+    ) {
+      return;
+    }
+
+    attemptedKeyRef.current = sessionKey;
+    inFlightKeyRef.current = sessionKey;
+
     startMutation.mutate(
-      { deckId, cardLimit: 20, includeNew: true },
+      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode },
       {
         onSuccess: (session) => {
-          store.startSession(session.cards, session.id);
+          startedKeyRef.current = sessionKey;
+          inFlightKeyRef.current = null;
+          startSession(session.cards, session.id);
         },
         onError: () => {
+          inFlightKeyRef.current = null;
           addToast('Не удалось начать сессию', 'error');
         },
       },
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [addToast, deckId, mode, sessionKey, startMutation, startSession]);
 
   const rateCard = (rating: SrsRating) => {
-    const { cards, currentIndex, sessionId } = store;
+    const { cards, currentIndex, sessionId } = useStudyStore.getState();
 
     const card = cards[currentIndex];
     if (!card || !sessionId) return;
@@ -54,8 +74,9 @@ export function useStudySession(deckId?: string) {
     prevIndexRef.current = currentIndex;
 
     // Optimistic update: сразу помечаем карточку отвеченной и переходим к следующей
-    store.rateCard(rating);
-    store.nextCard();
+    const studyStore = useStudyStore.getState();
+    studyStore.rateCard(rating);
+    studyStore.nextCard();
 
     // Сохраняем ответ локально (RxDB) + в очередь синхронизации
     const db = getDb();
@@ -128,7 +149,7 @@ export function useStudySession(deckId?: string) {
   };
 
   const isSessionComplete =
-    store.cards.length > 0 && store.currentIndex >= store.cards.length;
+    cardsCount > 0 && currentIndex >= cardsCount;
 
   return {
     isLoading: startMutation.isPending,

@@ -14,9 +14,13 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
   const { accessToken, setAccessToken, logout } = useAuthStore.getState();
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...options.headers,
   };
+
+  const hasBody = options.body !== undefined && options.body !== null;
+  if (hasBody && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (accessToken) {
     headers['Authorization'] = `Bearer ${accessToken}`;
@@ -25,6 +29,7 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
   let res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers,
+    credentials: 'include',
   });
 
   // 401 → пробуем refresh
@@ -40,7 +45,7 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
       if (newToken) {
         setAccessToken(newToken);
         headers['Authorization'] = `Bearer ${newToken}`;
-        res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+        res = await fetch(`${BASE_URL}${path}`, { ...options, headers, credentials: 'include' });
       }
     } else {
       logout();
@@ -59,6 +64,10 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
     throw new Error((json.error as Record<string, string>)?.message ?? `Request failed: ${res.status}`);
   }
 
+  if ('pagination' in json) {
+    return { data: json.data, pagination: json.pagination } as T;
+  }
+
   return json.data as T;
 }
 
@@ -75,7 +84,7 @@ export function apiGet<T>(path: string): Promise<T> {
 export function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return apiClient<T>(path, {
     method: 'POST',
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
 
@@ -85,7 +94,7 @@ export function apiPost<T>(path: string, body?: unknown): Promise<T> {
 export function apiPut<T>(path: string, body?: unknown): Promise<T> {
   return apiClient<T>(path, {
     method: 'PUT',
-    body: body ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 }
 

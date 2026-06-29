@@ -20,7 +20,7 @@ export async function getOverview(userId: string) {
   }
 
   const totalWords = Object.values(stateMap).reduce((a, b) => a + b, 0);
-  const learnedWords = (stateMap.GRADUATED ?? 0) + (stateMap.REVIEW ?? 0);
+  const learnedWords = (stateMap.graduated ?? 0) + (stateMap.review ?? 0);
   const avgRating = accuracy._avg.rating ?? 0;
   // Конвертируем средний рейтинг (1-4) в процент точности
   const accuracyPercent = avgRating > 0 ? Math.round((avgRating / 4) * 100) : 0;
@@ -34,10 +34,10 @@ export async function getOverview(userId: string) {
     learnedWords,
     accuracy: accuracyPercent,
     byState: {
-      new: stateMap.NEW ?? 0,
-      learning: stateMap.LEARNING ?? 0,
-      review: stateMap.REVIEW ?? 0,
-      graduated: stateMap.GRADUATED ?? 0,
+      new: stateMap.new ?? 0,
+      learning: stateMap.learning ?? 0,
+      review: stateMap.review ?? 0,
+      graduated: stateMap.graduated ?? 0,
     },
   };
 }
@@ -63,16 +63,16 @@ export async function getDashboard(userId: string) {
     stateMap[row.state] = row._count;
   }
 
-  const wordsLearned = (stateMap.GRADUATED ?? 0) + (stateMap.REVIEW ?? 0);
+  const wordsLearned = (stateMap.graduated ?? 0) + (stateMap.review ?? 0);
   const xp = user?.xp ?? 0;
 
-  // Слова, которые нужно повторить сегодня (dueDate <= now, не graduated)
+  // Слова, которые нужно повторить сегодня: только learning/review, без новых слов.
   const now = new Date();
   const wordsDueToday = await prisma.userWordProgress.count({
     where: {
       userId,
       dueDate: { lte: now },
-      state: { notIn: ['graduated'] },
+      state: { in: ['learning', 'review'] },
     },
   });
 
@@ -85,6 +85,24 @@ export async function getDashboard(userId: string) {
     totalReviews,
     xp,
   };
+}
+
+export async function resetProgress(userId: string) {
+  await prisma.$transaction([
+    prisma.sessionAnswer.deleteMany({ where: { session: { userId } } }),
+    prisma.session.deleteMany({ where: { userId } }),
+    prisma.userWordProgress.deleteMany({ where: { userId } }),
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        xp: 0,
+        currentStreak: 0,
+        lastActiveDate: null,
+      },
+    }),
+  ]);
+
+  return { reset: true };
 }
 
 export async function getActivityData(userId: string, year: number, month?: number) {

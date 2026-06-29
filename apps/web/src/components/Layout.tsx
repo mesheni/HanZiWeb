@@ -9,12 +9,12 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   return (
-    <div className="flex h-full bg-bg-primary rounded-2xl overflow-hidden font-sans text-text-primary text-sm">
+    <div className="app-layout bg-bg-primary rounded-2xl font-sans text-text-primary text-sm">
       <div className="hidden md:flex">
         <Sidebar />
       </div>
 
-      <main className="flex-1 relative overflow-hidden pb-14 md:pb-0">
+      <main className="app-main relative overflow-hidden pb-14 md:pb-0">
         {children ?? <Outlet />}
       </main>
 

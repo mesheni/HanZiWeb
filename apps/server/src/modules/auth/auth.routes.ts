@@ -4,6 +4,14 @@ import { LoginSchema, RegisterSchema } from '@hanzi/shared';
 import * as authService from './auth.service.js';
 
 export async function authRoutes(app: FastifyInstance) {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    path: '/api/auth',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  };
+
   /** POST /auth/register — создание аккаунта */
   app.post('/register', async (request, reply) => {
     const body = RegisterSchema.parse(request.body);
@@ -16,13 +24,7 @@ export async function authRoutes(app: FastifyInstance) {
     const body = LoginSchema.parse(request.body);
     const result = await authService.loginUser(body);
     // Set refresh token as httpOnly cookie
-    reply.setCookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/api/auth',
-      maxAge: 30 * 24 * 60 * 60, // 30 days
-    });
+    reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
     return reply.send({
       success: true,
       data: { user: result.user, accessToken: result.accessToken, expiresIn: 900 },
@@ -36,13 +38,7 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ success: false, error: { code: 'NO_TOKEN', message: 'Refresh token missing' } });
     }
     const result = await authService.refreshTokens(refreshToken);
-    reply.setCookie('refreshToken', result.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/api/auth',
-      maxAge: 30 * 24 * 60 * 60,
-    });
+    reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
     return reply.send({
       success: true,
       data: { user: result.user, accessToken: result.accessToken, expiresIn: 900 },

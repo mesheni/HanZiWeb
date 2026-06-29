@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, Input, Card } from '@/components/ui';
 import { apiPost } from '@/api/client';
@@ -14,17 +14,22 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const submitLock = useRef(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (loading || submitLock.current) return;
+    submitLock.current = true;
     setError('');
 
     if (password !== confirmPassword) {
       setError('Пароли не совпадают');
+      submitLock.current = false;
       return;
     }
     if (password.length < 8) {
       setError('Пароль должен быть не менее 8 символов');
+      submitLock.current = false;
       return;
     }
 
@@ -39,6 +44,7 @@ export default function RegisterScreen() {
       setError(err instanceof Error ? err.message : 'Ошибка регистрации');
     } finally {
       setLoading(false);
+      submitLock.current = false;
     }
   };
 

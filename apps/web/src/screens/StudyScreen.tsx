@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
@@ -7,7 +7,7 @@ import { useStudyStore } from '../stores/studyStore';
 import Flashcard from '../components/Flashcard';
 import SessionComplete from '../components/SessionComplete';
 import { ProgressBar } from '../components/ui';
-import type { SrsRating } from '@hanzi/shared';
+import type { SrsRating, StudyMode } from '@hanzi/shared';
 
 function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
   if ('caches' in window) {
@@ -37,7 +37,9 @@ const RATING_OPTIONS: RatingOption[] = [
 
 export default function StudyScreen() {
   const navigate = useNavigate();
-  const { isLoading, isSessionComplete, rateCard } = useStudySession();
+  const [searchParams] = useSearchParams();
+  const mode = (searchParams.get('mode') ?? 'mixed') as StudyMode;
+  const { isLoading, isSessionComplete, rateCard } = useStudySession({ mode });
 
   const cards = useStudyStore((s) => s.cards);
   const currentIndex = useStudyStore((s) => s.currentIndex);
@@ -134,12 +136,13 @@ export default function StudyScreen() {
   }
 
   if (isSessionComplete) {
-    return (
+      return (
       <SessionComplete
         total={stats.total}
         correct={stats.correct}
         incorrect={stats.incorrect}
         xpEarned={xpEarned}
+        mode={mode}
       />
     );
   }
@@ -156,6 +159,8 @@ export default function StudyScreen() {
   }
 
   const progressPct = Math.round((progress.current / progress.total) * 100);
+  const modeLabel =
+    mode === 'review' ? 'Повторение' : mode === 'learn' ? 'Изучение' : 'Тренировка';
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -178,7 +183,7 @@ export default function StudyScreen() {
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           {progress.current + 1} / {progress.total}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Повторение</span>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{modeLabel}</span>
         <button
           onClick={() => navigate('/')}
           aria-label="Выйти"

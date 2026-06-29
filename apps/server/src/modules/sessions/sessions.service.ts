@@ -8,6 +8,42 @@ type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
   include: { word: { include: { examples: true } } };
 }>;
 
+const HSK_LEVELS = [1, 2, 3, 4, 5, 6] as const;
+const HSK_LEVEL_LIST = [...HSK_LEVELS];
+
+async function getUnlockedHskLevel(userId: string): Promise<number | null> {
+  for (const level of HSK_LEVELS) {
+    const total = await prisma.word.count({ where: { hskLevel: level } });
+    if (total === 0) continue;
+
+    const mastered = await prisma.userWordProgress.count({
+      where: {
+        userId,
+        state: 'graduated',
+        word: { is: { hskLevel: level } },
+      },
+    });
+
+    if (mastered < total) {
+      return level;
+    }
+  }
+
+  return null;
+}
+
+function orderCards(cards: ProgressWithWord[]): ProgressWithWord[] {
+  return [...cards].sort((a, b) => {
+    const aLevel = a.word.hskLevel ?? Number.POSITIVE_INFINITY;
+    const bLevel = b.word.hskLevel ?? Number.POSITIVE_INFINITY;
+    if (aLevel !== bLevel) return aLevel - bLevel;
+
+    const aCreated = new Date(a.word.createdAt).getTime();
+    const bCreated = new Date(b.word.createdAt).getTime();
+    return aCreated - bCreated;
+  });
+}
+
 /**
  * Генерирует новую сессию:
  * - Берёт слова, у которых dueDate <= now() (повтор)
@@ -15,26 +51,46 @@ type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
  */
 export async function startSession(userId: string, input: StartSession) {
   const now = new Date();
+  const mode = input.mode ?? 'mixed';
+  const unlockedLevel = input.deckId ? null : await getUnlockedHskLevel(userId);
 
-  // Слова на повтор (dueDate прошёл)
-  const dueWords = await prisma.userWordProgress.findMany({
-    where: {
-      userId,
-      dueDate: { lte: now },
-      state: { not: 'new' },
-    },
-    include: {
-      word: { include: { examples: true } },
-    },
-    orderBy: { dueDate: 'asc' },
-    take: input.cardLimit,
-  });
+  const deckWhere: Prisma.WordWhereInput = input.deckId
+    ? { deckWords: { some: { deckId: input.deckId } } }
+    : unlockedLevel
+      ? { hskLevel: unlockedLevel }
+      : { hskLevel: { in: HSK_LEVEL_LIST } };
 
-  // Если не хватает до cardLimit, добавляем новые
-  const newWordsNeeded = Math.max(0, input.cardLimit - dueWords.length);
+  const dueWords: ProgressWithWord[] =
+    mode === 'learn'
+      ? []
+      : ((await prisma.userWordProgress.findMany({
+          where: {
+            userId,
+            dueDate: { lte: now },
+            state: { not: 'new' },
+            ...(input.deckId ? { word: { is: deckWhere } } : {}),
+          },
+          include: {
+            word: { include: { examples: true } },
+          },
+          orderBy: [
+            { dueDate: 'asc' },
+            { word: { hskLevel: 'asc' } },
+            { word: { createdAt: 'asc' } },
+          ],
+          take: input.cardLimit,
+        })) as ProgressWithWord[]);
+
+  // Если нужен микс или режим только новых слов, подбираем fresh words.
+  const newWordsNeeded =
+    mode === 'review'
+      ? 0
+      : mode === 'learn'
+        ? input.cardLimit
+        : Math.max(0, input.cardLimit - dueWords.length);
   let newWords: ProgressWithWord[] = [];
 
-  if (newWordsNeeded > 0 && input.includeNew) {
+  if (newWordsNeeded > 0 && (input.includeNew || mode === 'learn')) {
     // Ищем слова, для которых у пользователя нет прогресса
     const existingWordIds = await prisma.userWordProgress.findMany({
       where: { userId },
@@ -45,9 +101,10 @@ export async function startSession(userId: string, input: StartSession) {
     const freshWords = await prisma.word.findMany({
       where: {
         id: { notIn: excludeIds },
-        ...(input.deckId ? { deckWords: { some: { deckId: input.deckId } } } : {}),
+        ...deckWhere,
       },
       include: { examples: true },
+      orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
       take: newWordsNeeded,
     });
 
@@ -63,16 +120,17 @@ export async function startSession(userId: string, input: StartSession) {
       });
     }
 
-    newWords = await prisma.userWordProgress.findMany({
+    newWords = (await prisma.userWordProgress.findMany({
       where: {
         userId,
         wordId: { in: freshWords.map((w: { id: string }) => w.id) },
       },
       include: { word: { include: { examples: true } } },
-    });
+      orderBy: [{ word: { hskLevel: 'asc' } }, { word: { createdAt: 'asc' } }],
+    })) as ProgressWithWord[];
   }
 
-  const allCards = [...dueWords, ...newWords];
+  const allCards = orderCards([...dueWords, ...newWords]);
 
   // Создаём сессию
   const deckName = input.deckId

@@ -7,9 +7,13 @@ import { initDb } from './db/database';
 import { initSyncEngine } from './db/sync';
 import './styles/global.css';
 
-initDb().then(() => {
-  initSyncEngine();
-});
+initDb()
+  .catch((error) => {
+    console.error('Failed to initialize local database:', error);
+  })
+  .finally(() => {
+    initSyncEngine();
+  });
 
 const queryClient = new QueryClient({
   defaultOptions: {

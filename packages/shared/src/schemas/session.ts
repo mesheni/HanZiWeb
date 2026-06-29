@@ -2,6 +2,10 @@ import { z } from 'zod';
 import { SrsRatingSchema } from './progress.js';
 import { WordSchema } from './word.js';
 
+/** Режим запуска учебной сессии. */
+export const StudyModeSchema = z.enum(['mixed', 'review', 'learn']);
+export type StudyMode = z.infer<typeof StudyModeSchema>;
+
 /**
  * Учебная сессия — набор карточек на повторение.
  */
@@ -49,6 +53,8 @@ export const StartSessionSchema = z.object({
   cardLimit: z.number().int().min(1).max(50).default(20),
   /** Добавлять ли новые слова в микс (true = микс новых + повтор) */
   includeNew: z.boolean().default(true),
+  /** Режим сессии: микс, только повтор, только новые слова. */
+  mode: StudyModeSchema.default('mixed'),
 });
 
 export type StartSession = z.infer<typeof StartSessionSchema>;

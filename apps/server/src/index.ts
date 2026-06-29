@@ -40,11 +40,12 @@ async function main() {
   // ── Auth scope: 5 requests/minute/IP ──────────────────────────────
   await app.register(async (child) => {
     await child.register(rateLimit, {
-      max: 5,
+      max: 20,
       timeWindow: '1 minute',
       redis,
       keyGenerator: (req) => req.ip,
       errorResponseBuilder: (_req, ctx) => ({
+        statusCode: 429,
         success: false,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
@@ -63,6 +64,7 @@ async function main() {
       redis,
       keyGenerator: (req) => req.ip,
       errorResponseBuilder: (_req, ctx) => ({
+        statusCode: 429,
         success: false,
         error: {
           code: 'RATE_LIMIT_EXCEEDED',
@@ -136,6 +138,15 @@ async function main() {
         return reply.status(409).send({
           success: false,
           error: { code: 'CONFLICT', message: 'Resource already exists' },
+        });
+      }
+      if (err.code === 'RATE_LIMIT_EXCEEDED') {
+        return reply.status(429).send({
+          success: false,
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: String(err.message ?? 'Too many requests'),
+          },
         });
       }
     }

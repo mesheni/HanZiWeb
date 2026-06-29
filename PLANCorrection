@@ -1,129 +1,67 @@
-PLANCorrection — список выявленных недочетов и план исправления
-==============================================================
+# Проверка проекта HanZiWeb
 
-## ROOT CAUSE: JWT-claim mismatch — `userId` vs `sub` ✅
+Проверка выполнена после `pnpm.cmd -r typecheck` и `pnpm.cmd -r build`.
 
-Это корневая причина пунктов #2, #3, #4, #8.
+Итог:
+- типизация проходит;
+- сборка проходит;
+- есть предупреждение Vite о большом чанке `apps/web` (`~534 kB` после минификации).
 
-**Где:**
-- `apps/server/src/modules/auth/auth.service.ts:21`  — `jwt.sign({ userId, email }...)`
-- `apps/server/src/plugins/auth.ts:16-35`             — `JwtPayload { sub }`, читал `payload.sub`
-- `apps/server/src/modules/words/words.routes.ts:23,43` — тоже ожидал `{ sub }`
+## Найденные проблемы
 
-**Проблема:** Токен создаётся с полем `userId`, а плагин `authenticate` ищет `sub`. `payload.sub === undefined` → `request.userId = undefined` → Prisma получает `where: { id: undefined }` → падение на всех защищённых маршрутах.
+1. Критично: авторизация не восстанавливается после обновления страницы.
+- `apps/web/src/stores/authStore.ts:30-41` хранит auth только в памяти.
+- `apps/web/src/components/ProtectedLayout.tsx:5-12` сразу редиректит на `/login`, если `isAuthenticated === false`.
+- В проекте нет bootstrap-логики, которая при старте приложения проверяет `refreshToken` cookie и повторно логинит пользователя.
+- Следствие: после `F5` или закрытия вкладки пользователь теряет сессию, даже если refresh cookie ещё валиден.
 
-**Исправление:** Исправлено в коммите 7f26ec9: `JwtPayload.sub` → `userId`, `payload.sub` → `payload.userId` в `auth.ts` и `words.routes.ts`. Добавлен `authenticateOptional` для публичных эндпоинтов.
+2. Высокий риск: ссылка на `/settings` ведёт в пустой маршрут.
+- `apps/web/src/components/Sidebar.tsx:14-18` содержит пункт `Settings` с маршрутом `/settings`.
+- В `apps/web/src/App.tsx:42-52` такого route нет, а `*`-маршрут отправляет на `/`.
+- Следствие: клик по настройкам не открывает настройки, а просто возвращает на главную.
 
----
+3. Высокий риск: офлайн-скачивание слов сломано.
+- `apps/web/src/screens/HomeScreen.tsx:48-74` делает `fetch('/api/words?limit=1000')`.
+- `packages/shared/src/schemas/word.ts:73-79` ограничивает `limit` максимумом `100`, поэтому запрос с `1000` не соответствует контракту.
+- Там же результат читается как `json.data?.data`, хотя по API список слов возвращается как `data: Word[]` без вложенного `data`.
+- Следствие: кнопка "Скачать офлайн-пакет" либо получает ошибку валидации, либо сохраняет пустой список.
 
-## 1. Zod-валидация query-параметров — limit/offset/hskLevel приходят как строки ✅
+4. Высокий риск: экран статистики не совпадает с контрактом API.
+- `apps/web/src/queries/stats.ts:54-58` запрашивает `/api/stats/activity?year=...`.
+- `packages/shared/api-spec.md:209-218` требует `year` и `month`, а ответ описан как массив `{ day, count }` за один месяц.
+- `apps/web/src/screens/StatsScreen.tsx:30-145` строит календарь на весь год и ожидает даты в формате `YYYY-MM-DD`.
+- Следствие: календарь активности либо будет пустым/неполным, либо сломается при реальном ответе сервера.
 
-**Где:** `packages/shared/src/schemas/word.ts:75-79`
-**Проблема:** Query-параметры из URL всегда строки (`"?limit=5&offset=0&hskLevel=3"`), но схема ожидает `z.number()`. ZodError → 500 на любой запрос `/api/words`.
-**Исправление:** Заменить `z.number()` на `z.coerce.number()` для полей `limit`, `offset`, `hskLevel` в `WordFiltersSchema`.
+5. Средний риск: hover-эффект в навигации реализован через `e.target`.
+- `apps/web/src/components/NavButton.tsx:20-31` меняет стиль через `e.target`, а не `currentTarget`.
+- При наведении на иконку/текст стиль может применяться не к кнопке, а к дочернему элементу.
+- Следствие: hover может выглядеть нестабильно или не работать как задумано.
 
----
+## Что работает
 
-## 2. prisma.user.findUnique() получает `id: undefined` в stats.service.ts ✅
+- `pnpm.cmd -r typecheck` проходит без ошибок.
+- `pnpm.cmd -r build` проходит без ошибок.
+- Основной стек приложения запускается и собирается.
 
-**Где:** `apps/server/src/modules/stats/stats.service.ts:47`
-**Проблема:** ROOT CAUSE — JWT claim mismatch (см. выше). `request.userId === undefined`.
-**Исправление:** Починить `authenticate` плагин (см. ROOT CAUSE).
+## Дополнительная логика
 
----
+- Подтверждено: корневая причина части проблем была в отсутствии bootstrap-аутентификации после перезагрузки. Без этого защищённые экраны и запросы к API выглядели как «не работает изучение / не грузится список».
+- Подтверждено: режим изучения был смешан с повторением. Для приложения это плохой UX, потому что по плану должны быть отдельные действия: повторить сегодня, учить новые, смешанная сессия.
+- Подтверждено: офлайн-загрузка слов использовала неверный формат ответа и некорректный limit, из-за чего пакеты не могли собраться полностью.
+- После правок проект снова проходит `typecheck` и `build`.
 
-## 3. Ошибка 500 на `/api/sessions/start` ✅
+## Новые причины сбоев
 
-**Где:** `apps/server/src/modules/sessions/sessions.routes.ts:9`
-**Проблема:** ROOT CAUSE — `request.userId === undefined` → `startSession(undefined, body)` → падение.
-**Исправление:** Починить `authenticate`.
+- Учебная сессия могла запускаться многократно из-за эффекта в `useStudySession`, что быстро упирало IP в rate limit и выглядело как 500.
+- `fastify-rate-limit` был настроен с `errorResponseBuilder` без `statusCode`, поэтому лимитер отдавал 500 вместо 429.
+- Локальная RxDB-схема `words` не совпадала с сервером: `audioUrl`, `mnemonic` и `hskLevel` приходили как `null`, а схема ожидала только строку/число. Это ломало сохранение слов в кэш и мешало загрузке словаря.
+- При конфликте схемы RxDB (`DB6`) база могла оставаться полуинициализированной, из-за чего `db.progress` был `undefined` и сессия падала в `rateCard()`.
+- Инициализация локальной БД теперь безопасно удаляет старый IndexedDB `hanzi` и пересоздаёт его, а при окончательном сбое приложение продолжает работать без локального кэша.
+- RxDB `DB8` возникал из-за повторной инициализации одной и той же БД в HMR/повторном старте. Теперь используется singleton-promise и `closeDuplicates`.
+- Пагинированные ответы API раньше теряли `pagination` в `apiClient`, из-за чего `useInfiniteWords` падал на `lastPage.pagination.total`.
 
----
+## Дополнительные кнопки в настройках
 
-## 4. Ошибка 500 на `/api/stats/overview` ✅
-
-**Где:** `apps/server/src/modules/stats/stats.routes.ts:7`
-**Проблема:** ROOT CAUSE — как п.2.
-**Исправление:** Починить `authenticate`.
-
----
-
-## 5. Отсутствует favicon.ico ✅
-
-**Где:** `apps/web/index.html`
-**Проблема:** `GET /favicon.ico` → 404.
-**Исправление:** Добавлен `<link rel="icon" type="image/svg+xml" href="/icon.svg">` в `index.html`.
-
----
-
-## 6. Маленькие пункты и элементы управления в боковом меню (UI) ✅
-
-**Где:** `apps/web/src/components/NavButton.tsx:15`, `apps/web/src/components/Sidebar.tsx:29`
-**Проблема:**
-  - NavButton: `w-[46px] h-[48px]` — ширина 46px на грани touch-таргета (≥44px), но label fontSize=9 нечитабелен.
-  - Боковая панель: `w-[62px]` — слишком узко для отображения текста.
-  - На мобильных (принудительно <768px) sidebar скрыт (`hidden md:flex`), а BottomNav имеет `h-12` (48px) — OK.
-**Исправление:**
-  - Увеличена ширина сайдбара: `w-[62px]` → `w-[72px]`.
-  - Увеличен NavButton: `w-[46px]` → `w-[54px]`.
-  - Увеличен label fontSize: 9px → 10px.
-  - Увеличен размер иконок: 18px → 20px.
-
----
-
-## 7. words.routes.ts дублирует JWT-верификацию ✅
-
-**Где:** `apps/server/src/modules/words/words.routes.ts`
-**Проблема:**
-  - Ручная верификация JWT дублирует логику плагина `authenticate`.
-  - Тоже ожидал `payload.sub`, но токен содержит `userId`.
-  - При ошибке верификации (например, token expired) молча проглатывает и продолжает без userId.
-**Исправление:**
-  - Убрана ручная верификация (`import jwt`, `import { loadConfig }` удалены).
-  - Добавлен `authenticateOptional` preHandler для GET `/` и GET `/:id`.
-  - Используется `request.userId` напрямую (с `|| undefined` для публичного доступа).
-
----
-
-## 8. pro.ts плагин тоже сломан из-за undefined userId ✅
-
-**Где:** `apps/server/src/plugins/pro.ts:13`
-**Проблема:** `prisma.user.findUnique({ where: { id: request.userId } })` — `request.userId === undefined` из-за ROOT CAUSE.
-**Исправление:** Починить `authenticate` (ROOT CAUSE) — исправлено в коммите 7f26ec9 (sub → userId).
-
----
-
-## 9. Офлайн-режим: useStudySession отправляет каждый answer на сервер даже при offline ✅
-
-**Где:** `apps/web/src/hooks/useStudySession.ts`
-**Проблема:** `answerMutation.mutate()` вызывается всегда, независимо от `isOnline`.
-**Исправление:**
-  - Добавлен импорт и вызов `useOnlineStatus()`.
-  - `answerMutation.mutate()` обёрнут в `if (isOnline) { ... }`.
-  - При офлайне — только локальное сохранение (RxDB + sync queue), серверный запрос не выполняется.
-
----
-
-## 10. apiClient не обрабатывает не-JSON ответы при ошибках ✅
-
-**Где:** `apps/web/src/api/client.ts:51`
-**Проблема:** Если сервер возвращает не-JSON (HTML-страницу ошибки, пустой ответ, статус 502), `res.json()` выбрасывал `SyntaxError`.
-**Исправление:** `res.json()` обёрнут в try/catch; при ошибке парсинга выбрасывается `Request failed: ${res.status}`.
-
----
-
-## Статус исправлений
-
-| #  | Приоритет | Описание                                              | Статус       |
-|----|-----------|-------------------------------------------------------|--------------|
-| RC | CRITICAL  | JWT claim mismatch (userId vs sub)                    | ✅ 7f26ec9   |
-| 1  | HIGH      | Zod coerce number для limit/offset/hskLevel            | ✅           |
-| 2  | HIGH      | (следствие RC) stats/dashboard 500                     | ✅ 7f26ec9   |
-| 3  | HIGH      | (следствие RC) sessions/start 500                      | ✅ 7f26ec9   |
-| 4  | MEDIUM    | (следствие RC) stats/overview 500                      | ✅ 7f26ec9   |
-| 5  | LOW       | favicon.ico 404                                        | ✅           |
-| 6  | MEDIUM    | Маленькие элементы бокового меню                       | ✅           |
-| 7  | HIGH      | Дубликат JWT в words.routes                            | ✅           |
-| 8  | HIGH      | pro.ts — undefined userId                              | ✅ 7f26ec9   |
-| 9  | HIGH      | Офлайн study: шквал ошибок при недоступном сервере      | ✅           |
-| 10 | LOW       | apiClient: не-JSON ошибки не обработаны                | ✅           |
+- Добавлены кнопки `Обновить кэш слов` и `Переиндексировать словарь` во вкладке `Настройки`.
+- `Обновить кэш слов` подгружает весь словарь по страницам и обновляет локальный кэш.
+- `Переиндексировать словарь` очищает локальную коллекцию слов и строит её заново из сервера.

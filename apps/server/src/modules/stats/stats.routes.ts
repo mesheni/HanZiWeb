@@ -31,4 +31,10 @@ export async function statsRoutes(app: FastifyInstance) {
     const streak = await statsService.getUserStreak(request.userId);
     return reply.send({ success: true, data: streak });
   });
+
+  /** POST /stats/reset-progress — полный сброс прогресса */
+  app.post('/reset-progress', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const result = await statsService.resetProgress(request.userId);
+    return reply.send({ success: true, data: result });
+  });
 }

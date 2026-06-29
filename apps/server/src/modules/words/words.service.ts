@@ -31,7 +31,7 @@ export async function listWords(filters: WordFilters, userId?: string) {
       include: { examples: true },
       skip: filters.offset,
       take: filters.limit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
     }),
     prisma.word.count({ where }),
   ]);
