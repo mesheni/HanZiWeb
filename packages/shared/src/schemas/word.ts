@@ -72,11 +72,11 @@ export type WordListItem = z.infer<typeof WordListItemSchema>;
 /** Фильтры для запроса списка слов */
 export const WordFiltersSchema = z.object({
   search: z.string().optional(),
-  hskLevel: z.number().int().min(1).max(9).optional(),
+  hskLevel: z.coerce.number().int().min(1).max(9).optional(),
   deckId: z.string().uuid().optional(),
   status: z.enum(['new', 'learning', 'review', 'graduated']).optional(),
-  limit: z.number().int().min(1).max(100).default(50),
-  offset: z.number().int().min(0).default(0),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export type WordFilters = z.infer<typeof WordFiltersSchema>;
