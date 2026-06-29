@@ -20,8 +20,8 @@ export async function wordsRoutes(app: FastifyInstance) {
     if (authHeader?.startsWith('Bearer ')) {
       try {
         const config = loadConfig();
-        const payload = jwt.verify(authHeader.slice(7), config.JWT_ACCESS_SECRET) as { sub: string };
-        userId = payload.sub;
+        const payload = jwt.verify(authHeader.slice(7), config.JWT_ACCESS_SECRET) as { userId: string };
+        userId = payload.userId;
       } catch {
         // token invalid — proceed without userId
       }
@@ -40,8 +40,8 @@ export async function wordsRoutes(app: FastifyInstance) {
       const token = authHeader.slice(7);
       try {
         const config = loadConfig();
-        const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as { sub: string };
-        userId = payload.sub;
+        const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as { userId: string };
+        userId = payload.userId;
       } catch {
         // token invalid or expired — proceed without userId
       }

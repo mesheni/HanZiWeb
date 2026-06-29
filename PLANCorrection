@@ -1,0 +1,127 @@
+PLANCorrection — список выявленных недочетов и план исправления
+==============================================================
+
+## ROOT CAUSE: JWT-claim mismatch — `userId` vs `sub`
+
+Это корневая причина пунктов #2, #3, #4, #8, #9.
+
+**Где:**
+- `apps/server/src/modules/auth/auth.service.ts:21`  — `jwt.sign({ userId, email }...)`
+- `apps/server/src/plugins/auth.ts:16-35`             — `JwtPayload { sub }`, читает `payload.sub`
+- `apps/server/src/modules/words/words.routes.ts:23,43` — тоже ожидает `{ sub }`
+
+**Проблема:** Токен создаётся с полем `userId`, а плагин `authenticate` ищет `sub`. `payload.sub === undefined` → `request.userId = undefined` → Prisma получает `where: { id: undefined }` → падение на всех защищённых маршрутах.
+
+**Исправление:** Привести стороны к одному claim-неймингу. Проще всего: в `plugins/auth.ts` заменить `JwtPayload.sub` → `userId` и чтение `payload.sub` → `payload.userId`. Аналогично поправить дублирующий код в `words.routes.ts`.
+
+---
+
+## 1. Zod-валидация query-параметров — limit/offset/hskLevel приходят как строки
+
+**Где:** `packages/shared/src/schemas/word.ts:75-79`
+**Проблема:** Query-параметры из URL всегда строки (`"?limit=5&offset=0&hskLevel=3"`), но схема ожидает `z.number()`. ZodError → 500 на любой запрос `/api/words`.
+**Исправление:** Заменить `z.number()` на `z.coerce.number()` для полей `limit`, `offset`, `hskLevel` в `WordFiltersSchema`.
+
+---
+
+## 2. prisma.user.findUnique() получает `id: undefined` в stats.service.ts
+
+**Где:** `apps/server/src/modules/stats/stats.service.ts:47`
+**Проблема:** ROOT CAUSE — JWT claim mismatch (см. выше). `request.userId === undefined`.
+**Исправление:** Починить `authenticate` плагин (см. ROOT CAUSE).
+
+---
+
+## 3. Ошибка 500 на `/api/sessions/start`
+
+**Где:** `apps/server/src/modules/sessions/sessions.routes.ts:9`
+**Проблема:** ROOT CAUSE — `request.userId === undefined` → `startSession(undefined, body)` → падение.
+**Исправление:** Починить `authenticate`.
+
+---
+
+## 4. Ошибка 500 на `/api/stats/overview`
+
+**Где:** `apps/server/src/modules/stats/stats.routes.ts:7`
+**Проблема:** ROOT CAUSE — как п.2.
+**Исправление:** Починить `authenticate`.
+
+---
+
+## 5. Отсутствует favicon.ico
+
+**Где:** `apps/web/public/`
+**Проблема:** `GET /favicon.ico` → 404.
+**Исправление:** Добавить `favicon.ico` в `apps/web/public/` или добавить `<link rel="icon">` в HTML, указывающий на существующий `icon.svg`.
+
+---
+
+## 6. Маленькие пункты и элементы управления в боковом меню (UI)
+
+**Где:** `apps/web/src/components/NavButton.tsx:15`, `apps/web/src/components/Sidebar.tsx:29`
+**Проблема:**
+  - NavButton: `w-[46px] h-[48px]` — ширина 46px на грани touch-таргета (≥44px), но label fontSize=9 нечитабелен.
+  - Боковая панель: `w-[62px]` — слишком узко для отображения текста.
+  - На мобильных (принудительно <768px) sidebar скрыт (`hidden md:flex`), а BottomNav имеет `h-12` (48px) — OK.
+**Исправление:**
+  - Увеличить минимальную ширину сайдбара до 68-72px.
+  - Увеличить label fontSize с 9px до 10px.
+  - Убедиться, что размер иконок ≥ 20px.
+
+---
+
+## 7. words.routes.ts дублирует JWT-верификацию и имеет тот же sub/userId баг
+
+**Где:** `apps/server/src/modules/words/words.routes.ts:19-28, 38-48`
+**Проблема:**
+  - Ручная верификация JWT дублирует логику плагина `authenticate`.
+  - Тоже ожидает `payload.sub`, но токен содержит `userId`.
+  - При ошибке верификации (например, token expired) молча проглатывает и продолжает без userId — но баг маскируется тем, что `sub` никогда не будет корректным.
+**Исправление:**
+  - Убрать ручную верификацию; внедрить `app.authenticate` как опциональный preHandler (или добавить `authenticateOptional`).
+  - После исправления ROOT CAUSE `request.userId` будет доступен напрямую.
+
+---
+
+## 8. pro.ts плагин тоже сломан из-за undefined userId
+
+**Где:** `apps/server/src/plugins/pro.ts:13`
+**Проблема:** `prisma.user.findUnique({ where: { id: request.userId } })` — `request.userId === undefined` из-за ROOT CAUSE.
+**Исправление:** Починить `authenticate` (ROOT CAUSE).
+
+---
+
+## 9. Офлайн-режим: useStudySession отправляет каждый answer на сервер даже при offline
+
+**Где:** `apps/web/src/hooks/useStudySession.ts:92-123`
+**Проблема:** `answerMutation.mutate()` вызывается всегда, независимо от `isOnline`. При офлайне каждый ответ вызывает fetch → 401/ошибка сети → rollback карточки + error toast. В итоге: ни одну карточку нельзя «пройти» офлайн, и пользователь получает шквал toast-ошибок.
+**Исправление:**
+  - Перед вызовом `answerMutation.mutate()` проверять `useOnlineStatus()`.
+  - Если офлайн — только локальное сохранение (RxDB + sync queue), без серверного запроса.
+  - При возвращении в онлайн — sync отправит накопленные ответы.
+
+---
+
+## 10. apiClient не обрабатывает не-JSON ответы при ошибках
+
+**Где:** `apps/web/src/api/client.ts:51`
+**Проблема:** Если сервер возвращает не-JSON (HTML-страницу ошибки, пустой ответ, статус 502), `res.json()` выбросит `SyntaxError` вместо понятного сообщения.
+**Исправление:** Обернуть `res.json()` в try/catch и при ошибке парсинга выбрасывать `Request failed: ${res.status}`.
+
+---
+
+## Приоритет исправлений
+
+| #  | Приоритет | Описание                                          | Затрагивает                               |
+|----|-----------|---------------------------------------------------|-------------------------------------------|
+| RC | CRITICAL  | JWT claim mismatch (userId vs sub)                | Все защищённые маршруты (/stats, /sessions, pro) |
+| 1  | HIGH      | Zod coerce number для limit/offset/hskLevel       | Все запросы /api/words                    |
+| 7  | HIGH      | Дубликат JWT в words.routes + sub/userId баг      | GET /words (извлечение status по userId)   |
+| 8  | HIGH      | pro.ts — undefined userId                         | Pro-функции (письмо, лимиты)              |
+| 9  | HIGH      | Офлайн study: шквал ошибок при недоступном сервере | Основной UX обучения                      |
+| 2  | HIGH      | (следствие RC) stats/dashboard 500                | Главная страница                          |
+| 3  | HIGH      | (следствие RC) sessions/start 500                 | Невозможно начать обучение                |
+| 4  | MEDIUM    | (следствие RC) stats/overview 500                 | Вкладка статистики                        |
+| 5  | LOW       | favicon.ico 404                                   | Косметика                                 |
+| 6  | MEDIUM    | Маленькие элементы бокового меню                  | Юзабилити на touch-устройствах            |
+| 10 | LOW       | apiClient: не-JSON ошибки не обработаны           | Отладка                                   |

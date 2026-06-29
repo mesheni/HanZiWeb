@@ -13,7 +13,8 @@ declare module 'fastify' {
 }
 
 interface JwtPayload {
-  sub: string;
+  userId: string;
+  email: string;
   iat: number;
   exp: number;
 }
@@ -32,7 +33,7 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
     const token = authHeader.slice(7);
     try {
       const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as JwtPayload;
-      request.userId = payload.sub;
+      request.userId = payload.userId;
     } catch {
       return reply.status(401).send({ success: false, error: { code: 'TOKEN_EXPIRED', message: 'Access token expired or invalid' } });
     }
