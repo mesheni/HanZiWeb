@@ -8,3 +8,4 @@ export * from './schemas/api.js';
 export * from './schemas/sync.js';
 export * from './schemas/device.js';
 export * from './schemas/example.js';
+export * from './schemas/etymology.js';

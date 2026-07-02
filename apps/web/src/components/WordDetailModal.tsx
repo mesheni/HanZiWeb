@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, Plus, Trash2, Sparkles, Loader2, WholeWord, X } from 'lucide-react';
 import Modal from './ui/Modal';
+import EtymologyCard from './EtymologyCard';
 import { PinyinDisplay } from '../utils/toneColors';
 import { useAudio } from '../hooks/useAudio';
 import { useToastStore } from '../stores/toastStore';
@@ -142,6 +143,8 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
             </div>
           )}
         </div>
+
+        <EtymologyCard wordId={word.id} fallbackCharacter={word.character} />
 
         <div className="word-detail-section">
           <div className="word-detail-section-head">

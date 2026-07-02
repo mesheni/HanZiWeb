@@ -160,13 +160,58 @@ FSRS v5, hanzi-writer, Google Cloud TTS).
 
 ## Средний приоритет
 
-### 6. Этимология/разбор иероглифа
+### 6. Этимология/разбор иероглифа ✅ DONE
 Карточка с радикалами, ключами и происхождением.
 
-- Данные из `hanzi-writer-data` (уже подключён) +
-  открытый `cjk-decomp`/`unicodia`.
-- Отдельный компонент `EtymologyCard`.
-- Рендерится в `WordDetailModal`.
+- Данные из встроенного словаря (HSK 1–2, ~180 иероглифов): радикал
+  по Канси, структурный тип (IDS), компоненты с ролью
+  (`semantic` / `phonetic` / `both`), краткое происхождение и
+  мнемоника. Источники: Make Me a Hanzi (компоненты), Unihan
+  (радикалы, число черт), cjk-decomp (идея структуры).
+- Отдельный компонент `EtymologyCard`. ✅
+- Рендерится в `WordDetailModal` под шапкой. ✅
+
+**Реализация**:
+- `packages/shared/src/schemas/etymology.ts` — `EtymologySchema`,
+  `EtymologyRadicalSchema`, `EtymologyComponentSchema`,
+  `CharacterStructureSchema` (`simple | left-right | top-bottom |
+  surrounding | overlap`).
+- `apps/server/src/lib/etymology/characters.ts` — встроенный словарь
+  `ETYMOLOGY_DICTIONARY` (радикал + номер по Канси, структура,
+  компоненты, этимологическая справка, мнемоника) +
+  `hasDictionaryEntry`.
+- `apps/server/src/lib/etymology/lookup.ts` — `lookupEtymology(character, pinyin)` /
+  `lookupAllEtymologies(text)`. Возвращает «пустую» запись с
+  `found: false` для иероглифов, которых нет в словаре (UI не падает).
+- `apps/server/src/lib/etymology/lookup.test.ts` — 14 vitest-тестов:
+  консистентность словаря, граничные случаи (`null`, пустая строка,
+  многозначные строки, неизвестные иероглифы), структура ответа.
+- `apps/server/src/modules/etymology/etymology.{routes,service}.ts` —
+  `GET /api/words/:id/etymology` (публичный, через
+  `authenticateOptional`). 404 если слова нет; 200 c `found: false`
+  если иероглиф не покрыт словарём.
+- `apps/server/src/index.ts` — регистрация модуля в общем
+  rate-limited scope.
+- `apps/web/src/queries/etymology.ts` — `useWordEtymology(wordId)`
+  (react-query, `staleTime` 1 день, без ретраев на 404).
+- `apps/web/src/components/EtymologyCard.tsx` — UI: иероглиф +
+  пиньинь, сетка компонентов с ролью, мета (радикал, структура,
+  число черт), блоки «Происхождение» и «Мнемоника», аккордеон
+  свернуть/развернуть, состояние «нет данных».
+- `apps/web/src/components/WordDetailModal.tsx` — рендер
+  `<EtymologyCard wordId={word.id} fallbackCharacter={word.character} />`
+  сразу под шапкой (пиньинь/перевод/HSK/мнемоника) и над блоком
+  примеров.
+- `apps/web/src/styles/global.css` — стили `.etymology-*`:
+  декомпозиция (grid для `left-right` / `top-bottom` / `surrounding`),
+  бейджи ролей (tone-1/2/accent), карточки мета и текстов, адаптив
+  до 480px.
+
+**Тесты**: `pnpm --filter @hanzi/server exec vitest run` —
+**58 passed** (было 44, +14 новых для etymology). `pnpm --filter
+@hanzi/web run test` — **34 passed** (без регрессий).
+`tsc --noEmit` чисто во всех трёх пакетах. `pnpm --filter @hanzi/web
+run build` собирает прод-бандл.
 
 ### 7. Leaderboard / социальная статистика
 `User.xp` уже считается.
@@ -262,3 +307,43 @@ FSRS v5, hanzi-writer, Google Cloud TTS).
 
 Закрывает Stage 6 целиком и даёт максимальный продукт-рост при
 минимальных изменениях схемы.
+
+---
+
+## Коммит для пункта 6 (Этимология/разбор иероглифа)
+
+```
+feat(etymology): карточка разбора иероглифа в WordDetailModal
+
+Закрывает PLAN_Features_v0.2 §6 (Этимология/разбор иероглифа).
+
+Что добавлено:
+- packages/shared: схемы EtymologySchema, EtymologyRadicalSchema,
+  EtymologyComponentSchema, CharacterStructureSchema
+  (simple | left-right | top-bottom | surrounding | overlap).
+- apps/server: встроенный словарь ~180 иероглифов HSK 1–2
+  (apps/server/src/lib/etymology/characters.ts) с радикалом по Канси,
+  структурой, компонентами (роль: semantic/phonetic/both),
+  кратким происхождением и мнемоникой; lookupEtymology с мягким
+  fallback'ом found:false.
+- apps/server: GET /api/words/:id/etymology (authenticateOptional,
+  404 если слова нет, found:false если иероглиф не покрыт).
+- apps/web: useWordEtymology хук (staleTime 1 день) + EtymologyCard
+  (декомпозиция в grid, мета-блок радикал/структура/черты,
+  секции «Происхождение» и «Мнемоника», аккордеон свернуть).
+- apps/web: EtymologyCard встроен в WordDetailModal между шапкой
+  и блоком примеров.
+- apps/web/src/styles/global.css: стили .etymology-* с адаптивом.
+
+Тесты:
+- 14 новых vitest-тестов в lookup.test.ts (консистентность словаря,
+  граничные случаи: пустая строка, многозначные строки,
+  неизвестные иероглифы, структура ответа).
+- pnpm --filter @hanzi/server exec vitest run — 58 passed (было 44).
+- pnpm --filter @hanzi/web run test — 34 passed (без регрессий).
+- pnpm run typecheck — чисто во всех 3 пакетах.
+- pnpm --filter @hanzi/web run build — прод-бандл собирается.
+
+Источники данных: Make Me a Hanzi (компоненты), Unihan (радикалы
+1–214, число черт), cjk-decomp (идея структуры IDS).
+```

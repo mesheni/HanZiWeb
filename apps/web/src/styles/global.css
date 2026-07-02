@@ -2579,3 +2579,280 @@ input {
   color: var(--accent);
 }
 
+/* ===== Etymology card (разбор иероглифа в WordDetailModal) ===== */
+.etymology-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+}
+
+.etymology-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.etymology-toggle:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.etymology-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 2px;
+}
+
+.etymology-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.etymology-decomposition {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.etymology-decomposition-top-bottom {
+  grid-template-columns: 96px 1fr;
+}
+
+.etymology-decomposition-simple {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.etymology-decomposition-simple .etymology-components {
+  display: none;
+}
+
+.etymology-character-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+
+.etymology-character {
+  font-family: var(--font-cjk);
+  font-size: 38px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.etymology-character-pinyin {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.etymology-components {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+
+.etymology-component {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.etymology-component-char {
+  font-family: var(--font-cjk);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.etymology-component-meaning {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.etymology-component-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+}
+
+.etymology-component-pinyin {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.etymology-component-role {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+
+.etymology-role-semantic {
+  background: var(--tone-2-bg);
+  color: var(--tone-2);
+}
+
+.etymology-role-phonetic {
+  background: var(--tone-1-bg);
+  color: var(--tone-1);
+}
+
+.etymology-role-both {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.etymology-component-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.etymology-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+
+.etymology-meta-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.etymology-meta-row dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.etymology-meta-row dd {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.etymology-meta-radical-char {
+  font-family: var(--font-cjk);
+  font-size: 16px;
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.etymology-meta-radical-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.etymology-meta-radical-meaning {
+  color: var(--text-muted);
+}
+
+.etymology-meta-radical-number {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.etymology-meta-strokes {
+  color: var(--text-muted);
+}
+
+.etymology-text {
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.etymology-text-mnemonic {
+  background: var(--accent-bg-lite);
+  border-color: var(--border-accent);
+}
+
+.etymology-text-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.etymology-text-mnemonic .etymology-text-label {
+  color: var(--accent);
+}
+
+.etymology-text p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .etymology-decomposition {
+    grid-template-columns: 1fr;
+  }
+  .etymology-character-block {
+    flex-direction: row;
+    gap: 8px;
+  }
+  .etymology-character {
+    font-size: 30px;
+  }
+}
+
