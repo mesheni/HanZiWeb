@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { X, RefreshCw } from 'lucide-react';
+import { X, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
 import { useDistractorPool } from '../hooks/useDistractorPool';
 import { useStudyStore } from '../stores/studyStore';
+import { useUiStore } from '../stores/uiStore';
 import Flashcard from '../components/Flashcard';
 import SessionComplete from '../components/SessionComplete';
 import { ProgressBar } from '../components/ui';
@@ -114,6 +115,9 @@ export default function StudyScreen() {
   const wordId = currentCard?.word.id ?? null;
   const audio = useAudio(wordId);
 
+  const autoPlayAudio = useUiStore((s) => s.autoPlayAudio);
+  const setAutoPlayAudio = useUiStore((s) => s.setAutoPlayAudio);
+
   const modeCfg = STUDY_MODE_LABELS[mode];
   const practiceCfg = getPracticeTypeInfo(storePracticeType);
 
@@ -187,13 +191,26 @@ export default function StudyScreen() {
     };
   }, [resetSession]);
 
-  // Автовоспроизведение аудио при перевороте карточки (только flip-card).
+  // Авто-проигрывание TTS для каждой новой карточки (для всех 7 типов практик).
+  // Управляется переключателем `autoPlayAudio` в шапке (persist: localStorage).
+  // Для flip-card дополнительно играет на перевороте — но только если
+  // авто-проигрывание включено (иначе тишина после флипа).
   useEffect(() => {
+    if (!autoPlayAudio || !audio.isAvailable || !currentCard) return;
+    const t = window.setTimeout(() => audio.play(), 250);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCard?.word.id, audio.isAvailable, autoPlayAudio]);
+
+  // Дополнительно для flip-card: проиграть ещё раз после переворота —
+  // чтобы пользователь услышал слово и на «лицевой» стороне, и на «тыльной».
+  useEffect(() => {
+    if (!autoPlayAudio) return;
     if (isFlipped && audio.isAvailable && storePracticeType === 'flip-card') {
       audio.play();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFlipped, storePracticeType]);
+  }, [isFlipped, storePracticeType, autoPlayAudio]);
 
   // Клавиатурные сокращения (только для flip-card).
   useEffect(() => {
@@ -392,13 +409,24 @@ export default function StudyScreen() {
         }}>
           {practiceCfg.label}
         </span>
-        <button
-          onClick={() => navigate('/')}
-          aria-label="Выйти"
-          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}
-        >
-          <X size={18} />
-        </button>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setAutoPlayAudio(!autoPlayAudio)}
+            className={autoPlayAudio ? 'study-header-tts-on' : 'study-header-tts-off'}
+            aria-label={autoPlayAudio ? 'Выключить авто-озвучку' : 'Включить авто-озвучку'}
+            title={autoPlayAudio ? 'Авто-озвучка включена' : 'Авто-озвучка выключена'}
+          >
+            {autoPlayAudio ? <Volume2 size={16} /> : <VolumeX size={16} />}
+          </button>
+          <button
+            onClick={() => navigate('/')}
+            aria-label="Выйти"
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+          >
+            <X size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Card state badge */}
@@ -447,6 +475,8 @@ export default function StudyScreen() {
             word={currentCard.word}
             pool={combinedPool}
             onAnswer={handleBinaryAnswer}
+            onPlayAudio={() => audio.play()}
+            audioAvailable={audio.isAvailable}
           />
         )}
 
@@ -455,6 +485,8 @@ export default function StudyScreen() {
             word={currentCard.word}
             pool={combinedPool}
             onAnswer={handleBinaryAnswer}
+            onPlayAudio={() => audio.play()}
+            audioAvailable={audio.isAvailable}
           />
         )}
 
@@ -462,6 +494,8 @@ export default function StudyScreen() {
           <PinyinInputCard
             word={currentCard.word}
             onAnswer={handleBinaryAnswer}
+            onPlayAudio={() => audio.play()}
+            audioAvailable={audio.isAvailable}
           />
         )}
 
@@ -477,6 +511,8 @@ export default function StudyScreen() {
             word={currentCard.word}
             poolPinyin={combinedPool.map((w) => w.pinyin)}
             onAnswer={handleBinaryAnswer}
+            onPlayAudio={() => audio.play()}
+            audioAvailable={audio.isAvailable}
           />
         )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { pinyinSyllableMatches } from '../../utils/pinyinNormalize';
 import { cn } from '../../utils/cn';
@@ -7,6 +7,10 @@ import { cn } from '../../utils/cn';
 interface PinyinInputCardProps {
   word: Word;
   onAnswer: (correct: boolean) => void;
+  /** Ручное озвучивание текущего слова (TTS). */
+  onPlayAudio?: () => void;
+  /** Доступно ли аудио (опционально — для дизейбла кнопки). */
+  audioAvailable?: boolean;
 }
 
 /**
@@ -15,7 +19,12 @@ interface PinyinInputCardProps {
  *
  * Проверяем послогово: при ошибке в слоге подсвечиваем его красным.
  */
-export default function PinyinInputCard({ word, onAnswer }: PinyinInputCardProps) {
+export default function PinyinInputCard({
+  word,
+  onAnswer,
+  onPlayAudio,
+  audioAvailable,
+}: PinyinInputCardProps) {
   const [input, setInput] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [matches, setMatches] = useState<boolean[]>([]);
@@ -49,7 +58,21 @@ export default function PinyinInputCard({ word, onAnswer }: PinyinInputCardProps
   return (
     <div className="practice-card">
       <div className="practice-card-question">
-        <div className="practice-card-cue">Набери пиньинь</div>
+        <div className="practice-card-cue-row">
+          <div className="practice-card-cue">Набери пиньинь</div>
+          {onPlayAudio && (
+            <button
+              type="button"
+              className="practice-card-tts"
+              onClick={onPlayAudio}
+              disabled={audioAvailable === false}
+              aria-label="Прослушать слово"
+              title="Прослушать слово"
+            >
+              <Volume2 size={15} />
+            </button>
+          )}
+        </div>
         <div className="practice-card-character">{word.character}</div>
         <div className="practice-card-hint">{word.translation}</div>
       </div>

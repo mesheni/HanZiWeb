@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { buildMultipleChoiceOptions } from '../../utils/distractors';
 import { cn } from '../../utils/cn';
@@ -8,6 +8,10 @@ interface MultipleChoiceCardProps {
   word: Word;
   pool: Word[];
   onAnswer: (correct: boolean) => void;
+  /** Ручное озвучивание текущего слова (TTS). */
+  onPlayAudio?: () => void;
+  /** Доступно ли аудио (опционально — для дизейбла кнопки). */
+  audioAvailable?: boolean;
 }
 
 type OptionState = 'idle' | 'selected' | 'correct' | 'wrong';
@@ -16,7 +20,13 @@ type OptionState = 'idle' | 'selected' | 'correct' | 'wrong';
  * Карточка multiple-choice: показываем иероглиф, пользователь выбирает
  * один из 4 вариантов перевода.
  */
-export default function MultipleChoiceCard({ word, pool, onAnswer }: MultipleChoiceCardProps) {
+export default function MultipleChoiceCard({
+  word,
+  pool,
+  onAnswer,
+  onPlayAudio,
+  audioAvailable,
+}: MultipleChoiceCardProps) {
   const options = useMemo(() => buildMultipleChoiceOptions(word, pool, 4), [word, pool]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [states, setStates] = useState<Record<string, OptionState>>({});
@@ -42,7 +52,21 @@ export default function MultipleChoiceCard({ word, pool, onAnswer }: MultipleCho
   return (
     <div className="practice-card">
       <div className="practice-card-question">
-        <div className="practice-card-cue">Выбери перевод</div>
+        <div className="practice-card-cue-row">
+          <div className="practice-card-cue">Выбери перевод</div>
+          {onPlayAudio && (
+            <button
+              type="button"
+              className="practice-card-tts"
+              onClick={onPlayAudio}
+              disabled={audioAvailable === false}
+              aria-label="Прослушать слово"
+              title="Прослушать слово"
+            >
+              <Volume2 size={15} />
+            </button>
+          )}
+        </div>
         <div className="practice-card-character">{word.character}</div>
       </div>
 

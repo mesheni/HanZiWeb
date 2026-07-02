@@ -1283,6 +1283,75 @@ input {
   color: var(--text-muted);
 }
 
+/* Заголовок-строка внутри practice-card: cue слева, TTS-кнопка справа */
+.practice-card-cue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+/* Маленькая кнопка TTS внутри practice-карточек (multiple-choice и т.п.) */
+.practice-card-tts {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+
+.practice-card-tts:hover:not(:disabled) {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.practice-card-tts:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Переключатель авто-озвучки в шапке StudyScreen */
+.study-header-tts-on,
+.study-header-tts-off {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+
+.study-header-tts-on {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.study-header-tts-on:hover {
+  filter: brightness(1.1);
+}
+
+.study-header-tts-off {
+  color: var(--text-muted);
+}
+
+.study-header-tts-off:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
 .practice-card-character {
   font-family: var(--font-cjk);
   font-size: 76px;

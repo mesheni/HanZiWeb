@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { buildSyllablePool } from '../../utils/distractors';
 import { cn } from '../../utils/cn';
@@ -8,6 +8,10 @@ interface SyllableConstructorCardProps {
   word: Word;
   poolPinyin: string[];
   onAnswer: (correct: boolean) => void;
+  /** Ручное озвучивание текущего слова (TTS). */
+  onPlayAudio?: () => void;
+  /** Доступно ли аудио (опционально — для дизейбла кнопки). */
+  audioAvailable?: boolean;
 }
 
 /**
@@ -19,6 +23,8 @@ export default function SyllableConstructorCard({
   word,
   poolPinyin,
   onAnswer,
+  onPlayAudio,
+  audioAvailable,
 }: SyllableConstructorCardProps) {
   const correctSyllables = useMemo(
     () => word.pinyin.split(/\s+/).filter(Boolean),
@@ -67,7 +73,21 @@ export default function SyllableConstructorCard({
   return (
     <div className="practice-card">
       <div className="practice-card-question">
-        <div className="practice-card-cue">Собери пиньинь</div>
+        <div className="practice-card-cue-row">
+          <div className="practice-card-cue">Собери пиньинь</div>
+          {onPlayAudio && (
+            <button
+              type="button"
+              className="practice-card-tts"
+              onClick={onPlayAudio}
+              disabled={audioAvailable === false}
+              aria-label="Прослушать слово"
+              title="Прослушать слово"
+            >
+              <Volume2 size={15} />
+            </button>
+          )}
+        </div>
         <div className="practice-card-character">{word.character}</div>
         <div className="practice-card-hint">{word.translation}</div>
       </div>
