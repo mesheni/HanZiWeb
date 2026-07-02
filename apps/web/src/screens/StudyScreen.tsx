@@ -77,7 +77,6 @@ export default function StudyScreen() {
   // экран сессии синхронизировались.
   const storePracticeType = useStudyStore((s) => s.practiceType);
   const setPracticeType = useStudyStore((s) => s.setPracticeType);
-  const sessionIdInStore = useStudyStore((s) => s.sessionId);
   const [hasStarted, setHasStarted] = useState(false);
 
   // Тип практики, по которому реально стартовала сессия. Меняется только
@@ -93,10 +92,12 @@ export default function StudyScreen() {
   }, [practiceFromUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Запускаем сессию только после явного "Начать" — иначе показываем
-  // экран выбора практики.
-  const { isLoading, isError, isSessionComplete, rateCard, retrySession } = useStudySession({
+  // экран выбора практики. Хук не делает побочных эффектов, пока
+  // enabled = false, поэтому на экране выбора мы не дёргаем /sessions/start.
+  const { isLoading, isError, isSessionComplete, rateCard, retrySession, startNow } = useStudySession({
     mode,
     practiceType: activePracticeType,
+    enabled: hasStarted,
   });
 
   const cards = useStudyStore((s) => s.cards);
@@ -114,14 +115,15 @@ export default function StudyScreen() {
   const practiceCfg = getPracticeTypeInfo(storePracticeType);
 
   // Пул дистракторов (multiple-choice / reverse-choice / syllable-constructor).
+  // Загружается ОДИН раз за сессию (не на каждое слово) — компоненты
+  // карточек сами фильтруют лишние id.
   const needsDistractors =
     storePracticeType === 'multiple-choice' ||
     storePracticeType === 'reverse-choice' ||
     storePracticeType === 'syllable-constructor';
   const { data: distractorPool = [] } = useDistractorPool({
-    excludeIds: cards.map((c) => c.word.id),
-    count: 9,
-    enabled: hasStarted && needsDistractors && cards.length > 0,
+    count: 24,
+    enabled: hasStarted && needsDistractors,
   });
 
   // Объединённый пул слов для дистракторов: карточки сессии + случайные.
@@ -161,11 +163,6 @@ export default function StudyScreen() {
       precacheAudioUrls(cards);
     }
   }, [cards]);
-
-  // Следим за sessionId в сторе: если он сменился — значит сессия запущена.
-  useEffect(() => {
-    if (sessionIdInStore) setHasStarted(true);
-  }, [sessionIdInStore]);
 
   // При размонтировании сбрасываем стор
   useEffect(() => {
@@ -245,6 +242,7 @@ export default function StudyScreen() {
             params.set('practice', t);
             navigate(`/study?${params.toString()}`, { replace: true });
             setHasStarted(true);
+            startNow();
           }}
           onCancel={() => navigate('/')}
         />

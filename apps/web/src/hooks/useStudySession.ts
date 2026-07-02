@@ -8,10 +8,21 @@ import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
 import type { SrsRating, StudyMode, PracticeType } from '@hanzi/shared';
 
-export function useStudySession(
-  input: { deckId?: string; mode?: StudyMode; practiceType?: PracticeType } = {},
-) {
-  const { deckId, mode = 'mixed', practiceType: practiceTypeProp } = input;
+export interface UseStudySessionOptions {
+  deckId?: string;
+  mode?: StudyMode;
+  practiceType?: PracticeType;
+  /**
+   * Включает автоматический старт сессии при монтировании/смене параметров.
+   * По умолчанию `false` — сессия запускается только по `startNow()` /
+   * `retrySession()`, что нужно для показа экрана выбора типа практики
+   * до первого запроса к API.
+   */
+  enabled?: boolean;
+}
+
+export function useStudySession(input: UseStudySessionOptions = {}) {
+  const { deckId, mode = 'mixed', practiceType: practiceTypeProp, enabled = false } = input;
   const startMutation = useStartSession();
   const answerMutation = useRecordAnswer();
   const isOnline = useOnlineStatus();
@@ -29,8 +40,11 @@ export function useStudySession(
 
   const generationRef = useRef(0);
 
-  // Запуск сессии при монтировании и при смене deckId/mode/practiceType
+  // Запуск сессии при смене deckId/mode/practiceType, но только если хук
+  // включён (enabled = true). Это нужно, чтобы экран выбора типа практики
+  // отображался без побочного эффекта — обращения к /sessions/start.
   useEffect(() => {
+    if (!enabled) return;
     resetSession();
     const gen = ++generationRef.current;
 
@@ -47,7 +61,27 @@ export function useStudySession(
         },
       },
     );
-  }, [deckId, mode, practiceType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deckId, mode, practiceType, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startNow = () => {
+    // Сбрасываем стор перед стартом
+    useStudyStore.getState().resetSession();
+    const gen = ++generationRef.current;
+
+    startMutation.mutate(
+      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode, practiceType },
+      {
+        onSuccess: (session) => {
+          if (gen !== generationRef.current) return;
+          startSession(session.cards, session.id, { mode, practiceType });
+        },
+        onError: () => {
+          if (gen !== generationRef.current) return;
+          addToast('Не удалось начать сессию', 'error');
+        },
+      },
+    );
+  };
 
   const retrySession = () => {
     // Сбрасываем стор перед повтором
@@ -154,10 +188,11 @@ export function useStudySession(
     cardsCount > 0 && currentIndex >= cardsCount;
 
   return {
-    isLoading: startMutation.isPending || (startMutation.isIdle && !cardsCount),
+    isLoading: startMutation.isPending || (enabled && startMutation.isIdle && !cardsCount),
     isError: startMutation.isError,
     isSessionComplete,
     rateCard,
     retrySession,
+    startNow,
   };
 }

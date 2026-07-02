@@ -1,15 +1,16 @@
 import type { Word } from '@hanzi/shared';
 
-function shuffle<T>(arr: T[], seed = Math.random()): T[] {
+/**
+ * Fisher–Yates shuffle. Возвращает новый массив, исходный не мутирует.
+ * Используем `Math.random()` — криптостойкость не нужна, важна равномерность.
+ */
+function shuffle<T>(arr: readonly T[]): T[] {
   const a = [...arr];
-  let s = seed * 0x7fffffff;
-  const next = () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(next() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i]!;
+    a[i] = a[j]!;
+    a[j] = tmp;
   }
   return a;
 }
@@ -42,8 +43,8 @@ export function buildMultipleChoiceOptions(
     pool.filter((w) => w.id !== correct.id && w.translation !== correct.translation),
     (w) => w.id,
   );
-  const picked = shuffle(distractors, Math.random() * 1e9).slice(0, count - 1);
-  return shuffle([correct, ...picked], Math.random() * 1e9);
+  const picked = shuffle(distractors).slice(0, count - 1);
+  return shuffle([correct, ...picked]);
 }
 
 /**
@@ -59,8 +60,8 @@ export function buildReverseChoiceOptions(
     pool.filter((w) => w.id !== correct.id && w.character !== correct.character),
     (w) => w.id,
   );
-  const picked = shuffle(distractors, Math.random() * 1e9).slice(0, count - 1);
-  return shuffle([correct, ...picked], Math.random() * 1e9);
+  const picked = shuffle(distractors).slice(0, count - 1);
+  return shuffle([correct, ...picked]);
 }
 
 /**
@@ -76,6 +77,6 @@ export function buildSyllablePool(
   const others = distractorPinyin
     .flatMap((p) => p.split(/\s+/))
     .filter((s) => s && !correct.includes(s));
-  const extras = shuffle(others, Math.random() * 1e9).slice(0, extraCount);
-  return shuffle([...correct, ...extras], Math.random() * 1e9);
+  const extras = shuffle(others).slice(0, extraCount);
+  return shuffle([...correct, ...extras]);
 }

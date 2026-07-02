@@ -91,3 +91,42 @@ describe('buildSyllablePool', () => {
     expect(new Set(pool).size).toBe(pool.length);
   });
 });
+
+describe('shuffle (regression for the "always last" bug)', () => {
+  // Раньше использовался LCG с плавающей точкой, который всегда клал
+  // правильный ответ последним. Эти тесты ловят регрессию: на 200
+  // прогонах каждый из 4 индексов должен появиться хотя бы раз.
+  it('places the correct answer at every index across many runs (multiple-choice)', () => {
+    const correct: Word = makeWord('1', '爱', 'ài', 'любить');
+    const pool: Word[] = [
+      correct,
+      makeWord('2', '水', 'shuǐ', 'вода'),
+      makeWord('3', '火', 'huǒ', 'огонь'),
+      makeWord('4', '山', 'shān', 'гора'),
+      makeWord('5', '月', 'yuè', 'луна'),
+    ];
+    const seenAt = new Set<number>();
+    for (let i = 0; i < 200; i++) {
+      const options = buildMultipleChoiceOptions(correct, pool, 4);
+      seenAt.add(options.findIndex((o) => o.id === correct.id));
+    }
+    expect(seenAt.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('places the correct character at every index across many runs (reverse-choice)', () => {
+    const correct: Word = makeWord('1', '爱', 'ài', 'любить');
+    const pool: Word[] = [
+      correct,
+      makeWord('2', '水', 'shuǐ', 'вода'),
+      makeWord('3', '火', 'huǒ', 'огонь'),
+      makeWord('4', '山', 'shān', 'гора'),
+      makeWord('5', '月', 'yuè', 'луна'),
+    ];
+    const seenAt = new Set<number>();
+    for (let i = 0; i < 200; i++) {
+      const options = buildReverseChoiceOptions(correct, pool, 4);
+      seenAt.add(options.findIndex((o) => o.id === correct.id));
+    }
+    expect(seenAt.size).toBeGreaterThanOrEqual(3);
+  });
+});

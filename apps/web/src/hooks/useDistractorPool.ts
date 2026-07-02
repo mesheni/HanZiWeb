@@ -2,17 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client';
 import type { Word } from '@hanzi/shared';
 
-interface RandomWordsResponse {
-  success: true;
-  data: Word[];
-}
-
 interface UseDistractorPoolOptions {
-  /** Идентификаторы слов, которые нужно исключить (например, текущая сессия). */
-  excludeIds: string[];
   /** Сколько случайных слов вернуть. */
   count?: number;
-  /** Включать ли запрос (например, только для multiple-choice режима). */
+  /** Включать ли запрос. */
   enabled?: boolean;
 }
 
@@ -20,24 +13,25 @@ interface UseDistractorPoolOptions {
  * Хук для получения пула случайных слов — используется для генерации
  * дистракторов в multiple-choice / reverse-choice / syllable-constructor
  * практиках.
+ *
+ * Пул НЕ зависит от конкретной карточки: исключение id делается
+ * клиентом (в карточках) — это позволяет переиспользовать один и тот же
+ * пул между карточками и не плодить запросы на каждое слово.
  */
 export function useDistractorPool({
-  excludeIds,
-  count = 9,
+  count = 24,
   enabled = true,
-}: UseDistractorPoolOptions) {
+}: UseDistractorPoolOptions = {}) {
   return useQuery({
-    queryKey: ['distractor-pool', count, excludeIds.slice().sort().join(',')],
+    queryKey: ['distractor-pool', count],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('count', String(count));
-      if (excludeIds.length > 0) {
-        params.set('exclude', excludeIds.join(','));
-      }
-      const res = await apiGet<RandomWordsResponse>(`/sessions/random-words?${params.toString()}`);
-      return res.data;
+      // `apiGet` сам разворачивает `data` из ответа `{ success, data, … }`.
+      return apiGet<Word[]>(`/sessions/random-words?${params.toString()}`);
     },
-    enabled: enabled && excludeIds.length > 0,
-    staleTime: 60_000,
+    enabled,
+    // Кэшируем надолго — словарь статичен, можно подмешивать из сессии.
+    staleTime: 5 * 60_000,
   });
 }
