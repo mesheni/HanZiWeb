@@ -6,3 +6,4 @@ export * from './schemas/auth.js';
 export * from './schemas/user.js';
 export * from './schemas/api.js';
 export * from './schemas/sync.js';
+export * from './schemas/device.js';

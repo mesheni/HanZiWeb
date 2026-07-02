@@ -1,0 +1,169 @@
+# PLAN_Features_v0.2
+
+Дорожная карта дополнительных функций для HanZiWeb.
+Сгруппирована по приоритету и обоснована текущей архитектурой
+(Fastify 5 + Prisma/PostgreSQL + Redis, React 18 PWA + RxDB,
+FSRS v5, hanzi-writer, Google Cloud TTS).
+
+---
+
+## Высокий приоритет (близко к существующему коду)
+
+### 1. Push-уведомления (FCM) ✅ DONE
+Единственный незакрытый пункт Stage 6 из `plan/PLAN.md`.
+
+- Таблица `UserDevice` (`id`, `userId`, `fcmToken`, `platform`, `createdAt`).
+- Эндпоинты `POST /devices`, `DELETE /devices/:token`.
+- `node-cron`-задача раз в час: берёт `wordsDueToday` и шлёт Web Push
+  через `web-push` (VAPID-ключи в `.env`).
+- Service Worker `push`-handler в `apps/web` (Workbox-обёртка уже есть).
+- Экран настроек уведомлений в `SettingsScreen`
+  (утро/вечер, частота).
+- Основа для триггера «не был > N часов» — поле `User.lastActiveDate`
+  уже существует.
+
+### 2. Микс режимов тренировки
+Сейчас только flip-card. Добавить экран выбора типа практики в
+`StudyScreen` через `studyStore.mode`:
+
+- Multiple-choice (4 варианта перевода) — переиспользует `Word.translation`.
+- Обратный выбор (китайское → русский).
+- Набор пиньиня по иероглифу (input + проверка через `parsePinyin`
+  из `utils/toneColors.tsx`).
+- Распознавание тона на слух (воспроизвести TTS → выбрать 1/2/3/4) —
+  уже есть `useAudio` и `Word.audioUrl`.
+- Конструктор из слогов (drag-and-drop пиньинь-слоги).
+
+Рейтинги снова идут в FSRS через `/sessions/:id/answer`, т.е. новая
+сессия — это просто ещё один `StudyMode` в
+`packages/shared/schemas/session.ts`.
+
+### 3. Примеры предложений
+Модель `Example` уже есть в `schema.prisma`, но UI её не использует.
+
+- Seed-скрипт с примерами (открытые источники: `cedict`, примеры).
+- Блок в `WordDetailModal`.
+- Режим «подставь пропуск в предложении» (cloze).
+- TTS для целого предложения.
+
+### 4. Свои колоды пользователей (custom decks)
+`Deck.isSystemDeck` намекает на пользовательские, но `POST /decks`
+уже есть в `decks.routes.ts` без создания.
+
+- `POST /decks` (name, description, words[]).
+- `PUT /decks/:id`.
+- Экран конструктора колоды в `LibraryScreen`.
+- Шеринг колоды по короткому коду:
+  `POST /decks/:id/share` → `shareCode`,
+  `POST /decks/subscribe-by-code/:code`.
+
+### 5. Тематические колоды сверх HSK
+Еда, путешествия, бизнес, идиомы (чэнъюй). Использует тот же
+`Deck`-механизм + `DeckWord`. Заполнение из того же seed-формата.
+
+---
+
+## Средний приоритет
+
+### 6. Этимология/разбор иероглифа
+Карточка с радикалами, ключами и происхождением.
+
+- Данные из `hanzi-writer-data` (уже подключён) +
+  открытый `cjk-decomp`/`unicodia`.
+- Отдельный компонент `EtymologyCard`.
+- Рендерится в `WordDetailModal`.
+
+### 7. Leaderboard / социальная статистика
+`User.xp` уже считается.
+
+- Эндпоинты `GET /stats/leaderboard?period=week|all`
+  (топ-100 по XP/стрику).
+- Экран с табом «Неделя / Все время».
+- Нужен только индекс по `xp DESC`.
+
+### 8. Достижения (achievements / badges)
+Таблица `UserAchievement(userId, type, unlockedAt)` с типами:
+
+- «7 дней стрика»
+- «100 выученных»
+- «HSK 1 пройден»
+- «10 000 ревью»
+- «идеальная сессия»
+
+Проверка в `sessions/:id/answer` после каждого ответа, возврат в
+ответе + toast через `useToast`.
+
+### 9. Ежедневная цель (daily goal)
+Расширить `GET /stats/dashboard`: поле `dailyGoal` (по умолчанию
+20 ревью) + `todayReviews`. На главной кольцевой прогресс уже есть
+(`HomeScreen`), просто переключить источник. Настройка цели в
+`SettingsScreen` (`PUT /users/settings` + колонка `User.dailyGoal`).
+
+### 10. Экспорт/импорт прогресса
+- `GET /stats/export` → CSV/JSON всех `UserWordProgress`
+  (бэкап и аналитика пользователем).
+- `POST /stats/import` — восстановление.
+
+### 11. Тёмная тема
+Дизайн завязан на цвета тонов, но явной темы нет.
+
+- `ui/theme.ts` (CSS-переменные).
+- Переключатель в `SettingsScreen`, persist в `localStorage`.
+- Цвета тонов параметризовать через CSS-вары `--tone-1..4`.
+
+### 12. Повторение по «лёгкости» и фильтры сессии
+Сейчас `POST /sessions/start` берёт `mode` + `deckId`/`hskLevel`.
+
+- Фильтры `minStability` / `maxStability` (тренировать только
+  «забываемые»).
+- `tags[]`, `onlyWithAudio`, `onlyWithMnemonic`.
+
+---
+
+## Низкий приоритет / «аспирационные» (из `plan/Manifest.md`)
+
+### 13. Социальный вход (Google/Apple OAuth)
+Сейчас только email + bcrypt.
+
+- `@fastify/passport` + стратегия Google.
+- Таблица `UserAccount(userId, provider, providerUserId)`.
+
+### 14. Аналитика (PostHog)
+События `session_started`, `answer_rated`, `audio_generated`.
+Прокси через Fastify `/ingest`, чтобы не утекали куки.
+
+### 15. A/B-тесты (LaunchDarkly / Stytch)
+Гейтинг новых режимов тренировки.
+
+### 16. Mobile (React Native + WatermelonDB)
+`Manifest.md` декларирует нативный путь, но кода нет.
+
+- Вынести `@hanzi/shared` в отдельный npm-пакет.
+- RN-апп с тем же API/SyncEngine (TypeScript-контракты уже есть).
+
+---
+
+## Мелкие улучшения качества
+
+- Удалить устаревший TODO в `apps/web/src/queries/sessions.ts:7`
+  (уже подключено).
+- Обновить `plan/decisions.md` ADR-001
+  («упрощённая заглушка» — на самом деле полный FSRS v5).
+- Пометить в `plan/PLAN.md` Stage 6.2 как закрытый
+  (письмо реализовано).
+- Проверить баг с `NavButton` hover через `e.target`
+  (упомянут в `PLANCorrection` как средний риск).
+- Покрыть интеграционными тестами эндпоинты `sync` и
+  `sessions/:id/answer` (FSRS unit-тесты есть, а e2e — нет).
+
+---
+
+## Рекомендуемая очерёдность
+
+1. Push-уведомления (FCM)
+2. Режимы тренировки
+3. Custom decks
+4. Leaderboard + achievements
+
+Закрывает Stage 6 целиком и даёт максимальный продукт-рост при
+минимальных изменениях схемы.

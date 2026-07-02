@@ -13,9 +13,11 @@ import { statsRoutes } from './modules/stats/stats.routes.js';
 import { decksRoutes } from './modules/decks/decks.routes.js';
 import { audioRoutes } from './modules/audio/audio.routes.js';
 import { syncRoutes } from './modules/sync/sync.routes.js';
+import { devicesRoutes } from './modules/devices/devices.routes.js';
 
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
+import { initCronJobs } from './lib/cron.js';
 
 async function main() {
   const config = loadConfig();
@@ -106,6 +108,7 @@ async function main() {
     await child.register(decksRoutes, { prefix: '/decks' });
     await child.register(audioRoutes, { prefix: '/audio' });
     await child.register(syncRoutes, { prefix: '/sync' });
+    await child.register(devicesRoutes, { prefix: '/devices' });
 
   }, { prefix: '/api' });
 
@@ -188,6 +191,8 @@ async function main() {
 
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info(`Server running on http://localhost:${config.PORT}`);
+
+  initCronJobs();
 }
 
 main().catch((err) => {

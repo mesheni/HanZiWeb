@@ -15,11 +15,28 @@ model User {
   currentStreak         Int                 @default(0)
   tokenVersion          Int                 @default(0)
   lastActiveDate        DateTime?
+  notificationEnabled   Boolean             @default(false)
+  notificationTime      String              @default("morning")
+  notificationFrequency Int                 @default(1)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
   progress       UserWordProgress[]
   sessions       Session[]
+  devices        UserDevice[]
+}
+
+model UserDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fcmToken  String   @unique
+  p256dh    String   @default("")
+  auth      String   @default("")
+  platform  String   @default("web")
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Word {

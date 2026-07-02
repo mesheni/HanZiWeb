@@ -21,6 +21,11 @@ const envSchema = z.object({
   // В dev это обычно http://localhost:3001/audio/files
   AUDIO_PUBLIC_BASE_URL: z.string().default('http://localhost:3001/audio/files'),
 
+  // --- Push Notifications (Web Push / VAPID) ---
+  VAPID_PUBLIC_KEY: z.string().default(''),
+  VAPID_PRIVATE_KEY: z.string().default(''),
+  VAPID_SUBJECT: z.string().default('mailto:admin@hanzi.app'),
+
 
 });
 
