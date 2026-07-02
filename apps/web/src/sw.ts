@@ -7,9 +7,13 @@ import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 declare let self: ServiceWorkerGlobalScope;
 
-declare const __WB_MANIFEST: (string | PrecacheEntry)[];
+declare global {
+  interface ServiceWorkerGlobalScope {
+    __WB_MANIFEST: (string | PrecacheEntry)[];
+  }
+}
 
-precacheAndRoute(__WB_MANIFEST);
+precacheAndRoute(self.__WB_MANIFEST);
 
 registerRoute(
   /^\/api\/.*/i,
