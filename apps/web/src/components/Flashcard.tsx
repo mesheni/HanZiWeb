@@ -110,7 +110,7 @@ export default function Flashcard({
             className="flashcard-practice-btn"
             onClick={(e) => {
               e.stopPropagation();
-              const path = `/handwriting?char=${encodeURIComponent(word.character)}`;
+              const path = `/handwriting?char=${encodeURIComponent(word.character)}&pinyin=${encodeURIComponent(word.pinyin)}&translation=${encodeURIComponent(word.translation)}`;
               navigate(path);
             }}
             aria-label="Потренировать написание"

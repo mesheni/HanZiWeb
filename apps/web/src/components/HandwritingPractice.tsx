@@ -1,85 +1,120 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import HanziWriter from 'hanzi-writer';
+import { PinyinDisplay } from '../utils/toneColors';
 
 interface HandwritingPracticeProps {
   character: string;
+  pinyin?: string;
+  translation?: string;
   showAnimation?: boolean;
 }
 
-export default function HandwritingPractice({ character, showAnimation = true }: HandwritingPracticeProps) {
+interface CharWriterHandle {
+  animate: (onComplete?: () => void) => void;
+}
+
+const CHAR_SIZE = 220;
+
+const CharWriter = forwardRef<CharWriterHandle, { char: string }>(({ char }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const initWriter = useCallback(() => {
-    if (!containerRef.current || !character) return;
+  useEffect(() => {
+    if (!containerRef.current) return;
     containerRef.current.innerHTML = '';
+    setLoading(true);
 
-    writerRef.current = HanziWriter.create(containerRef.current, character, {
-      width: 300,
-      height: 300,
-      padding: 10,
+    writerRef.current = HanziWriter.create(containerRef.current, char, {
+      width: CHAR_SIZE,
+      height: CHAR_SIZE,
+      padding: 12,
       strokeColor: '#E8EAED',
       radicalColor: '#DC2626',
       outlineColor: '#45475A',
-      drawingColor: '#DC2626',
-      highlightColor: '#4FC3F7',
-      showCharacter: false,
-      showHintAfterMisses: 3,
+      showCharacter: true,
       strokeAnimationSpeed: 1.2,
-      delayBetweenStrokes: 300,
-      delayBetweenLoops: 1500,
-      onLoadCharData: () => setLoading(false),
+      delayBetweenStrokes: 250,
+      charDataLoader: (char, onComplete) => {
+        fetch(`/hanzi-writer-data/${encodeURIComponent(char)}.json`)
+          .then((res) => res.json())
+          .then(onComplete)
+          .catch(() => setLoading(false));
+      },
+      onLoadCharDataSuccess: () => setLoading(false),
     });
 
-    if (showAnimation) {
-      writerRef.current.animateCharacter();
-    }
-  }, [character, showAnimation]);
-
-  useEffect(() => {
-    initWriter();
     return () => {
       if (containerRef.current) containerRef.current.innerHTML = '';
       writerRef.current = null;
     };
-  }, [initWriter]);
+  }, [char]);
 
-  const handleWatchAnimation = () => {
-    writerRef.current?.animateCharacter();
-  };
-
-  const handleStartPractice = () => {
-    writerRef.current?.loopCharacterAnimation();
-  };
-
-  const handleQuiz = () => {
-    writerRef.current?.quiz({
-      showCharacter: false,
-      showHintAfterMisses: 3,
-    });
-  };
+  useImperativeHandle(
+    ref,
+    () => ({
+      animate: (onComplete) => writerRef.current?.animateCharacter({ onComplete }),
+    }),
+    [],
+  );
 
   return (
-    <div className="handwriting-practice">
+    <div className="hw-char-cell">
       <div ref={containerRef} className="handwriting-canvas" />
       {loading && (
         <div className="handwriting-loading">
           <span className="spinner" />
-          <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>Загрузка...</span>
         </div>
       )}
-      <div className="handwriting-controls">
-        <button className="hw-btn hw-btn-primary" onClick={handleWatchAnimation}>
-          Смотреть порядок черт
-        </button>
-        <button className="hw-btn hw-btn-secondary" onClick={handleStartPractice}>
-          Обводить по образцу
-        </button>
-        <button className="hw-btn hw-btn-outline" onClick={handleQuiz}>
-          Написать по памяти
-        </button>
+    </div>
+  );
+});
+CharWriter.displayName = 'CharWriter';
+
+export default function HandwritingPractice({
+  character,
+  pinyin,
+  translation,
+  showAnimation = true,
+}: HandwritingPracticeProps) {
+  const chars = Array.from(character);
+  const refs = useRef<(CharWriterHandle | null)[]>([]);
+  const [playing, setPlaying] = useState(false);
+
+  const playSequence = (index = 0) => {
+    if (index >= chars.length) {
+      setPlaying(false);
+      return;
+    }
+    setPlaying(true);
+    refs.current[index]?.animate(() => playSequence(index + 1));
+  };
+
+  useEffect(() => {
+    if (!showAnimation) return;
+    const t = setTimeout(() => playSequence(0), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [character]);
+
+  return (
+    <div className="handwriting-practice">
+      <div className="handwriting-chars-row">
+        {chars.map((char, i) => (
+          <CharWriter key={`${character}-${i}`} char={char} ref={(el) => (refs.current[i] = el)} />
+        ))}
       </div>
+
+      {(pinyin || translation) && (
+        <div className="handwriting-hint">
+          {pinyin && <PinyinDisplay pinyin={pinyin} className="handwriting-hint-pinyin" />}
+          {translation && <div className="handwriting-hint-translation">{translation}</div>}
+        </div>
+      )}
+
+      <button className="hw-btn hw-btn-primary" onClick={() => playSequence(0)} disabled={playing}>
+        {playing ? 'Показываю...' : 'Смотреть порядок черт'}
+      </button>
     </div>
   );
 }

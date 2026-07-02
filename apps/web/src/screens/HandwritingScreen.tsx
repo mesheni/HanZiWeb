@@ -4,11 +4,25 @@ import { ArrowLeft, Search } from 'lucide-react';
 import { useWords } from '@/queries/words';
 import HandwritingPractice from '@/components/HandwritingPractice';
 
+interface SelectedWord {
+  character: string;
+  pinyin?: string;
+  translation?: string;
+}
+
 export default function HandwritingScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialChar = searchParams.get('char') || '';
-  const [selectedChar, setSelectedChar] = useState(initialChar);
+  const [selectedWord, setSelectedWord] = useState<SelectedWord | null>(
+    initialChar
+      ? {
+          character: initialChar,
+          pinyin: searchParams.get('pinyin') ?? undefined,
+          translation: searchParams.get('translation') ?? undefined,
+        }
+      : null,
+  );
   const [searchQuery, setSearchQuery] = useState('');
 
   const { data: words } = useWords({ search: searchQuery || undefined });
@@ -33,10 +47,15 @@ export default function HandwritingScreen() {
         />
       </div>
 
-      {selectedChar ? (
+      {selectedWord ? (
         <div className="handwriting-main">
-          <HandwritingPractice character={selectedChar} key={selectedChar} />
-          <button className="hw-close-char" onClick={() => setSelectedChar('')}>
+          <HandwritingPractice
+            character={selectedWord.character}
+            pinyin={selectedWord.pinyin}
+            translation={selectedWord.translation}
+            key={selectedWord.character}
+          />
+          <button className="hw-close-char" onClick={() => setSelectedWord(null)}>
             Выбрать другой иероглиф
           </button>
         </div>
@@ -46,7 +65,9 @@ export default function HandwritingScreen() {
             <button
               key={word.id}
               className="hw-word-item"
-              onClick={() => setSelectedChar(word.character)}
+              onClick={() =>
+                setSelectedWord({ character: word.character, pinyin: word.pinyin, translation: word.translation })
+              }
             >
               <span className="hw-word-char">{word.character}</span>
               <span className="hw-word-pinyin">{word.pinyin}</span>

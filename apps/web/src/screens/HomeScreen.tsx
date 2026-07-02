@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import { useDashboard } from '../queries/stats';
@@ -103,6 +104,7 @@ export default function HomeScreen() {
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  const DAILY_REVIEW_GOAL = 20;
   const hour = today.getHours();
   const greeting = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
 
@@ -122,6 +124,12 @@ export default function HomeScreen() {
       <div
         style={styles.ctaCard}
         onClick={() => navigate('/study')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            navigate('/study');
+          }
+        }}
         role="button"
         tabIndex={0}
       >
@@ -167,7 +175,7 @@ export default function HomeScreen() {
       <div style={styles.progressSection}>
         <div className="section-label">Прогресс за сегодня</div>
         <div style={styles.progressRow}>
-          <CircularProgress value={totalReviews} max={Math.max(totalReviews, 20)} size={88} strokeWidth={5} />
+          <CircularProgress value={totalReviews} max={DAILY_REVIEW_GOAL} size={88} strokeWidth={5} />
           <div style={styles.progressInfo}>
             <div style={styles.progressInfoNumber}>{wordsDueToday}</div>
             <div style={styles.progressInfoLabel}>слов к повторению</div>
@@ -235,7 +243,7 @@ export default function HomeScreen() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   screen: {
     position: 'absolute',
     inset: 0,

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import type { CSSProperties } from 'react';
 import { Search, Filter } from 'lucide-react';
 import { useInfiniteWords } from '../queries/words';
 import Badge from '../components/ui/Badge';
@@ -128,6 +129,12 @@ export default function LibraryScreen() {
                 ref={isLast ? lastWordRef : null}
                 style={styles.card}
                 onClick={() => setSelectedWord(w)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedWord(w);
+                  }
+                }}
                 role="button"
                 tabIndex={0}
               >
@@ -192,7 +199,7 @@ const STATUS_BAR_COLOR: Record<string, string> = {
   new: 'var(--tone-0)',
 };
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   screen: {
     position: 'absolute', inset: 0, overflowY: 'auto',
     padding: '26px 26px 20px',

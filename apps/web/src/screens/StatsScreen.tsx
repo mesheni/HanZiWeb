@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useActivity, useOverview } from '../queries/stats';
 
@@ -87,6 +88,9 @@ function ActivityCalendar({
                   return (
                     <div
                       key={di}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${dateStr}: ${count} повторений`}
                       style={{
                         ...styles.cell,
                         background: INTENSITY_COLORS[intensity],
@@ -102,6 +106,17 @@ function ActivityCalendar({
                         });
                       }}
                       onMouseLeave={() => setTooltip(null)}
+                      onClick={(e) => {
+                        const rect = (e.target as HTMLElement).getBoundingClientRect();
+                        setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          const rect = (e.target as HTMLElement).getBoundingClientRect();
+                          setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
+                        }
+                      }}
                     />
                   );
                 })}
@@ -217,13 +232,13 @@ export default function StatsScreen() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   screen: {
     position: 'absolute', inset: 0, overflowY: 'auto',
     padding: '26px 26px 20px',
   },
   statGrid: {
-    display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 18,
+    display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 18,
   },
   statCard: {
     background: 'var(--bg-card)', border: '1px solid var(--border-default)',

@@ -13,11 +13,13 @@ declare module 'hanzi-writer' {
     strokeAnimationSpeed?: number;
     delayBetweenStrokes?: number;
     delayBetweenLoops?: number;
-    onLoadCharData?: () => void;
+    charDataLoader?: (char: string, onComplete: (data: unknown) => void) => void;
+    onLoadCharDataSuccess?: () => void;
+    onLoadCharDataError?: (error: unknown) => void;
   }
 
   interface WriterInstance {
-    animateCharacter(): void;
+    animateCharacter(options?: { onComplete?: () => void }): void;
     loopCharacterAnimation(): void;
     quiz(options?: { showCharacter?: boolean; showHintAfterMisses?: number }): void;
     setCharacter(character: string): void;

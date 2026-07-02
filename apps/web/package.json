@@ -5,24 +5,26 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "pnpm copy-hw-data && tsc && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "copy-hw-data": "node scripts/copy-hw-data.mjs"
   },
   "dependencies": {
     "@hanzi/shared": "workspace:*",
     "@tanstack/react-query": "^5.60.0",
     "canvas-confetti": "^1.9.4",
+    "hanzi-writer": "^3.5.0",
+    "hanzi-writer-data": "2.0.1",
     "lucide-react": "^1.22.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.28.0",
     "rxdb": "15.0.0",
     "rxjs": "7.8.1",
-    "hanzi-writer": "^3.5.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

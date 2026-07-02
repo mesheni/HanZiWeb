@@ -105,6 +105,9 @@ importers:
       hanzi-writer:
         specifier: ^3.5.0
         version: 3.7.3
+      hanzi-writer-data:
+        specifier: 2.0.1
+        version: 2.0.1
       lucide-react:
         specifier: ^1.22.0
         version: 1.22.0(react@18.3.1)
@@ -2535,6 +2538,9 @@ packages:
   graphql@15.8.0:
     resolution: {integrity: sha512-5gghUc24tP9HRznNpV2+FIoq3xKkj5dTQqf4v0CpdPbFVwFkWoxOM+o+2OC9ZSvjEMTjfmG9QT+gcvggTwW1zw==}
     engines: {node: '>= 10.x'}
+
+  hanzi-writer-data@2.0.1:
+    resolution: {integrity: sha512-nbQwM+MaryGoq7pBMIZLCd3lFq03nXuJuwku1+6UbjL58uU+9OULVcMkoNvNuJSoIV7f1bbPRfD4D/LQa5S7qg==}
 
   hanzi-writer@3.7.3:
     resolution: {integrity: sha512-fdOFrb1cXWL/pV/oplJkcdziCvjJzhhf+qoIBm5IpVGxPBZEu4eLB6ZG5RJDbKXyNbNlyx8oIpa3XrcUBcSXpg==}
@@ -6471,6 +6477,8 @@ snapshots:
       graphql: 15.8.0
 
   graphql@15.8.0: {}
+
+  hanzi-writer-data@2.0.1: {}
 
   hanzi-writer@3.7.3: {}
 
