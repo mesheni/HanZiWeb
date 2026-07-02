@@ -56,13 +56,43 @@ FSRS v5, hanzi-writer, Google Cloud TTS).
 - `apps/web/src/utils/{practiceTypes,pinyinNormalize,distractors}.ts` — утилиты +
   23 vitest-теста.
 
-### 3. Примеры предложений
+### 3. Примеры предложений ✅ DONE
 Модель `Example` уже есть в `schema.prisma`, но UI её не использует.
 
-- Seed-скрипт с примерами (открытые источники: `cedict`, примеры).
-- Блок в `WordDetailModal`.
-- Режим «подставь пропуск в предложении» (cloze).
-- TTS для целого предложения.
+- Seed-скрипт с примерами (открытые источники: `cedict`, примеры). ✅
+- Блок в `WordDetailModal`. ✅
+- Режим «подставь пропуск в предложении» (cloze). ✅
+- TTS для целого предложения. ✅
+
+**Реализация**:
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260702160000_examples_and_cloze` — `source`/`tatoebaId`/`createdAt`
+  на `Example`, новая таблица `ClozeProgress(userId, exampleId, correctCount, wrongCount)`.
+- `apps/server/src/lib/tatoeba.ts` — клиент Tatoeba API
+  (`getSentencesWithTranslations`, `getTranslationsForSentence`, `pickRussianTranslation`),
+  4 vitest-теста.
+- `apps/server/scripts/seed-examples.ts` + скрипт `pnpm examples:seed`
+  (`--limit/--perWord/--hskLevel/--dryRun/--delayMs`).
+- `apps/server/src/modules/examples/{examples.routes,examples.service}.ts` —
+  `GET/POST/DELETE /words/:wordId/examples`,
+  `POST /words/:wordId/examples/fetch` (Tatoeba), `POST /cloze/attempts`.
+- `packages/shared/src/schemas/example.ts` — `Example/CreateExample/FetchExamplesResult/
+  RecordCloze/ClozeQuestion`.
+- `packages/shared/src/schemas/session.ts` — `PracticeType` += `cloze`.
+- `packages/shared/src/schemas/word.ts` — `Word.examples` использует `ExampleSchema`.
+- `apps/web/src/queries/examples.ts` — 4 react-query хука.
+- `apps/web/src/utils/cloze.ts` — `buildClozeQuestion` (с fallback на
+  нормализованный первый слог пиньиня), `checkClozeAnswer` — 9 vitest-тестов.
+- `apps/web/src/components/practice/ClozeCard.tsx` — карточка cloze с
+  озвучкой предложения через `speechSynthesis` (`zh-CN`, rate 0.9).
+- `apps/web/src/components/practice/PracticeTypeSelector.tsx` + `utils/practiceTypes.ts`
+  — регистрация типа «Подстановка» (icon `WholeWord`).
+- `apps/web/src/components/WordDetailModal.tsx` — модал слова: пиньинь,
+  перевод, HSK, TTS, список примеров с TTS и удалением, ручное
+  добавление, импорт из Tatoeba, кнопка «Тренировать» (запуск cloze).
+- `apps/web/src/screens/{LibraryScreen,StudyScreen}.tsx` — замена
+  инлайн-модала на `WordDetailModal`, проводка `cloze` в `StudyScreen`.
+- `apps/web/src/styles/global.css` — стили `.word-detail*` и `.cloze-*`.
 
 ### 4. Свои колоды пользователей (custom decks)
 `Deck.isSystemDeck` намекает на пользовательские, но `POST /decks`

@@ -14,6 +14,8 @@ import ReverseChoiceCard from '../components/practice/ReverseChoiceCard';
 import PinyinInputCard from '../components/practice/PinyinInputCard';
 import ToneRecognitionCard from '../components/practice/ToneRecognitionCard';
 import SyllableConstructorCard from '../components/practice/SyllableConstructorCard';
+import ClozeCard from '../components/practice/ClozeCard';
+import { useWordExamples } from '../queries/examples';
 import { STUDY_MODE_LABELS, getPracticeTypeInfo } from '../utils/practiceTypes';
 import type { SrsRating, StudyMode, PracticeType, Word } from '@hanzi/shared';
 
@@ -60,6 +62,7 @@ function parsePracticeParam(value: string | null): PracticeType {
     'pinyin-input',
     'tone-recognition',
     'syllable-constructor',
+    'cloze',
   ];
   if (value && (valid as string[]).includes(value)) {
     return value as PracticeType;
@@ -133,6 +136,19 @@ export default function StudyScreen() {
     const extras = distractorPool.filter((w) => !seen.has(w.id));
     return [...sessionWords, ...extras];
   }, [cards, distractorPool]);
+
+  // Примеры для текущего слова — нужны cloze-карточке.
+  // Берём встроенные примеры из слова, а если их нет — подгружаем
+  // /words/:id/examples (там могут быть доп. Tatoeba-примеры).
+  const clozeExamples = currentCard?.word.examples ?? [];
+  const { data: extraExamples } = useWordExamples(
+    storePracticeType === 'cloze' ? currentCard?.word.id : null,
+  );
+  const allExamples = useMemo(() => {
+    if (!extraExamples) return clozeExamples;
+    const seen = new Set(clozeExamples.map((e) => e.id));
+    return [...clozeExamples, ...extraExamples.filter((e) => !seen.has(e.id))];
+  }, [clozeExamples, extraExamples]);
 
   // Статистика для SessionComplete
   const stats = useMemo(() => {
@@ -460,6 +476,14 @@ export default function StudyScreen() {
           <SyllableConstructorCard
             word={currentCard.word}
             poolPinyin={combinedPool.map((w) => w.pinyin)}
+            onAnswer={handleBinaryAnswer}
+          />
+        )}
+
+        {storePracticeType === 'cloze' && (
+          <ClozeCard
+            word={currentCard.word}
+            examples={allExamples}
             onAnswer={handleBinaryAnswer}
           />
         )}

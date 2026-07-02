@@ -5,6 +5,7 @@ import {
   Music2,
   Puzzle,
   CreditCard,
+  WholeWord,
 } from 'lucide-react';
 import { useStudyStore } from '../../stores/studyStore';
 import { PRACTICE_TYPES, getPracticeTypeInfo } from '../../utils/practiceTypes';
@@ -18,6 +19,7 @@ const ICONS = {
   Music2,
   Puzzle,
   CreditCard,
+  WholeWord,
 } as const;
 
 interface PracticeTypeSelectorProps {

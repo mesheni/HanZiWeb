@@ -15,6 +15,7 @@ export type StudyMode = z.infer<typeof StudyModeSchema>;
  * - `pinyin-input`           — набрать пиньинь по иероглифу (input + parsePinyin).
  * - `tone-recognition`       — воспроизвести TTS и выбрать тон (1/2/3/4).
  * - `syllable-constructor`   — drag-and-drop слогов пиньиня в правильном порядке.
+ * - `cloze`                  — подставить пропущенное слово в предложении-примере.
  */
 export const PracticeTypeSchema = z.enum([
   'flip-card',
@@ -23,6 +24,7 @@ export const PracticeTypeSchema = z.enum([
   'pinyin-input',
   'tone-recognition',
   'syllable-constructor',
+  'cloze',
 ]);
 export type PracticeType = z.infer<typeof PracticeTypeSchema>;
 

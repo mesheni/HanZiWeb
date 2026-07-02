@@ -7,3 +7,4 @@ export * from './schemas/user.js';
 export * from './schemas/api.js';
 export * from './schemas/sync.js';
 export * from './schemas/device.js';
+export * from './schemas/example.js';

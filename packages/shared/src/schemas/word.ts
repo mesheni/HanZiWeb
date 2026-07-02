@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ExampleSchema } from './example.js';
 
 /**
  * Слово (иероглиф) в словаре.
@@ -20,15 +21,7 @@ export const WordSchema = z.object({
   mnemonic: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
   /** Примеры использования — вложенный массив */
-  examples: z
-    .array(
-      z.object({
-        id: z.string().uuid(),
-        chinese: z.string(),
-        russian: z.string(),
-      }),
-    )
-    .default([]),
+  examples: z.array(ExampleSchema).default([]),
 });
 
 export type Word = z.infer<typeof WordSchema>;

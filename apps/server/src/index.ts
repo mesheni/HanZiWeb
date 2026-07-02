@@ -14,6 +14,7 @@ import { decksRoutes } from './modules/decks/decks.routes.js';
 import { audioRoutes } from './modules/audio/audio.routes.js';
 import { syncRoutes } from './modules/sync/sync.routes.js';
 import { devicesRoutes } from './modules/devices/devices.routes.js';
+import { examplesRoutes } from './modules/examples/examples.routes.js';
 
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
@@ -109,6 +110,7 @@ async function main() {
     await child.register(audioRoutes, { prefix: '/audio' });
     await child.register(syncRoutes, { prefix: '/sync' });
     await child.register(devicesRoutes, { prefix: '/devices' });
+    await child.register(examplesRoutes);
 
   }, { prefix: '/api' });
 

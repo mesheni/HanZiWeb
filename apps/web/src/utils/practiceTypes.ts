@@ -7,7 +7,7 @@ export interface PracticeTypeInfo {
   /** Описание режима (1 строка). */
   description: string;
   /** Иконка Lucide. */
-  icon: 'Layers' | 'ArrowLeftRight' | 'Keyboard' | 'Music2' | 'Puzzle' | 'CreditCard';
+  icon: 'Layers' | 'ArrowLeftRight' | 'Keyboard' | 'Music2' | 'Puzzle' | 'CreditCard' | 'WholeWord';
   /** Цвет (для бейджа / подсветки). */
   color: string;
   /** Полупрозрачный фон для бейджа. */
@@ -62,6 +62,14 @@ export const PRACTICE_TYPES: PracticeTypeInfo[] = [
     icon: 'Puzzle',
     color: '#BA68C8',
     bg: 'rgba(186,104,200,0.15)',
+  },
+  {
+    id: 'cloze',
+    label: 'Подстановка',
+    description: 'Вставь пропущенное слово в предложение-пример',
+    icon: 'WholeWord',
+    color: '#F472B6',
+    bg: 'rgba(244,114,182,0.15)',
   },
 ];
 

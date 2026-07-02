@@ -1,10 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Filter } from 'lucide-react';
 import { useInfiniteWords } from '../queries/words';
 import Badge from '../components/ui/Badge';
-import Modal from '../components/ui/Modal';
+import WordDetailModal from '../components/WordDetailModal';
 import { PinyinDisplay } from '../utils/toneColors';
+import type { Word } from '@hanzi/shared';
 
 const HSK_CHIPS = [0, 1, 2, 3, 4, 5, 6] as const;
 const STATUS_CHIPS = ['all', 'new', 'learning', 'review', 'graduated'] as const;
@@ -18,11 +20,12 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function LibraryScreen() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [hskLevel, setHskLevel] = useState<number | null>(null);
   const [statusChip, setStatusChip] = useState<string>('all');
-  const [selectedWord, setSelectedWord] = useState<any>(null);
+  const [selectedWord, setSelectedWord] = useState<Word | null>(null);
 
   // Debounce 300ms
   useEffect(() => {
@@ -155,39 +158,15 @@ export default function LibraryScreen() {
         <div style={styles.loading}><span className="spinner" /></div>
       )}
 
-      {/* Detail Modal */}
-      <Modal open={!!selectedWord} onClose={() => setSelectedWord(null)} title={selectedWord?.character ?? ''}>
-        {selectedWord && (
-          <div style={styles.modalContent}>
-            <div style={styles.modalChar}>{selectedWord.character}</div>
-            <PinyinDisplay pinyin={selectedWord.pinyin} />
-            <div style={styles.modalTranslation}>{selectedWord.translation}</div>
-            {selectedWord.hskLevel && (
-              <div style={styles.modalMeta}>HSK {selectedWord.hskLevel}</div>
-            )}
-            {selectedWord.mnemonic && (
-              <div style={styles.modalSection}>
-                <div style={styles.modalSectionTitle}>Мнемоника</div>
-                <div style={styles.modalText}>{selectedWord.mnemonic}</div>
-              </div>
-            )}
-            {selectedWord.examples && selectedWord.examples.length > 0 && (
-              <div style={styles.modalSection}>
-                <div style={styles.modalSectionTitle}>Примеры</div>
-                {selectedWord.examples.map((ex: any, i: number) => (
-                  <div key={ex.id || i} style={styles.modalExample}>
-                    <div style={styles.modalExampleZh}>{ex.chinese}</div>
-                    <div style={styles.modalExampleRu}>{ex.russian}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ marginTop: 10 }}>
-              <Badge status={selectedWord.status ?? 'new'} />
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* Detail Modal — examples, TTS, cloze */}
+      <WordDetailModal
+        word={selectedWord}
+        onClose={() => setSelectedWord(null)}
+        onStartCloze={(w) => {
+          setSelectedWord(null);
+          navigate(`/study?mode=mixed&practice=cloze&wordId=${encodeURIComponent(w.id)}`);
+        }}
+      />
     </div>
   );
 }
