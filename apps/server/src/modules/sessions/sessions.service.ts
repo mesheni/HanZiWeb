@@ -146,9 +146,9 @@ export async function startSession(userId: string, input: StartSession) {
   });
 
   // Избегаем union type issue — маппим карточки отдельно
-  const cards: Array<{ index: number; word: unknown; answered: boolean }> = [
-    ...dueWords.map((p, i) => ({ index: i, word: p.word, answered: false })),
-    ...newWords.map((p, i) => ({ index: dueWords.length + i, word: p.word, answered: false })),
+  const cards: Array<{ index: number; word: unknown; answered: boolean; state: string }> = [
+    ...dueWords.map((p, i) => ({ index: i, word: p.word, answered: false, state: p.state })),
+    ...newWords.map((p, i) => ({ index: dueWords.length + i, word: p.word, answered: false, state: p.state })),
   ];
 
   return {

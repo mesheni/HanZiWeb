@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, RefreshCw } from 'lucide-react';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
 import { useStudyStore } from '../stores/studyStore';
@@ -35,11 +35,24 @@ const RATING_OPTIONS: RatingOption[] = [
   { rating: 4, label: 'Легко', hint: 'через 4 дня', className: 'rate-easy' },
 ];
 
+const MODE_CONFIG: Record<StudyMode, { label: string; color: string; bg: string }> = {
+  mixed: { label: 'Тренировка', color: '#A78BFA', bg: 'rgba(167,139,250,0.15)' },
+  review: { label: 'Повторение', color: '#FBBF24', bg: 'rgba(251,191,36,0.15)' },
+  learn: { label: 'Изучение', color: '#34D399', bg: 'rgba(52,211,153,0.15)' },
+};
+
+const STATE_LABELS: Record<string, { label: string; color: string }> = {
+  new: { label: 'Новое', color: '#6EE7B7' },
+  learning: { label: 'Учу', color: '#FBBF24' },
+  review: { label: 'Повтор', color: '#A78BFA' },
+  graduated: { label: 'Усвоено', color: '#34D399' },
+};
+
 export default function StudyScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const mode = (searchParams.get('mode') ?? 'mixed') as StudyMode;
-  const { isLoading, isSessionComplete, rateCard } = useStudySession({ mode });
+  const { isLoading, isError, isSessionComplete, rateCard, retrySession } = useStudySession({ mode });
 
   const cards = useStudyStore((s) => s.cards);
   const currentIndex = useStudyStore((s) => s.currentIndex);
@@ -51,56 +64,20 @@ export default function StudyScreen() {
   const currentCard = cards[currentIndex];
   const wordId = currentCard?.word.id ?? null;
   const audio = useAudio(wordId);
-
-  // Автовоспроизведение аудио при перевороте карточки
-  useEffect(() => {
-    if (isFlipped && audio.isAvailable) {
-      audio.play();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFlipped]);
-
-  // Клавиатурные сокращения: 1=Again, 2=Hard, 3=Good, 4=Easy, Space=flip
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (isSessionComplete) return;
-      if (!currentCard) return;
-
-      if (e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();
-        flipCard();
-        return;
-      }
-
-      if (!isFlipped) return; // оценки доступны только после переворота
-
-      const map: Record<string, SrsRating> = {
-        '1': 1,
-        '2': 2,
-        '3': 3,
-        '4': 4,
-      };
-      const rating = map[e.key];
-      if (rating !== undefined) {
-        e.preventDefault();
-        rateCard(rating);
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isSessionComplete, currentCard, isFlipped, flipCard, rateCard]);
+  const modeCfg = MODE_CONFIG[mode];
 
   // Статистика для SessionComplete
   const stats = useMemo(() => {
     let correct = 0;
     let incorrect = 0;
+    const newCount = cards.filter((c) => c.state === 'new').length;
+    const reviewCount = cards.filter((c) => c.state !== 'new').length;
     for (const card of cards) {
       if (!card.answered) continue;
       if (card.rating && card.rating >= 3) correct++;
       else incorrect++;
     }
-    return { correct, incorrect, total: cards.length };
+    return { correct, incorrect, total: cards.length, newCount, reviewCount };
   }, [cards]);
 
   // Подсчёт XP
@@ -126,11 +103,85 @@ export default function StudyScreen() {
     return () => resetSession();
   }, [resetSession]);
 
+  // Автовоспроизведение аудио при перевороте карточки
+  useEffect(() => {
+    if (isFlipped && audio.isAvailable) {
+      audio.play();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFlipped]);
+
+  // Клавиатурные сокращения
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (isSessionComplete) return;
+      if (!currentCard) return;
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        flipCard();
+        return;
+      }
+
+      if (!isFlipped) return;
+
+      const map: Record<string, SrsRating> = {
+        '1': 1,
+        '2': 2,
+        '3': 3,
+        '4': 4,
+      };
+      const rating = map[e.key];
+      if (rating !== undefined) {
+        e.preventDefault();
+        rateCard(rating);
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isSessionComplete, currentCard, isFlipped, flipCard, rateCard]);
+
+  // Состояние ошибки
+  if (isError && !cards.length) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 4, fontSize: 16, fontWeight: 500 }}>Не удалось загрузить сессию</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>Проверьте подключение и попробуйте снова</p>
+        </div>
+        <button
+          onClick={() => retrySession()}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '12px 24px', background: 'var(--accent)',
+            border: 'none', borderRadius: 10, color: '#fff',
+            fontSize: 14, fontWeight: 500, cursor: 'pointer',
+          }}
+        >
+          <RefreshCw size={16} />
+          Попробовать снова
+        </button>
+        <button onClick={() => navigate('/')} style={{ color: 'var(--text-muted)', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>
+          На главную
+        </button>
+      </div>
+    );
+  }
+
   // Состояния загрузки
   if (isLoading) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <span className="spinner" style={{ width: 28, height: 28 }} />
+        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Загрузка сессии...</span>
+        <span style={{
+          display: 'inline-block', padding: '3px 10px', borderRadius: 12,
+          fontSize: 11, fontWeight: 500,
+          color: modeCfg.color, background: modeCfg.bg,
+        }}>
+          {modeCfg.label}
+        </span>
       </div>
     );
   }
@@ -149,18 +200,32 @@ export default function StudyScreen() {
 
   if (!currentCard) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
         <div style={{ textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 12 }}>Нет карточек для изучения.</p>
-          <button onClick={() => navigate('/')} style={{ color: 'var(--accent)' }}>На главную</button>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 4, fontSize: 16, fontWeight: 500 }}>Нет карточек для изучения</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>
+            {mode === 'review' ? 'Все слова повторены. Возвращайтесь позже.' : 'Попробуйте другой режим.'}
+          </p>
         </div>
+        <button
+          onClick={() => retrySession()}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 20px', background: 'var(--accent)',
+            border: 'none', borderRadius: 10, color: '#fff',
+            fontSize: 14, fontWeight: 500, cursor: 'pointer',
+          }}
+        >
+          <RefreshCw size={16} />
+          Обновить
+        </button>
+        <button onClick={() => navigate('/')} style={{ color: 'var(--text-muted)', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>На главную</button>
       </div>
     );
   }
 
   const progressPct = Math.round((progress.current / progress.total) * 100);
-  const modeLabel =
-    mode === 'review' ? 'Повторение' : mode === 'learn' ? 'Изучение' : 'Тренировка';
+  const stateCfg: { label: string; color: string } = STATE_LABELS[currentCard.state] ?? { label: 'Новое', color: '#6EE7B7' };
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -183,7 +248,17 @@ export default function StudyScreen() {
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           {progress.current + 1} / {progress.total}
         </span>
-        <span style={{ fontSize: 13, fontWeight: 500 }}>{modeLabel}</span>
+        <span style={{
+          display: 'inline-block',
+          padding: '3px 10px',
+          borderRadius: 12,
+          fontSize: 12,
+          fontWeight: 600,
+          color: modeCfg.color,
+          background: modeCfg.bg,
+        }}>
+          {modeCfg.label}
+        </span>
         <button
           onClick={() => navigate('/')}
           aria-label="Выйти"
@@ -192,6 +267,23 @@ export default function StudyScreen() {
           <X size={18} />
         </button>
       </div>
+
+      {/* Card state badge */}
+      {currentCard.state && (
+        <div style={{ padding: '6px 22px 0', textAlign: 'center' }}>
+          <span style={{
+            display: 'inline-block',
+            padding: '2px 8px',
+            borderRadius: 8,
+            fontSize: 11,
+            fontWeight: 500,
+            color: stateCfg.color,
+            background: `${stateCfg.color}15`,
+          }}>
+            {stateCfg.label}
+          </span>
+        </div>
+      )}
 
       {/* Card area */}
       <div

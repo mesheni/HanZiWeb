@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStartSession, useRecordAnswer } from '../queries/sessions';
 import { useStudyStore } from '../stores/studyStore';
 import { useToastStore } from '../stores/toastStore';
@@ -8,15 +8,6 @@ import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
 import type { SrsRating, StudyMode } from '@hanzi/shared';
 
-/**
- * Хук оркестрации учебной сессии:
- *  - запускает сессию (POST /sessions/start) при монтировании;
- *  - наполняет studyStore карточками;
- *  - предоставляет rateCard(), выполняющий POST /sessions/:id/answer
- *    с optimistic-update (немедленный переход к следующей карточке),
- *    откатом и toast-ом при ошибке;
- *  - предоставляет флаг isSessionComplete — все карточки пройдены.
- */
 export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {}) {
   const { deckId, mode = 'mixed' } = input;
   const startMutation = useStartSession();
@@ -27,42 +18,48 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
   const cardsCount = useStudyStore((s) => s.cards.length);
   const currentIndex = useStudyStore((s) => s.currentIndex);
   const addToast = useToastStore((s) => s.addToast);
-  const sessionKey = useMemo(() => `${deckId ?? 'all'}:${mode}`, [deckId, mode]);
 
-  // Запоминаем предыдущий индекс для отката
-  const prevIndexRef = useRef<number>(0);
-  const startedKeyRef = useRef<string | null>(null);
-  const inFlightKeyRef = useRef<string | null>(null);
-  const attemptedKeyRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
 
-  // Старт сессии — один раз при монтировании
+  // Запуск сессии при монтировании и при смене deckId/mode
   useEffect(() => {
-    if (
-      startedKeyRef.current === sessionKey ||
-      inFlightKeyRef.current === sessionKey ||
-      attemptedKeyRef.current === sessionKey
-    ) {
-      return;
-    }
-
-    attemptedKeyRef.current = sessionKey;
-    inFlightKeyRef.current = sessionKey;
+    resetSession();
+    const gen = ++generationRef.current;
 
     startMutation.mutate(
       { deckId, cardLimit: 20, includeNew: mode !== 'review', mode },
       {
         onSuccess: (session) => {
-          startedKeyRef.current = sessionKey;
-          inFlightKeyRef.current = null;
+          if (gen !== generationRef.current) return;
           startSession(session.cards, session.id);
         },
         onError: () => {
-          inFlightKeyRef.current = null;
+          if (gen !== generationRef.current) return;
           addToast('Не удалось начать сессию', 'error');
         },
       },
     );
-  }, [addToast, deckId, mode, sessionKey, startMutation, startSession]);
+  }, [deckId, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const retrySession = () => {
+    // Сбрасываем стор перед повтором
+    useStudyStore.getState().resetSession();
+    const gen = ++generationRef.current;
+
+    startMutation.mutate(
+      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode },
+      {
+        onSuccess: (session) => {
+          if (gen !== generationRef.current) return;
+          startSession(session.cards, session.id);
+        },
+        onError: () => {
+          if (gen !== generationRef.current) return;
+          addToast('Не удалось начать сессию', 'error');
+        },
+      },
+    );
+  };
 
   const rateCard = (rating: SrsRating) => {
     const { cards, currentIndex, sessionId } = useStudyStore.getState();
@@ -70,15 +67,14 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
     const card = cards[currentIndex];
     if (!card || !sessionId) return;
 
-    // Снимок состояния для отката
-    prevIndexRef.current = currentIndex;
+    // Захватываем индекс в замыкание этого конкретного вызова,
+    // чтобы onError откатывал именно ту карточку, на которой был ответ
+    const answeredIndex = currentIndex;
 
-    // Optimistic update: сразу помечаем карточку отвеченной и переходим к следующей
     const studyStore = useStudyStore.getState();
     studyStore.rateCard(rating);
     studyStore.nextCard();
 
-    // Сохраняем ответ локально (RxDB) + в очередь синхронизации
     const db = getDb();
     if (db) {
       db.progress.findOne({ selector: { wordId: card.word.id } }).exec().then((existing) => {
@@ -111,7 +107,6 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
       }
     }
 
-    // Фоновый запрос на сервер (только если онлайн)
     if (isOnline) {
       answerMutation.mutate(
         {
@@ -121,23 +116,22 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
         },
         {
           onError: () => {
-            // Откат: возвращаемся к карточке, убираем отметку answered
             useStudyStore.setState((state) => {
               const updated = [...state.cards];
-              if (updated[prevIndexRef.current]) {
-                updated[prevIndexRef.current] = {
-                  ...updated[prevIndexRef.current]!,
+              if (updated[answeredIndex]) {
+                updated[answeredIndex] = {
+                  ...updated[answeredIndex]!,
                   answered: false,
                   rating: undefined,
                 };
               }
               return {
                 cards: updated,
-                currentIndex: prevIndexRef.current,
+                currentIndex: answeredIndex,
                 isFlipped: false,
                 progress: {
                   ...state.progress,
-                  current: prevIndexRef.current,
+                  current: answeredIndex,
                 },
               };
             });
@@ -148,13 +142,16 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
     }
   };
 
+  const resetSession = useStudyStore((s) => s.resetSession);
+
   const isSessionComplete =
     cardsCount > 0 && currentIndex >= cardsCount;
 
   return {
-    isLoading: startMutation.isPending,
-    isError: startMutation.isError || answerMutation.isError,
+    isLoading: startMutation.isPending || (startMutation.isIdle && !cardsCount),
+    isError: startMutation.isError,
     isSessionComplete,
     rateCard,
+    retrySession,
   };
 }

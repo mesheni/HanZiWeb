@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SrsRatingSchema } from './progress.js';
+import { SrsRatingSchema, WordStateSchema } from './progress.js';
 import { WordSchema } from './word.js';
 
 /** Режим запуска учебной сессии. */
@@ -35,6 +35,8 @@ export const SessionCardSchema = z.object({
   answered: z.boolean().default(false),
   /** Оценка, если ответ уже дан */
   rating: SrsRatingSchema.optional(),
+  /** Текущее состояние слова (new/learning/review/graduated) */
+  state: WordStateSchema.default('new'),
 });
 
 export type SessionCard = z.infer<typeof SessionCardSchema>;
