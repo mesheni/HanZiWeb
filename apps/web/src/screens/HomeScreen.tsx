@@ -140,6 +140,23 @@ export default function HomeScreen() {
         <div style={styles.ctaArrow}>→</div>
       </div>
 
+      {/* Быстрый запуск нестандартной практики */}
+      <div
+        style={{ ...styles.modeCard, marginBottom: 12, borderColor: 'var(--border-accent)' }}
+        onClick={() => navigate('/study?practice=multiple-choice')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            navigate('/study?practice=multiple-choice');
+          }
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        <div style={styles.modeTitle}>Микс-режимы →</div>
+        <div style={styles.modeText}>Выбор перевода · ввод пиньиня · тоны · слоги</div>
+      </div>
+
       <div style={styles.modeGrid}>
         <button style={styles.modeCard} onClick={() => navigate('/study?mode=review')}>
           <div style={styles.modeTitle}>Повторить сегодня</div>

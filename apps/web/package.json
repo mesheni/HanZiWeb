@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist",
     "icons": "node scripts/generate-icons.mjs",
     "copy-hw-data": "node scripts/copy-hw-data.mjs"

@@ -2,9 +2,29 @@ import { z } from 'zod';
 import { SrsRatingSchema, WordStateSchema } from './progress.js';
 import { WordSchema } from './word.js';
 
-/** Режим запуска учебной сессии. */
+/** Режим запуска учебной сессии (выбор контента). */
 export const StudyModeSchema = z.enum(['mixed', 'review', 'learn']);
 export type StudyMode = z.infer<typeof StudyModeSchema>;
+
+/**
+ * Тип практики в рамках сессии (как именно тренировать слова).
+ *
+ * - `flip-card`              — классическая flash-карточка (фронт/тыл).
+ * - `multiple-choice`        — китайский иероглиф → 4 варианта перевода.
+ * - `reverse-choice`         — русский перевод → 4 варианта иероглифа.
+ * - `pinyin-input`           — набрать пиньинь по иероглифу (input + parsePinyin).
+ * - `tone-recognition`       — воспроизвести TTS и выбрать тон (1/2/3/4).
+ * - `syllable-constructor`   — drag-and-drop слогов пиньиня в правильном порядке.
+ */
+export const PracticeTypeSchema = z.enum([
+  'flip-card',
+  'multiple-choice',
+  'reverse-choice',
+  'pinyin-input',
+  'tone-recognition',
+  'syllable-constructor',
+]);
+export type PracticeType = z.infer<typeof PracticeTypeSchema>;
 
 /**
  * Учебная сессия — набор карточек на повторение.
@@ -20,6 +40,10 @@ export const SessionSchema = z.object({
   cardsTotal: z.number().int().positive(),
   /** Сколько уже отвечено */
   cardsCompleted: z.number().int().nonnegative().default(0),
+  /** Режим сессии (микс/повтор/новые). */
+  mode: StudyModeSchema.default('mixed'),
+  /** Тип практики (flip-card, multiple-choice, …). */
+  practiceType: PracticeTypeSchema.default('flip-card'),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable().default(null),
 });
@@ -57,6 +81,8 @@ export const StartSessionSchema = z.object({
   includeNew: z.boolean().default(true),
   /** Режим сессии: микс, только повтор, только новые слова. */
   mode: StudyModeSchema.default('mixed'),
+  /** Тип практики в сессии. По умолчанию — flip-card. */
+  practiceType: PracticeTypeSchema.default('flip-card'),
 });
 
 export type StartSession = z.infer<typeof StartSessionSchema>;

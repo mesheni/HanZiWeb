@@ -1,13 +1,21 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { X, RefreshCw } from 'lucide-react';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
+import { useDistractorPool } from '../hooks/useDistractorPool';
 import { useStudyStore } from '../stores/studyStore';
 import Flashcard from '../components/Flashcard';
 import SessionComplete from '../components/SessionComplete';
 import { ProgressBar } from '../components/ui';
-import type { SrsRating, StudyMode } from '@hanzi/shared';
+import PracticeTypeSelector from '../components/practice/PracticeTypeSelector';
+import MultipleChoiceCard from '../components/practice/MultipleChoiceCard';
+import ReverseChoiceCard from '../components/practice/ReverseChoiceCard';
+import PinyinInputCard from '../components/practice/PinyinInputCard';
+import ToneRecognitionCard from '../components/practice/ToneRecognitionCard';
+import SyllableConstructorCard from '../components/practice/SyllableConstructorCard';
+import { STUDY_MODE_LABELS, getPracticeTypeInfo } from '../utils/practiceTypes';
+import type { SrsRating, StudyMode, PracticeType, Word } from '@hanzi/shared';
 
 function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
   if ('caches' in window) {
@@ -35,12 +43,6 @@ const RATING_OPTIONS: RatingOption[] = [
   { rating: 4, label: 'Легко', hint: 'через 4 дня', className: 'rate-easy' },
 ];
 
-const MODE_CONFIG: Record<StudyMode, { label: string; color: string; bg: string }> = {
-  mixed: { label: 'Тренировка', color: '#A78BFA', bg: 'rgba(167,139,250,0.15)' },
-  review: { label: 'Повторение', color: '#FBBF24', bg: 'rgba(251,191,36,0.15)' },
-  learn: { label: 'Изучение', color: '#34D399', bg: 'rgba(52,211,153,0.15)' },
-};
-
 const STATE_LABELS: Record<string, { label: string; color: string }> = {
   new: { label: 'Новое', color: '#6EE7B7' },
   learning: { label: 'Учу', color: '#FBBF24' },
@@ -48,11 +50,54 @@ const STATE_LABELS: Record<string, { label: string; color: string }> = {
   graduated: { label: 'Усвоено', color: '#34D399' },
 };
 
+const DEFAULT_PRACTICE: PracticeType = 'flip-card';
+
+function parsePracticeParam(value: string | null): PracticeType {
+  const valid: PracticeType[] = [
+    'flip-card',
+    'multiple-choice',
+    'reverse-choice',
+    'pinyin-input',
+    'tone-recognition',
+    'syllable-constructor',
+  ];
+  if (value && (valid as string[]).includes(value)) {
+    return value as PracticeType;
+  }
+  return DEFAULT_PRACTICE;
+}
+
 export default function StudyScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const mode = (searchParams.get('mode') ?? 'mixed') as StudyMode;
-  const { isLoading, isError, isSessionComplete, rateCard, retrySession } = useStudySession({ mode });
+  const practiceFromUrl = parsePracticeParam(searchParams.get('practice'));
+
+  // Храним выбранный тип практики в сторе, чтобы экран выбора и сам
+  // экран сессии синхронизировались.
+  const storePracticeType = useStudyStore((s) => s.practiceType);
+  const setPracticeType = useStudyStore((s) => s.setPracticeType);
+  const sessionIdInStore = useStudyStore((s) => s.sessionId);
+  const [hasStarted, setHasStarted] = useState(false);
+
+  // Тип практики, по которому реально стартовала сессия. Меняется только
+  // по нажатию "Начать" — иначе перебор типов в селекторе не плодил бы
+  // серверные сессии.
+  const [activePracticeType, setActivePracticeType] = useState<PracticeType>(practiceFromUrl);
+
+  // Синхронизируем URL → стор при первом монтировании.
+  useEffect(() => {
+    if (storePracticeType !== practiceFromUrl) {
+      setPracticeType(practiceFromUrl);
+    }
+  }, [practiceFromUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Запускаем сессию только после явного "Начать" — иначе показываем
+  // экран выбора практики.
+  const { isLoading, isError, isSessionComplete, rateCard, retrySession } = useStudySession({
+    mode,
+    practiceType: activePracticeType,
+  });
 
   const cards = useStudyStore((s) => s.cards);
   const currentIndex = useStudyStore((s) => s.currentIndex);
@@ -64,20 +109,39 @@ export default function StudyScreen() {
   const currentCard = cards[currentIndex];
   const wordId = currentCard?.word.id ?? null;
   const audio = useAudio(wordId);
-  const modeCfg = MODE_CONFIG[mode];
+
+  const modeCfg = STUDY_MODE_LABELS[mode];
+  const practiceCfg = getPracticeTypeInfo(storePracticeType);
+
+  // Пул дистракторов (multiple-choice / reverse-choice / syllable-constructor).
+  const needsDistractors =
+    storePracticeType === 'multiple-choice' ||
+    storePracticeType === 'reverse-choice' ||
+    storePracticeType === 'syllable-constructor';
+  const { data: distractorPool = [] } = useDistractorPool({
+    excludeIds: cards.map((c) => c.word.id),
+    count: 9,
+    enabled: hasStarted && needsDistractors && cards.length > 0,
+  });
+
+  // Объединённый пул слов для дистракторов: карточки сессии + случайные.
+  const combinedPool: Word[] = useMemo(() => {
+    const sessionWords = cards.map((c) => c.word);
+    const seen = new Set(sessionWords.map((w) => w.id));
+    const extras = distractorPool.filter((w) => !seen.has(w.id));
+    return [...sessionWords, ...extras];
+  }, [cards, distractorPool]);
 
   // Статистика для SessionComplete
   const stats = useMemo(() => {
     let correct = 0;
     let incorrect = 0;
-    const newCount = cards.filter((c) => c.state === 'new').length;
-    const reviewCount = cards.filter((c) => c.state !== 'new').length;
     for (const card of cards) {
       if (!card.answered) continue;
       if (card.rating && card.rating >= 3) correct++;
       else incorrect++;
     }
-    return { correct, incorrect, total: cards.length, newCount, reviewCount };
+    return { correct, incorrect, total: cards.length };
   }, [cards]);
 
   // Подсчёт XP
@@ -98,21 +162,29 @@ export default function StudyScreen() {
     }
   }, [cards]);
 
+  // Следим за sessionId в сторе: если он сменился — значит сессия запущена.
+  useEffect(() => {
+    if (sessionIdInStore) setHasStarted(true);
+  }, [sessionIdInStore]);
+
   // При размонтировании сбрасываем стор
   useEffect(() => {
-    return () => resetSession();
+    return () => {
+      resetSession();
+    };
   }, [resetSession]);
 
-  // Автовоспроизведение аудио при перевороте карточки
+  // Автовоспроизведение аудио при перевороте карточки (только flip-card).
   useEffect(() => {
-    if (isFlipped && audio.isAvailable) {
+    if (isFlipped && audio.isAvailable && storePracticeType === 'flip-card') {
       audio.play();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFlipped]);
+  }, [isFlipped, storePracticeType]);
 
-  // Клавиатурные сокращения
+  // Клавиатурные сокращения (только для flip-card).
   useEffect(() => {
+    if (storePracticeType !== 'flip-card') return;
     const handler = (e: KeyboardEvent) => {
       if (isSessionComplete) return;
       if (!currentCard) return;
@@ -125,12 +197,7 @@ export default function StudyScreen() {
 
       if (!isFlipped) return;
 
-      const map: Record<string, SrsRating> = {
-        '1': 1,
-        '2': 2,
-        '3': 3,
-        '4': 4,
-      };
+      const map: Record<string, SrsRating> = { '1': 1, '2': 2, '3': 3, '4': 4 };
       const rating = map[e.key];
       if (rating !== undefined) {
         e.preventDefault();
@@ -140,7 +207,50 @@ export default function StudyScreen() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isSessionComplete, currentCard, isFlipped, flipCard, rateCard]);
+  }, [isSessionComplete, currentCard, isFlipped, flipCard, rateCard, storePracticeType]);
+
+  // Экран выбора типа практики — показываем до старта сессии.
+  if (!hasStarted) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '18px 22px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span
+            style={{
+              display: 'inline-block',
+              padding: '3px 10px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 500,
+              color: modeCfg.color,
+              background: modeCfg.bg,
+            }}
+          >
+            {modeCfg.label}
+          </span>
+          <button
+            onClick={() => navigate('/')}
+            aria-label="Выйти"
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <PracticeTypeSelector
+          mode={mode}
+          onStart={(t) => {
+            setPracticeType(t);
+            setActivePracticeType(t);
+            // Отражение в URL для шеринга/закладок.
+            const params = new URLSearchParams(searchParams);
+            params.set('practice', t);
+            navigate(`/study?${params.toString()}`, { replace: true });
+            setHasStarted(true);
+          }}
+          onCancel={() => navigate('/')}
+        />
+      </div>
+    );
+  }
 
   // Состояние ошибки
   if (isError && !cards.length) {
@@ -178,16 +288,16 @@ export default function StudyScreen() {
         <span style={{
           display: 'inline-block', padding: '3px 10px', borderRadius: 12,
           fontSize: 11, fontWeight: 500,
-          color: modeCfg.color, background: modeCfg.bg,
+          color: practiceCfg.color, background: practiceCfg.bg,
         }}>
-          {modeCfg.label}
+          {practiceCfg.label}
         </span>
       </div>
     );
   }
 
   if (isSessionComplete) {
-      return (
+    return (
       <SessionComplete
         total={stats.total}
         correct={stats.correct}
@@ -226,6 +336,13 @@ export default function StudyScreen() {
 
   const progressPct = Math.round((progress.current / progress.total) * 100);
   const stateCfg: { label: string; color: string } = STATE_LABELS[currentCard.state] ?? { label: 'Новое', color: '#6EE7B7' };
+  const isBinaryMode = storePracticeType !== 'flip-card';
+
+  // В бинарных режимах (multiple-choice, pinyin-input, …) сами знаем
+  // верно/неверно → маппим в FSRS rating: 1=Again, 3=Good.
+  const handleBinaryAnswer = (correct: boolean) => {
+    rateCard(correct ? 3 : 1);
+  };
 
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -249,15 +366,17 @@ export default function StudyScreen() {
           {progress.current + 1} / {progress.total}
         </span>
         <span style={{
-          display: 'inline-block',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
           padding: '3px 10px',
           borderRadius: 12,
-          fontSize: 12,
-          fontWeight: 600,
-          color: modeCfg.color,
-          background: modeCfg.bg,
+          fontSize: 11,
+          fontWeight: 500,
+          color: practiceCfg.color,
+          background: practiceCfg.bg,
         }}>
-          {modeCfg.label}
+          {practiceCfg.label}
         </span>
         <button
           onClick={() => navigate('/')}
@@ -293,56 +412,100 @@ export default function StudyScreen() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '14px 28px',
+          padding: '14px 22px',
+          minHeight: 0,
+          overflow: 'auto',
         }}
       >
-        <Flashcard
-          word={currentCard.word}
-          isFlipped={isFlipped}
-          onFlip={flipCard}
-          onReplayAudio={() => audio.play()}
-          audioLoading={audio.isLoading}
-          hasAudio={audio.isAvailable}
-        />
-      </div>
+        {storePracticeType === 'flip-card' && (
+          <Flashcard
+            word={currentCard.word}
+            isFlipped={isFlipped}
+            onFlip={flipCard}
+            onReplayAudio={() => audio.play()}
+            audioLoading={audio.isLoading}
+            hasAudio={audio.isAvailable}
+          />
+        )}
 
-      {/* Footer — оценки доступны только после переворота */}
-      <div style={{ padding: '10px 22px 20px', flexShrink: 0 }}>
-        {!isFlipped ? (
-          <button
-            onClick={flipCard}
-            style={{
-              display: 'block',
-              width: '100%',
-              maxWidth: 210,
-              margin: '0 auto',
-              padding: '12px',
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: 10,
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Показать ответ
-          </button>
-        ) : (
-          <div className="rating-row">
-            {RATING_OPTIONS.map((opt) => (
-              <button
-                key={opt.rating}
-                className={`rate-btn ${opt.className}`}
-                onClick={() => rateCard(opt.rating)}
-              >
-                {opt.label}
-                <small>{opt.hint}</small>
-              </button>
-            ))}
-          </div>
+        {storePracticeType === 'multiple-choice' && (
+          <MultipleChoiceCard
+            word={currentCard.word}
+            pool={combinedPool}
+            onAnswer={handleBinaryAnswer}
+          />
+        )}
+
+        {storePracticeType === 'reverse-choice' && (
+          <ReverseChoiceCard
+            word={currentCard.word}
+            pool={combinedPool}
+            onAnswer={handleBinaryAnswer}
+          />
+        )}
+
+        {storePracticeType === 'pinyin-input' && (
+          <PinyinInputCard
+            word={currentCard.word}
+            onAnswer={handleBinaryAnswer}
+          />
+        )}
+
+        {storePracticeType === 'tone-recognition' && (
+          <ToneRecognitionCard
+            word={currentCard.word}
+            onAnswer={handleBinaryAnswer}
+          />
+        )}
+
+        {storePracticeType === 'syllable-constructor' && (
+          <SyllableConstructorCard
+            word={currentCard.word}
+            poolPinyin={combinedPool.map((w) => w.pinyin)}
+            onAnswer={handleBinaryAnswer}
+          />
         )}
       </div>
+
+      {/* Footer — для flip-card рейтинг-кнопки, иначе ничего (компонент сам решает). */}
+      {!isBinaryMode && (
+        <div style={{ padding: '10px 22px 20px', flexShrink: 0 }}>
+          {!isFlipped ? (
+            <button
+              onClick={flipCard}
+              style={{
+                display: 'block',
+                width: '100%',
+                maxWidth: 210,
+                margin: '0 auto',
+                padding: '12px',
+                background: 'var(--accent)',
+                border: 'none',
+                borderRadius: 10,
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Показать ответ
+            </button>
+          ) : (
+            <div className="rating-row">
+              {RATING_OPTIONS.map((opt) => (
+                <button
+                  key={opt.rating}
+                  className={`rate-btn ${opt.className}`}
+                  onClick={() => rateCard(opt.rating)}
+                >
+                  {opt.label}
+                  <small>{opt.hint}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -114,6 +114,10 @@ model Session {
   deck           Deck?     @relation(fields: [deckId], references: [id])
   cardsTotal     Int
   cardsCompleted Int       @default(0)
+  /// Режим сессии: mixed | review | learn
+  mode           String    @default("mixed")
+  /// Тип практики: flip-card | multiple-choice | reverse-choice | pinyin-input | tone-recognition | syllable-constructor
+  practiceType   String    @default("flip-card")
   startedAt      DateTime  @default(now())
   completedAt    DateTime?
 

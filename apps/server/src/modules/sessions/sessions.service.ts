@@ -142,6 +142,8 @@ export async function startSession(userId: string, input: StartSession) {
       userId,
       deckId: input.deckId,
       cardsTotal: allCards.length,
+      mode,
+      practiceType: input.practiceType ?? 'flip-card',
     },
   });
 
@@ -231,5 +233,34 @@ export async function getSession(userId: string, sessionId: string) {
   return prisma.session.findFirst({
     where: { id: sessionId, userId },
     include: { answers: true },
+  });
+}
+
+/**
+ * Возвращает случайные слова из словаря (используется для генерации
+ * дистракторов в multiple-choice / reverse-choice практиках).
+ */
+export async function getRandomWords(
+  excludeIds: string[],
+  count: number,
+  hskLevel?: number | null,
+) {
+  const where: Prisma.WordWhereInput = {
+    id: excludeIds.length > 0 ? { notIn: excludeIds } : undefined,
+  };
+  if (hskLevel != null) {
+    where.hskLevel = hskLevel;
+  }
+
+  const total = await prisma.word.count({ where });
+  if (total === 0) return [];
+
+  const skip = Math.max(0, Math.floor(Math.random() * Math.max(0, total - count)));
+  return prisma.word.findMany({
+    where,
+    include: { examples: true },
+    orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
+    skip,
+    take: count,
   });
 }

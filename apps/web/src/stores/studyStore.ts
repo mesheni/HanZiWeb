@@ -1,20 +1,25 @@
 import { create } from 'zustand';
-import type { SessionCard, SrsRating } from '@hanzi/shared';
+import type { SessionCard, SrsRating, PracticeType, StudyMode } from '@hanzi/shared';
 
 interface StudyState {
   /** Карточки текущей сессии */
   cards: SessionCard[];
   /** Индекс текущей карточки */
   currentIndex: number;
-  /** Перевёрнута ли текущая карточка */
+  /** Перевёрнута ли текущая карточка (для flip-card) */
   isFlipped: boolean;
   /** Прогресс сессии */
   progress: { current: number; total: number };
   /** ID активной сессии (с сервера) */
   sessionId: string | null;
+  /** Режим сессии (mixed | review | learn) */
+  mode: StudyMode;
+  /** Тип практики (flip-card | multiple-choice | …) */
+  practiceType: PracticeType;
 
   // Actions
-  startSession: (cards: SessionCard[], sessionId: string) => void;
+  startSession: (cards: SessionCard[], sessionId: string, opts?: { mode?: StudyMode; practiceType?: PracticeType }) => void;
+  setPracticeType: (type: PracticeType) => void;
   flipCard: () => void;
   rateCard: (rating: SrsRating) => void;
   nextCard: () => void;
@@ -27,15 +32,21 @@ export const useStudyStore = create<StudyState>((set, get) => ({
   isFlipped: false,
   progress: { current: 0, total: 0 },
   sessionId: null,
+  mode: 'mixed',
+  practiceType: 'flip-card',
 
-  startSession: (cards, sessionId) =>
+  startSession: (cards, sessionId, opts) =>
     set({
       cards,
       sessionId,
       currentIndex: 0,
       isFlipped: false,
       progress: { current: 0, total: cards.length },
+      mode: opts?.mode ?? 'mixed',
+      practiceType: opts?.practiceType ?? 'flip-card',
     }),
+
+  setPracticeType: (type) => set({ practiceType: type }),
 
   flipCard: () => set({ isFlipped: true }),
 
@@ -65,5 +76,7 @@ export const useStudyStore = create<StudyState>((set, get) => ({
       isFlipped: false,
       progress: { current: 0, total: 0 },
       sessionId: null,
+      mode: 'mixed',
+      practiceType: 'flip-card',
     }),
 }));

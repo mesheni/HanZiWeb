@@ -22,21 +22,39 @@ FSRS v5, hanzi-writer, Google Cloud TTS).
 - Основа для триггера «не был > N часов» — поле `User.lastActiveDate`
   уже существует.
 
-### 2. Микс режимов тренировки
+### 2. Микс режимов тренировки ✅ DONE
 Сейчас только flip-card. Добавить экран выбора типа практики в
 `StudyScreen` через `studyStore.mode`:
 
-- Multiple-choice (4 варианта перевода) — переиспользует `Word.translation`.
-- Обратный выбор (китайское → русский).
+- Multiple-choice (4 варианта перевода) — переиспользует `Word.translation`. ✅
+- Обратный выбор (китайское → русский). ✅
 - Набор пиньиня по иероглифу (input + проверка через `parsePinyin`
-  из `utils/toneColors.tsx`).
+  из `utils/toneColors.tsx`). ✅
 - Распознавание тона на слух (воспроизвести TTS → выбрать 1/2/3/4) —
-  уже есть `useAudio` и `Word.audioUrl`.
-- Конструктор из слогов (drag-and-drop пиньинь-слоги).
+  уже есть `useAudio` и `Word.audioUrl`. ✅
+- Конструктор из слогов (drag-and-drop пиньинь-слоги). ✅
 
 Рейтинги снова идут в FSRS через `/sessions/:id/answer`, т.е. новая
 сессия — это просто ещё один `StudyMode` в
-`packages/shared/schemas/session.ts`.
+`packages/shared/schemas/session.ts`. ✅
+
+**Реализация**:
+- `packages/shared/src/schemas/session.ts` — `PracticeTypeSchema` (6 значений) +
+  `mode`/`practiceType` в `SessionSchema` и `StartSessionSchema`.
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260702213135_add_session_practice_mode` — `mode` и `practiceType` колонки.
+- `apps/server/src/modules/sessions/sessions.service.ts` — `startSession` пишет
+  `mode`/`practiceType`; добавлен `getRandomWords` для дистракторов.
+- `apps/server/src/modules/sessions/sessions.routes.ts` — `GET /sessions/random-words`.
+- `apps/web/src/stores/studyStore.ts` — `practiceType` + `setPracticeType`.
+- `apps/web/src/hooks/useStudySession.ts` — передаёт `practiceType` на сервер.
+- `apps/web/src/hooks/useDistractorPool.ts` — пул случайных слов.
+- `apps/web/src/components/practice/PracticeTypeSelector.tsx` — экран выбора.
+- `apps/web/src/components/practice/{MultipleChoiceCard,ReverseChoiceCard,
+  PinyinInputCard,ToneRecognitionCard,SyllableConstructorCard}.tsx` —
+  5 практик (плюс сам `Flipcard` остался в `Flashcard.tsx`).
+- `apps/web/src/utils/{practiceTypes,pinyinNormalize,distractors}.ts` — утилиты +
+  23 vitest-теста.
 
 ### 3. Примеры предложений
 Модель `Example` уже есть в `schema.prisma`, но UI её не использует.

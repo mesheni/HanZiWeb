@@ -6,32 +6,40 @@ import { useOnlineStatus } from './useOnlineStatus';
 import { getDb } from '../db/database';
 import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
-import type { SrsRating, StudyMode } from '@hanzi/shared';
+import type { SrsRating, StudyMode, PracticeType } from '@hanzi/shared';
 
-export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {}) {
-  const { deckId, mode = 'mixed' } = input;
+export function useStudySession(
+  input: { deckId?: string; mode?: StudyMode; practiceType?: PracticeType } = {},
+) {
+  const { deckId, mode = 'mixed', practiceType: practiceTypeProp } = input;
   const startMutation = useStartSession();
   const answerMutation = useRecordAnswer();
   const isOnline = useOnlineStatus();
 
   const startSession = useStudyStore((s) => s.startSession);
+  const resetSession = useStudyStore((s) => s.resetSession);
   const cardsCount = useStudyStore((s) => s.cards.length);
   const currentIndex = useStudyStore((s) => s.currentIndex);
+  const practiceTypeInStore = useStudyStore((s) => s.practiceType);
   const addToast = useToastStore((s) => s.addToast);
+
+  // Если practiceType не передан явно — берём из стора (позволяет менять
+  // его до старта сессии через setPracticeType).
+  const practiceType = practiceTypeProp ?? practiceTypeInStore;
 
   const generationRef = useRef(0);
 
-  // Запуск сессии при монтировании и при смене deckId/mode
+  // Запуск сессии при монтировании и при смене deckId/mode/practiceType
   useEffect(() => {
     resetSession();
     const gen = ++generationRef.current;
 
     startMutation.mutate(
-      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode },
+      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode, practiceType },
       {
         onSuccess: (session) => {
           if (gen !== generationRef.current) return;
-          startSession(session.cards, session.id);
+          startSession(session.cards, session.id, { mode, practiceType });
         },
         onError: () => {
           if (gen !== generationRef.current) return;
@@ -39,7 +47,7 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
         },
       },
     );
-  }, [deckId, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deckId, mode, practiceType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const retrySession = () => {
     // Сбрасываем стор перед повтором
@@ -47,11 +55,11 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
     const gen = ++generationRef.current;
 
     startMutation.mutate(
-      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode },
+      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode, practiceType },
       {
         onSuccess: (session) => {
           if (gen !== generationRef.current) return;
-          startSession(session.cards, session.id);
+          startSession(session.cards, session.id, { mode, practiceType });
         },
         onError: () => {
           if (gen !== generationRef.current) return;
@@ -141,8 +149,6 @@ export function useStudySession(input: { deckId?: string; mode?: StudyMode } = {
       );
     }
   };
-
-  const resetSession = useStudyStore((s) => s.resetSession);
 
   const isSessionComplete =
     cardsCount > 0 && currentIndex >= cardsCount;
