@@ -94,16 +94,63 @@ FSRS v5, hanzi-writer, Google Cloud TTS).
   инлайн-модала на `WordDetailModal`, проводка `cloze` в `StudyScreen`.
 - `apps/web/src/styles/global.css` — стили `.word-detail*` и `.cloze-*`.
 
-### 4. Свои колоды пользователей (custom decks)
+### 4. Свои колоды пользователей (custom decks) ✅ DONE
 `Deck.isSystemDeck` намекает на пользовательские, но `POST /decks`
 уже есть в `decks.routes.ts` без создания.
 
-- `POST /decks` (name, description, words[]).
-- `PUT /decks/:id`.
-- Экран конструктора колоды в `LibraryScreen`.
+- `POST /decks` (name, description, words[]). ✅
+- `PUT /decks/:id`. ✅
+- Экран конструктора колоды в `LibraryScreen`. ✅
 - Шеринг колоды по короткому коду:
-  `POST /decks/:id/share` → `shareCode`,
-  `POST /decks/subscribe-by-code/:code`.
+  `POST /decks/:id/share` → `shareCode`, ✅
+  `POST /decks/subscribe-by-code/:code`. ✅
+
+**Реализация**:
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260702205431_deck_owner_share` — `ownerId`, `shareCode` (unique),
+  `updatedAt` на `Deck` + индекс `Deck_ownerId_idx` + relation `decks` на
+  `User` (Cascade при удалении пользователя).
+- `apps/server/src/lib/shareCode.ts` — генератор кодов 6 символов
+  из алфавита `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (исключены `0/O/1/I/L`
+  для уменьшения ошибок при наборе); `generateShareCode` принимает
+  опциональный RNG для тестов; `isValidShareCode` + `normalizeShareCode`.
+  9 vitest-тестов в `shareCode.test.ts`.
+- `packages/shared/src/schemas/deck.ts` — `CreateDeckSchema` (name, description,
+  wordIds), `UpdateDeckSchema` (всё optional, wordIds заменяет набор),
+  `DeckWithWordsSchema`, `ShareDeckSchema`, `SubscribeResultSchema`,
+  в `DeckSchema` добавлены `ownerId`/`shareCode`/`updatedAt`.
+- `apps/server/src/modules/decks/decks.service.ts` — `createCustomDeck`,
+  `updateCustomDeck` (транзакция: update + replace DeckWord), `deleteCustomDeck`,
+  `shareDeck` (идемпотентно + 8 попыток генерации при коллизии P2002),
+  `subscribeByShareCode` (создаёт локальную копию колоды, чтобы не
+  смешивать прогресс автора и подписчика; добавляет слова в
+  `UserWordProgress`, идемпотентно), `getDeckWithWords`.
+  Permission guard: `isSystemDeck → 403`, `ownerId !== userId → 403`,
+  `subscribe to own deck → 400`. Валидация `wordIds`: все UUID должны
+  существовать (`INVALID_WORDS` 400).
+- `apps/server/src/modules/decks/decks.routes.ts` — `POST /` (auth),
+  `PUT /:id` (auth), `DELETE /:id` (auth), `POST /:id/share` (auth),
+  `POST /subscribe-by-code/:code` (auth, нормализация кода).
+- `apps/web/src/queries/decks.ts` — `useDecks`, `useDeck`,
+  `useCreateDeck`, `useUpdateDeck`, `useDeleteDeck`, `useShareDeck`,
+  `useSubscribeByCode` (с invalidate `['decks']`, `['words']`, `['stats']`).
+- `apps/web/src/components/DeckBuilderModal.tsx` — конструктор колоды
+  (имя, описание, поиск слов по `useInfiniteWords` + чекбоксы,
+  вкладка «Состав» с удалением по X, share-секция с копированием кода
+  через `navigator.clipboard`).
+- `apps/web/src/components/JoinDeckModal.tsx` — модал ввода кода
+  с авто-`uppercase` и валидацией.
+- `apps/web/src/screens/LibraryScreen.tsx` — секция «Мои колоды»:
+  pill-список с pill'ом колоды, тегами `N слов` / `код: XXXX` /
+  `из подписки`, кнопками-иконками `Pencil` (редактировать) для своих
+  и `Play` (тренировать) для чужих. Клик по pill'у фильтрует список
+  слов по `deckId`. Кнопки «По коду» / «Новая» в шапке секции.
+- `apps/web/src/styles/global.css` — стили `.deck-builder*`,
+  `.deck-pill*`, `.join-deck*`.
+
+**Тесты**: `pnpm --filter @hanzi/server exec vitest run` — 44 passed
+(в т.ч. 9 новых для shareCode). `pnpm --filter @hanzi/web run test` —
+34 passed. `tsc --noEmit` чисто во всех трёх пакетах.
 
 ### 5. Тематические колоды сверх HSK
 Еда, путешествия, бизнес, идиомы (чэнъюй). Использует тот же

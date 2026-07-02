@@ -1,12 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter } from 'lucide-react';
+import { Search, Filter, Plus, KeyRound, Pencil, Play } from 'lucide-react';
 import { useInfiniteWords } from '../queries/words';
+import { useDecks, useDeck } from '../queries/decks';
+import { useAuthStore } from '../stores/authStore';
 import Badge from '../components/ui/Badge';
 import WordDetailModal from '../components/WordDetailModal';
+import DeckBuilderModal from '../components/DeckBuilderModal';
+import JoinDeckModal from '../components/JoinDeckModal';
 import { PinyinDisplay } from '../utils/toneColors';
-import type { Word } from '@hanzi/shared';
+import type { Word, DeckWithWords } from '@hanzi/shared';
 
 const HSK_CHIPS = [0, 1, 2, 3, 4, 5, 6] as const;
 const STATUS_CHIPS = ['all', 'new', 'learning', 'review', 'graduated'] as const;
@@ -21,11 +25,16 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function LibraryScreen() {
   const navigate = useNavigate();
+  const userId = useAuthStore((s) => s.user?.id);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [hskLevel, setHskLevel] = useState<number | null>(null);
   const [statusChip, setStatusChip] = useState<string>('all');
   const [selectedWord, setSelectedWord] = useState<Word | null>(null);
+  const [activeDeckId, setActiveDeckId] = useState<string | null>(null);
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [editingDeckId, setEditingDeckId] = useState<string | null>(null);
 
   // Debounce 300ms
   useEffect(() => {
@@ -38,6 +47,7 @@ export default function LibraryScreen() {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(hskLevel !== null && hskLevel > 0 ? { hskLevel } : {}),
     ...(statusFilter ? { status: statusFilter } : {}),
+    ...(activeDeckId ? { deckId: activeDeckId } : {}),
   };
 
   const {
@@ -49,6 +59,12 @@ export default function LibraryScreen() {
   } = useInfiniteWords(filters);
 
   const words = data?.pages.flatMap((p) => p.data ?? []) ?? [];
+
+  const { data: decks = [] } = useDecks();
+  const customDecks = decks.filter((d) => !d.isSystemDeck);
+
+  // Загружаем детальную инфо о редактируемой колоде.
+  const { data: editingDeck } = useDeck(editingDeckId);
 
   // Infinite scroll observer
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -66,8 +82,142 @@ export default function LibraryScreen() {
     [isFetchingNextPage, hasNextPage, fetchNextPage],
   );
 
+  const handleStartStudy = (deckId: string) => {
+    navigate(`/study?deckId=${encodeURIComponent(deckId)}`);
+  };
+
+  const handleEditDeck = (deckId: string) => {
+    setEditingDeckId(deckId);
+    setBuilderOpen(true);
+  };
+
+  const handleCreateDeck = () => {
+    setEditingDeckId(null);
+    setBuilderOpen(true);
+  };
+
+  const handleBuilderClose = () => {
+    setBuilderOpen(false);
+    setEditingDeckId(null);
+  };
+
   return (
     <div style={styles.screen}>
+      {/* Decks section */}
+      {customDecks.length > 0 && (
+        <div style={styles.decksSection}>
+          <div style={styles.decksSectionHead}>
+            <span style={styles.decksSectionTitle}>Мои колоды</span>
+            <div style={styles.decksSectionActions}>
+              <button
+                type="button"
+                style={styles.decksActionBtn}
+                onClick={() => setJoinOpen(true)}
+                title="Подписаться на колоду по коду"
+              >
+                <KeyRound size={11} />
+                По коду
+              </button>
+              <button
+                type="button"
+                style={styles.decksActionBtn}
+                onClick={handleCreateDeck}
+                title="Создать новую колоду"
+              >
+                <Plus size={11} />
+                Новая
+              </button>
+            </div>
+          </div>
+          {customDecks.map((deck) => {
+            const isActive = activeDeckId === deck.id;
+            const isOwner = !!userId && deck.ownerId === userId;
+            return (
+              <div
+                key={deck.id}
+                style={{
+                  ...styles.deckPill,
+                  borderColor: isActive ? 'var(--border-accent)' : 'var(--border-default)',
+                  background: isActive ? 'var(--accent-bg-lite)' : 'var(--bg-card)',
+                }}
+                onClick={() => setActiveDeckId(isActive ? null : deck.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActiveDeckId(isActive ? null : deck.id);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <div style={styles.deckPillInfo}>
+                  <div style={styles.deckPillName}>{deck.name}</div>
+                  <div style={styles.deckPillMeta}>
+                    <span style={styles.deckPillTagCustom}>{deck.wordCount} слов</span>
+                    {isOwner && deck.shareCode && (
+                      <span style={{ ...styles.deckPillTag, ...styles.deckPillTagShared }}>
+                        код: {deck.shareCode}
+                      </span>
+                    )}
+                    {!isOwner && (
+                      <span style={styles.deckPillTagCustom}>из подписки</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  style={styles.deckPillEdit}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isOwner) {
+                      handleEditDeck(deck.id);
+                    } else {
+                      handleStartStudy(deck.id);
+                    }
+                  }}
+                  title={isOwner ? 'Редактировать' : 'Тренировать'}
+                  aria-label={isOwner ? 'Редактировать колоду' : 'Тренировать колоду'}
+                >
+                  {isOwner ? <Pencil size={13} /> : <Play size={13} />}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Decks empty state */}
+      {customDecks.length === 0 && (
+        <div style={styles.decksSection}>
+          <div style={styles.decksSectionHead}>
+            <span style={styles.decksSectionTitle}>Мои колоды</span>
+            <div style={styles.decksSectionActions}>
+              <button
+                type="button"
+                style={styles.decksActionBtn}
+                onClick={() => setJoinOpen(true)}
+                title="Подписаться на колоду по коду"
+              >
+                <KeyRound size={11} />
+                По коду
+              </button>
+              <button
+                type="button"
+                style={styles.decksActionBtn}
+                onClick={handleCreateDeck}
+                title="Создать новую колоду"
+              >
+                <Plus size={11} />
+                Новая
+              </button>
+            </div>
+          </div>
+          <div style={styles.deckEmptyHint}>
+            Создайте свою колоду слов или подпишитесь на чужую по коду.
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div style={styles.searchWrap}>
         <Search size={15} style={styles.searchIcon} />
@@ -117,6 +267,22 @@ export default function LibraryScreen() {
             </button>
           ))}
         </div>
+        {activeDeckId && (
+          <div style={styles.filterRow}>
+            <span style={styles.filterLabel}>Колода:</span>
+            <span style={styles.activeDeckChip}>
+              {decks.find((d) => d.id === activeDeckId)?.name ?? '...'}
+              <button
+                type="button"
+                onClick={() => setActiveDeckId(null)}
+                style={styles.activeDeckClear}
+                aria-label="Сбросить фильтр колоды"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Grid */}
@@ -167,6 +333,22 @@ export default function LibraryScreen() {
           navigate(`/study?mode=mixed&practice=cloze&wordId=${encodeURIComponent(w.id)}`);
         }}
       />
+
+      {/* Deck Builder (create + edit) */}
+      <DeckBuilderModal
+        open={builderOpen}
+        deck={editingDeck as DeckWithWords | null}
+        onClose={handleBuilderClose}
+      />
+
+      {/* Join deck by share code */}
+      <JoinDeckModal
+        open={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        onJoined={() => {
+          // фильтры пересоберутся через invalidateQueries
+        }}
+      />
     </div>
   );
 }
@@ -182,6 +364,137 @@ const styles: Record<string, CSSProperties> = {
   screen: {
     position: 'absolute', inset: 0, overflowY: 'auto',
     padding: '26px 26px 20px',
+  },
+  decksSection: {
+    marginBottom: 16,
+  },
+  decksSectionHead: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  decksSectionTitle: {
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    color: 'var(--text-muted)',
+    fontWeight: 500,
+  },
+  decksSectionActions: {
+    display: 'flex',
+    gap: 6,
+  },
+  decksActionBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 9px',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 18,
+    color: 'var(--text-secondary)',
+    fontSize: 10,
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.12s',
+  },
+  deckEmptyHint: {
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    padding: '10px 12px',
+    background: 'var(--bg-card)',
+    border: '1px dashed var(--border-default)',
+    borderRadius: 10,
+  },
+  deckPill: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: '9px 12px',
+    border: '1px solid var(--border-default)',
+    borderRadius: 10,
+    marginBottom: 5,
+    cursor: 'pointer',
+    transition: 'all 0.12s',
+  },
+  deckPillInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    flex: 1,
+    minWidth: 0,
+  },
+  deckPillName: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+  deckPillMeta: {
+    fontSize: 10,
+    color: 'var(--text-muted)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  deckPillTagCustom: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '1px 6px',
+    borderRadius: 6,
+    fontSize: 9,
+    fontWeight: 500,
+    background: 'var(--accent-bg-lite)',
+    color: 'var(--accent)',
+  },
+  deckPillTagShared: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '1px 6px',
+    borderRadius: 6,
+    fontSize: 9,
+    fontWeight: 500,
+    background: 'var(--tone-1-bg)',
+    color: 'var(--tone-1)',
+  },
+  deckPillEdit: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    background: 'var(--bg-hover)',
+    color: 'var(--text-muted)',
+    border: 'none',
+    cursor: 'pointer',
+    flexShrink: 0,
+    transition: 'all 0.12s',
+  },
+  activeDeckChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '3px 6px 3px 9px',
+    background: 'var(--accent-bg-lite)',
+    border: '1px solid var(--border-accent)',
+    borderRadius: 14,
+    color: 'var(--accent)',
+    fontSize: 10,
+    fontWeight: 500,
+  },
+  activeDeckClear: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--accent)',
+    fontSize: 14,
+    lineHeight: 1,
+    cursor: 'pointer',
+    padding: 0,
   },
   searchWrap: {
     marginBottom: 12,

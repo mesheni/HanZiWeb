@@ -25,6 +25,7 @@ model User {
   sessions      Session[]
   devices       UserDevice[]
   clozeProgress ClozeProgress[]
+  decks         Deck[]
 }
 
 model UserDevice {
@@ -77,10 +78,18 @@ model Deck {
   name         String
   description  String?
   isSystemDeck Boolean  @default(false)
+  /// Владелец кастомной колоды (null для системных).
+  ownerId      String?
+  owner        User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  /// Короткий код для шеринга (6 символов A-Z0-9). null если не расшарена.
+  shareCode    String?  @unique
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   words    DeckWord[]
   sessions Session[]
+
+  @@index([ownerId])
 }
 
 model DeckWord {
