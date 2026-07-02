@@ -122,14 +122,14 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
             {word.hskLevel && (
               <span className="word-detail-hsk-badge">HSK {word.hskLevel}</span>
             )}
-            {word.audioUrl && (
+            {audio.isAvailable && (
               <button
                 type="button"
                 className="word-detail-audio-btn"
                 onClick={() => audio.play()}
                 disabled={audio.isLoading}
                 aria-label="Прослушать слово"
-                title="Прослушать слово"
+                title={word.audioUrl ? 'Прослушать слово' : 'Браузерный TTS (fallback)'}
               >
                 {audio.isLoading ? <Loader2 size={14} /> : <Volume2 size={14} />}
               </button>
