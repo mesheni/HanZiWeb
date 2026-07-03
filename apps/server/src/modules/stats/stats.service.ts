@@ -1,6 +1,14 @@
 import { prisma } from '../../lib/prisma.js';
-import { DAILY_GOAL_DEFAULT } from '@hanzi/shared';
-import type { LeaderboardEntry, LeaderboardResponse } from '@hanzi/shared';
+import {
+  DAILY_GOAL_DEFAULT,
+  PROGRESS_EXPORT_VERSION,
+  type LeaderboardEntry,
+  type LeaderboardResponse,
+  type ProgressExport,
+  type ProgressImportMode,
+  type ProgressImportResponse,
+  type ProgressRecord,
+} from '@hanzi/shared';
 
 /** Карта «rating → XP». Должна совпадать с sessions.service.recordAnswer. */
 export const RATING_XP: Record<number, number> = { 1: 0, 2: 1, 3: 3, 4: 5 };
@@ -414,4 +422,244 @@ export async function getUserStreak(userId: string) {
   });
 
   return { currentStreak: newStreak, lastActiveDate: today.toISOString() };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Экспорт/импорт прогресса (PLAN_Features_v0.2 §10)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * CSV-заголовок для экспорта прогресса. Имена колонок совпадают
+ * с полями `ProgressRecordSchema` (camelCase) и используются
+ * парсером в `parseProgressCsv` (только на стороне клиента/тестов).
+ */
+export const PROGRESS_CSV_HEADER =
+  'wordId,state,stability,difficulty,reps,dueDate,lastReviewDate';
+
+/**
+ * Экранирует значение для CSV-строки. Если значение содержит
+ * запятую, кавычку или перевод строки — оборачивает в двойные
+ * кавычки и удваивает внутренние кавычки (RFC 4180).
+ */
+export function escapeCsvField(value: string | number | null): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (s.length === 0) return '';
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+/**
+ * Конвертирует ISO-дату в короткую форму (без миллисекунд и Z),
+ * чтобы CSV был компактнее. Если значение некорректное — отдаёт
+ * как есть (для диагностики при импорте).
+ */
+function shortIso(value: Date | null | undefined): string {
+  if (!value) return '';
+  try {
+    return value.toISOString();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Конвертирует список записей прогресса в CSV-строку с заголовком.
+ * Чистая функция — покрыта юнит-тестами.
+ */
+export function toProgressCsv(records: ProgressRecord[]): string {
+  const lines: string[] = [PROGRESS_CSV_HEADER];
+  for (const r of records) {
+    lines.push(
+      [
+        escapeCsvField(r.wordId),
+        escapeCsvField(r.state),
+        escapeCsvField(r.stability),
+        escapeCsvField(r.difficulty),
+        escapeCsvField(r.reps),
+        escapeCsvField(r.dueDate),
+        escapeCsvField(r.lastReviewDate ?? ''),
+      ].join(','),
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Парсит CSV-строку в `ProgressRecord[]`. Только для тестов и
+ * одноразовых утилит — основной импорт работает с JSON-форматом.
+ * Чистая функция.
+ *
+ * Бросает Error с понятным сообщением, если формат неверный.
+ */
+export function parseProgressCsv(csv: string): ProgressRecord[] {
+  const lines = csv.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  if (lines[0] !== PROGRESS_CSV_HEADER) {
+    throw new Error(
+      `CSV header mismatch: expected "${PROGRESS_CSV_HEADER}", got "${lines[0]}"`,
+    );
+  }
+
+  const out: ProgressRecord[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === undefined) continue;
+    // Простое разделение по запятой — поля экспортируются
+    // через `escapeCsvField`, поэтому wordId (uuid) и state
+    // (короткое слово) никогда не содержат запятую.
+    const parts = line.split(',');
+    if (parts.length !== 7) {
+      throw new Error(`CSV row ${i + 1}: expected 7 columns, got ${parts.length}`);
+    }
+    const wordId = parts[0] ?? '';
+    const state = (parts[1] ?? 'new') as ProgressRecord['state'];
+    const stability = Number(parts[2]);
+    const difficulty = Number(parts[3]);
+    const reps = Number(parts[4]);
+    const dueDate = parts[5] ?? '';
+    const lastReviewDate = parts[6] ?? '';
+    out.push({
+      wordId,
+      state,
+      stability,
+      difficulty,
+      reps,
+      dueDate,
+      lastReviewDate: lastReviewDate === '' ? null : lastReviewDate,
+    });
+  }
+  return out;
+}
+
+/**
+ * Собирает полный снэпшот прогресса пользователя в JSON-формате
+ * `ProgressExport`. Используется в `GET /stats/export?format=json`.
+ */
+export async function buildProgressExport(userId: string): Promise<ProgressExport> {
+  const rows = await prisma.userWordProgress.findMany({
+    where: { userId },
+    select: {
+      wordId: true,
+      state: true,
+      stability: true,
+      difficulty: true,
+      reps: true,
+      dueDate: true,
+      lastReviewDate: true,
+    },
+    orderBy: { wordId: 'asc' },
+  });
+
+  const progress: ProgressRecord[] = rows.map((r) => ({
+    wordId: r.wordId,
+    state: r.state as ProgressRecord['state'],
+    stability: r.stability,
+    difficulty: r.difficulty,
+    reps: r.reps,
+    dueDate: shortIso(r.dueDate),
+    lastReviewDate: shortIso(r.lastReviewDate),
+  }));
+
+  return {
+    version: PROGRESS_EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    userId,
+    progress,
+  };
+}
+
+/**
+ * Применяет импорт прогресса. В режиме `replace` сначала удаляет
+ * весь текущий прогресс пользователя, потом вставляет новые записи.
+ * В режиме `merge` — обновляет существующие и добавляет новые.
+ *
+ * Записи с `wordId`, которых нет в таблице `Word`, молча
+ * пропускаются (считаются в `skipped`). Это защищает от
+ * импорта устаревших бэкапов после удаления словаря.
+ */
+export async function applyProgressImport(
+  userId: string,
+  mode: ProgressImportMode,
+  records: ProgressRecord[],
+): Promise<ProgressImportResponse> {
+  // 1. Собираем уникальные wordId из импорта и проверяем их существование.
+  const wordIds = Array.from(new Set(records.map((r) => r.wordId)));
+  const existingWords = wordIds.length
+    ? await prisma.word.findMany({
+        where: { id: { in: wordIds } },
+        select: { id: true },
+      })
+    : [];
+  const knownWordIds = new Set(existingWords.map((w) => w.id));
+
+  // 2. Фильтруем записи — отбрасываем неизвестные слова.
+  const validRecords = records.filter((r) => knownWordIds.has(r.wordId));
+  const skipped = records.length - validRecords.length;
+
+  // 3. Смотрим, какие записи уже есть у пользователя.
+  const existingProgress = validRecords.length
+    ? await prisma.userWordProgress.findMany({
+        where: {
+          userId,
+          wordId: { in: validRecords.map((r) => r.wordId) },
+        },
+        select: { wordId: true },
+      })
+    : [];
+  const existingSet = new Set(existingProgress.map((p) => p.wordId));
+
+  let imported = 0;
+  let updated = 0;
+
+  // 4. Транзакция: `replace` чистит старые записи, потом upsert'ы.
+  await prisma.$transaction(async (tx) => {
+    if (mode === 'replace') {
+      await tx.userWordProgress.deleteMany({ where: { userId } });
+    }
+
+    for (const r of validRecords) {
+      const exists = existingSet.has(r.wordId);
+      if (mode === 'replace' || !exists) {
+        await tx.userWordProgress.create({
+          data: {
+            userId,
+            wordId: r.wordId,
+            state: r.state,
+            stability: r.stability,
+            difficulty: r.difficulty,
+            reps: r.reps,
+            dueDate: new Date(r.dueDate),
+            lastReviewDate: r.lastReviewDate ? new Date(r.lastReviewDate) : null,
+          },
+        });
+        imported += 1;
+      } else {
+        // merge + запись уже есть → обновляем поля.
+        await tx.userWordProgress.update({
+          where: { userId_wordId: { userId, wordId: r.wordId } },
+          data: {
+            state: r.state,
+            stability: r.stability,
+            difficulty: r.difficulty,
+            reps: r.reps,
+            dueDate: new Date(r.dueDate),
+            lastReviewDate: r.lastReviewDate ? new Date(r.lastReviewDate) : null,
+          },
+        });
+        updated += 1;
+      }
+    }
+  });
+
+  return {
+    mode,
+    total: records.length,
+    imported,
+    updated,
+    skipped,
+    importedAt: new Date().toISOString(),
+  };
 }

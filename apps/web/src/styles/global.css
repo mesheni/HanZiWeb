@@ -3133,3 +3133,26 @@ input {
   }
 }
 
+/* ===== Progress export/import (PLAN_Features_v0.2 §10) ===== */
+.import-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+}
+
+.import-result-ok {
+  color: var(--tone-2);
+  background: var(--tone-2-bg);
+  border-color: rgba(129, 199, 132, 0.25);
+}
+
+.import-result-err {
+  color: var(--tone-4);
+  background: var(--tone-4-bg);
+  border-color: rgba(229, 115, 115, 0.3);
+}
+

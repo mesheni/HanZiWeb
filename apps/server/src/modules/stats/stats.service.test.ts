@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import {
   RATING_XP,
+  PROGRESS_CSV_HEADER,
   aggregateWeeklyXp,
   computeRank,
+  escapeCsvField,
   getCurrentWeekWindow,
   getTodayUtcRange,
   maskEmail,
+  parseProgressCsv,
+  toProgressCsv,
 } from './stats.service.js';
+import type { ProgressRecord } from '@hanzi/shared';
 
 describe('RATING_XP', () => {
   it('matches sessions.service.recordAnswer mapping', () => {
@@ -173,5 +178,116 @@ describe('getTodayUtcRange', () => {
     const { start, end } = getTodayUtcRange(last);
     expect(start.toISOString()).toBe('2026-07-31T00:00:00.000Z');
     expect(end.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+  });
+});
+
+// ─── Экспорт/импорт прогресса (PLAN_Features_v0.2 §10) ─────────────
+
+describe('escapeCsvField', () => {
+  it('отдаёт пустую строку для null', () => {
+    expect(escapeCsvField(null)).toBe('');
+  });
+
+  it('не оборачивает простые значения', () => {
+    expect(escapeCsvField('uuid-like-value')).toBe('uuid-like-value');
+    expect(escapeCsvField(42)).toBe('42');
+  });
+
+  it('оборачивает в кавычки значения с запятой, кавычкой или переводом строки', () => {
+    expect(escapeCsvField('a,b')).toBe('"a,b"');
+    expect(escapeCsvField('he said "hi"')).toBe('"he said ""hi"""');
+    expect(escapeCsvField('line1\nline2')).toBe('"line1\nline2"');
+  });
+});
+
+describe('toProgressCsv', () => {
+  const sampleRecords: ProgressRecord[] = [
+    {
+      wordId: '11111111-1111-1111-1111-111111111111',
+      state: 'learning',
+      stability: 1.25,
+      difficulty: 5.0,
+      reps: 3,
+      dueDate: '2026-07-04T12:00:00.000Z',
+      lastReviewDate: '2026-07-03T12:00:00.000Z',
+    },
+    {
+      wordId: '22222222-2222-2222-2222-222222222222',
+      state: 'graduated',
+      stability: 30.5,
+      difficulty: 2.1,
+      reps: 12,
+      dueDate: '2026-08-15T00:00:00.000Z',
+      lastReviewDate: null,
+    },
+  ];
+
+  it('начинается с фиксированного заголовка', () => {
+    const csv = toProgressCsv(sampleRecords);
+    expect(csv.split('\n')[0]).toBe(PROGRESS_CSV_HEADER);
+  });
+
+  it('формирует по одной строке на запись с правильным числом колонок', () => {
+    const csv = toProgressCsv(sampleRecords);
+    const lines = csv.split('\n');
+    expect(lines.length).toBe(3); // header + 2 records
+    for (const line of lines.slice(1)) {
+      expect(line.split(',').length).toBe(7);
+    }
+  });
+
+  it('пустой lastReviewDate рендерится как пустая строка', () => {
+    const csv = toProgressCsv(sampleRecords);
+    const lines = csv.split('\n');
+    // Вторая запись — lastReviewDate = null → 7 колонок, последняя пустая.
+    const lastLine = lines[2] ?? '';
+    const lastLineParts = lastLine.split(',');
+    expect(lastLineParts[6]).toBe('');
+  });
+
+  it('возвращает только заголовок для пустого массива', () => {
+    const csv = toProgressCsv([]);
+    expect(csv).toBe(PROGRESS_CSV_HEADER);
+  });
+});
+
+describe('parseProgressCsv', () => {
+  it('парсит CSV обратно в массив ProgressRecord', () => {
+    const original: ProgressRecord[] = [
+      {
+        wordId: '11111111-1111-1111-1111-111111111111',
+        state: 'review',
+        stability: 7.5,
+        difficulty: 3.2,
+        reps: 5,
+        dueDate: '2026-07-04T12:00:00.000Z',
+        lastReviewDate: '2026-07-03T12:00:00.000Z',
+      },
+      {
+        wordId: '22222222-2222-2222-2222-222222222222',
+        state: 'new',
+        stability: 0,
+        difficulty: 0,
+        reps: 0,
+        dueDate: '2026-07-04T00:00:00.000Z',
+        lastReviewDate: null,
+      },
+    ];
+    const csv = toProgressCsv(original);
+    const parsed = parseProgressCsv(csv);
+    expect(parsed).toEqual(original);
+  });
+
+  it('бросает ошибку на неверный заголовок', () => {
+    expect(() => parseProgressCsv('foo,bar\n1,2')).toThrow(/CSV header mismatch/);
+  });
+
+  it('бросает ошибку при неверном числе колонок', () => {
+    const bad = `${PROGRESS_CSV_HEADER}\nonly,three,cols`;
+    expect(() => parseProgressCsv(bad)).toThrow(/expected 7 columns/);
+  });
+
+  it('возвращает пустой массив для пустой строки', () => {
+    expect(parseProgressCsv('')).toEqual([]);
   });
 });

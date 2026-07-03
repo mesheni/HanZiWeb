@@ -291,6 +291,97 @@
 
 ---
 
+## Экспорт и импорт прогресса (PLAN_Features_v0.2 §10)
+
+Все эндпоинты: `GET /api/stats/export`, `POST /api/stats/import`.
+
+### GET /api/stats/export
+
+Экспорт всего `UserWordProgress` пользователя — бэкап или аналитика.
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Query** | `format` (`json` \| `csv`, default `json`) |
+| **Response 200 (json)** | Тело соответствует `ProgressExportSchema` (`packages/shared/src/schemas/progressExport.ts`), `Content-Disposition: attachment; filename="hanzi-progress-<date>.json"`. |
+| **Response 200 (csv)**  | Текстовый CSV с заголовком `wordId,state,stability,difficulty,reps,dueDate,lastReviewDate`, `Content-Disposition: attachment; filename="hanzi-progress-<date>.csv"`. |
+
+```json
+// Response (format=json)
+{
+  "version": 1,
+  "exportedAt": "2026-07-04T12:00:00.000Z",
+  "userId": "uuid",
+  "progress": [
+    {
+      "wordId": "uuid",
+      "state": "learning",
+      "stability": 1.5,
+      "difficulty": 4.2,
+      "reps": 2,
+      "dueDate": "2026-07-04T12:00:00.000Z",
+      "lastReviewDate": "2026-07-03T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+```
+// Response (format=csv)
+wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
+<uuid>,learning,1.5,4.2,2,2026-07-04T12:00:00.000Z,2026-07-03T12:00:00.000Z
+...
+```
+
+### POST /api/stats/import
+
+Восстановление прогресса из JSON-бэкапа (см. `ProgressImportRequestSchema`).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Request** | `{ mode: "merge" \| "replace", progress: ProgressRecord[] }` |
+| **Response 200** | `{ success: true, data: ProgressImportResponseSchema }` |
+| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR", ... } }` |
+
+- `merge`   — добавляет новые записи, обновляет поля существующих.
+- `replace` — сначала удаляет весь текущий прогресс пользователя, затем вставляет.
+
+Записи с `wordId`, которых нет в таблице `Word`, молча пропускаются (считаются в `skipped`).
+
+```json
+// Request
+{
+  "mode": "merge",
+  "progress": [
+    {
+      "wordId": "uuid",
+      "state": "learning",
+      "stability": 1.5,
+      "difficulty": 4.2,
+      "reps": 2,
+      "dueDate": "2026-07-04T12:00:00.000Z",
+      "lastReviewDate": "2026-07-03T12:00:00.000Z"
+    }
+  ]
+}
+
+// Response
+{
+  "success": true,
+  "data": {
+    "mode": "merge",
+    "total": 1,
+    "imported": 1,
+    "updated": 0,
+    "skipped": 0,
+    "importedAt": "2026-07-04T12:00:01.000Z"
+  }
+}
+```
+
+---
+
 ## Достижения (Achievements)
 
 Все эндпоинты: `GET /api/achievements/*` (см. PLAN_Features_v0.2 §8).
@@ -374,8 +465,10 @@
 | 13 | GET | /api/stats/overview | JWT | Stats |
 | 14 | GET | /api/stats/activity | JWT | Stats |
 | 15 | GET | /api/stats/leaderboard | JWT | Stats |
-| 16 | GET | /api/achievements | JWT | Achievements |
-| 17 | GET | /api/users/settings | JWT | Users |
-| 18 | PUT | /api/users/settings | JWT | Users |
+| 16 | GET | /api/stats/export | JWT | Stats |
+| 17 | POST | /api/stats/import | JWT | Stats |
+| 18 | GET | /api/achievements | JWT | Achievements |
+| 19 | GET | /api/users/settings | JWT | Users |
+| 20 | PUT | /api/users/settings | JWT | Users |
 
-Всего: **18 эндпоинтов** в 6 модулях.
+Всего: **20 эндпоинтов** в 6 модулях.

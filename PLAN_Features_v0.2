@@ -421,10 +421,85 @@ run build` собирает прод-бандл.
 - `pnpm typecheck` — чисто во всех 3 пакетах.
 - `pnpm build` — прод-бандл server и web собирается.
 
-### 10. Экспорт/импорт прогресса
+### 10. Экспорт/импорт прогресса ✅ DONE
 - `GET /stats/export` → CSV/JSON всех `UserWordProgress`
   (бэкап и аналитика пользователем).
 - `POST /stats/import` — восстановление.
+
+**Реализация**:
+- `packages/shared/src/schemas/progressExport.ts` —
+  `ProgressStateSchema` (4 значения), `ProgressRecordSchema`
+  (wordId/state/stability/difficulty/reps/dueDate/lastReviewDate),
+  `ProgressExportSchema` (version/exportedAt/userId/progress[]),
+  `ProgressImportRequestSchema` (mode: merge|replace, progress[]),
+  `ProgressImportResponseSchema` (mode/total/imported/updated/
+  skipped/importedAt), константа `PROGRESS_EXPORT_VERSION = 1`.
+  Экспорт в `packages/shared/src/index.ts`.
+- `apps/server/src/modules/stats/stats.service.ts`:
+  - `escapeCsvField(value)` — RFC 4180 экранирование (null → '',
+    спецсимволы → кавычки с удвоением `"`).
+  - `PROGRESS_CSV_HEADER` — фиксированный заголовок
+    `wordId,state,stability,difficulty,reps,dueDate,lastReviewDate`.
+  - `toProgressCsv(records)` — чистая функция: массив записей → CSV
+    с заголовком.
+  - `parseProgressCsv(csv)` — обратная чистая функция с понятными
+    ошибками на неверный заголовок / число колонок.
+  - `buildProgressExport(userId)` — собирает снэпшот
+    `UserWordProgress` → `ProgressExport` (сортировка по wordId).
+  - `applyProgressImport(userId, mode, records)` — восстановление
+    в транзакции. `merge` обновляет существующие, добавляет новые;
+    `replace` сначала удаляет весь прогресс, потом вставляет.
+    Записи с неизвестным `wordId` пропускаются (счёт в `skipped`).
+- `apps/server/src/modules/stats/stats.routes.ts`:
+  - `GET /stats/export?format=json|csv` (auth). `format=json`
+    (по умолчанию) — JSON с `Content-Disposition: attachment;
+    filename="hanzi-progress-<date>.json"`. `format=csv` —
+    `text/csv` с тем же шаблоном имени. Валидация через
+    `ExportFormatQuerySchema`.
+  - `POST /stats/import` (auth). Тело валидируется
+    `ProgressImportRequestSchema.parse`. Возвращает
+    `ProgressImportResponseSchema`.
+- `apps/web/src/api/client.ts` — добавлены `apiGetBlob(path)`
+  (GET с авторизацией и refresh, возвращает `Blob`) и
+  `downloadBlob(blob, filename)` (через `URL.createObjectURL`).
+- `apps/web/src/queries/stats.ts`:
+  - Тип `ProgressExportFormat = 'json' | 'csv'`.
+  - `downloadProgressExport(format)` — скачивает файл через
+    `apiGetBlob` с именем `hanzi-progress-<date>.<ext>`.
+  - `useImportProgress()` — react-query `useMutation`; на успех
+    инвалидирует `['stats']`, `['words']`, `['sessions']`.
+- `apps/web/src/components/ProgressExportImport.tsx` — карточка
+  с двумя секциями (экспорт / импорт). Поддерживает drag-and-drop
+  через скрытый `<input type="file">`, валидирует файл через
+  `ProgressExportSchema.safeParse` (с понятным сообщением об
+  ошибке), режим `merge`/`replace` через radio, тосты через
+  `useToast` на успех/ошибку. Состояния: `idle`, `export-pending`,
+  `import-pending`, `import-done`, `error`.
+- `apps/web/src/screens/SettingsScreen.tsx` — новая карточка
+  встроена между «Ежедневная цель» и «Локальные данные».
+- `apps/web/src/styles/global.css` — стили `.import-result`
+  (ok-вариант в `tone-2`, error-вариант в `tone-4`).
+- `packages/shared/api-spec.md` — секция «Экспорт и импорт
+  прогресса» с описанием обоих эндпоинтов, форматов JSON/CSV,
+  поведения `merge`/`replace`; сводка: **20 эндпоинтов** в 6 модулях.
+
+**Тесты**:
+- 11 новых vitest-тестов в `stats.service.test.ts`:
+  - `escapeCsvField` — null → '', простые значения, спецсимволы
+    (запятая, кавычка, перевод строки);
+  - `toProgressCsv` — фиксированный заголовок, число колонок,
+    пустой `lastReviewDate`, пустой массив;
+  - `parseProgressCsv` — round-trip, ошибка на неверный заголовок,
+    ошибка на неверное число колонок, пустая строка.
+- `pnpm --filter @hanzi/server exec vitest run` — **103 passed**
+  (было 92, +11).
+- `pnpm --filter @hanzi/web run test` — 34 passed (без регрессий).
+- `pnpm typecheck` — чисто во всех 3 пакетах.
+- `pnpm --filter @hanzi/web run build` — прод-бандл собирается.
+- E2E smoke-тест на запущенном dev-сервере: register → export
+  (JSON/CSV пустые) → import 3 записей → export (3 записи) →
+  CSV содержит 3 строки → import с ghost wordId (1 skipped) →
+  replace (только 1 запись осталась).
 
 ### 11. Тёмная тема
 Дизайн завязан на цвета тонов, но явной темы нет.
@@ -695,4 +770,70 @@ feat(daily-goal): ежедневная цель ревью с настройко
 - pnpm --filter @hanzi/web run test — 34 passed (без регрессий).
 - pnpm typecheck — чисто во всех 3 пакетах.
 - pnpm build — прод-бандл server и web собирается.
+```
+
+---
+
+## Коммит для пункта 10 (Экспорт/импорт прогресса)
+
+```
+feat(stats): экспорт/импорт UserWordProgress в JSON и CSV
+
+Закрывает PLAN_Features_v0.2 §10 (Экспорт/импорт прогресса).
+
+Что добавлено:
+- packages/shared: схемы ProgressStateSchema (4 значения),
+  ProgressRecordSchema (wordId/state/stability/difficulty/reps/
+  dueDate/lastReviewDate), ProgressExportSchema (version/
+  exportedAt/userId/progress[]), ProgressImportRequestSchema
+  (mode: merge|replace, progress[]) и
+  ProgressImportResponseSchema (mode/total/imported/updated/
+  skipped/importedAt); константа PROGRESS_EXPORT_VERSION = 1.
+  Экспорт в packages/shared/src/index.ts.
+- apps/server: stats.service — чистые хелперы escapeCsvField
+  (RFC 4180), PROGRESS_CSV_HEADER, toProgressCsv (массив → CSV
+  с заголовком) и parseProgressCsv (обратный парсер с понятными
+  ошибками); buildProgressExport(userId) собирает снэпшот
+  UserWordProgress → ProgressExport; applyProgressImport(userId,
+  mode, records) применяет импорт в транзакции (replace сначала
+  чистит, merge обновляет/добавляет; wordId, которых нет в
+  Word, молча пропускаются и считаются в skipped).
+- apps/server: stats.routes — GET /stats/export?format=json|csv
+  (auth; Content-Disposition attachment с датой в имени файла;
+  валидация через ExportFormatQuerySchema) и POST /stats/import
+  (auth; парсинг ProgressImportRequestSchema).
+- apps/web: api/client.ts — apiGetBlob(path) (GET с
+  авторизацией и refresh → Blob) и downloadBlob(blob, filename)
+  через URL.createObjectURL.
+- apps/web: queries/stats.ts — downloadProgressExport(format)
+  (скачивает с именем hanzi-progress-<date>.<ext>) и
+  useImportProgress() (useMutation; onSuccess инвалидирует
+  ['stats'], ['words'], ['sessions']).
+- apps/web: components/ProgressExportImport.tsx — карточка
+  с секциями экспорт/импорт; валидация файла через
+  ProgressExportSchema.safeParse с понятным сообщением,
+  режимы merge/replace через radio, тосты на успех/ошибку,
+  состояния idle/export-pending/import-pending/import-done/error.
+- apps/web: screens/SettingsScreen.tsx — карточка встроена между
+  «Ежедневная цель» и «Локальные данные».
+- apps/web: styles/global.css — стили .import-result
+  (.import-result-ok в tone-2, .import-result-err в tone-4).
+- packages/shared/api-spec.md — секция «Экспорт и импорт
+  прогресса» с описанием обоих эндпоинтов, форматов JSON/CSV,
+  поведения merge/replace; сводка: 20 эндпоинтов в 6 модулях.
+
+Тесты:
+- 11 новых vitest-тестов в stats.service.test.ts: escapeCsvField
+  (null, простые значения, спецсимволы), toProgressCsv
+  (заголовок, число колонок, пустой lastReviewDate, пустой
+  массив), parseProgressCsv (round-trip, ошибка на неверный
+  заголовок, ошибка на число колонок, пустая строка).
+- pnpm --filter @hanzi/server exec vitest run — 103 passed
+  (было 92, +11).
+- pnpm --filter @hanzi/web run test — 34 passed (без регрессий).
+- pnpm typecheck — чисто во всех 3 пакетах.
+- pnpm --filter @hanzi/web run build — прод-бандл собирается.
+- E2E smoke на dev-сервере: register → export JSON/CSV пустые →
+  import 3 записей → export 3 записей → CSV с 3 строками →
+  import с ghost wordId (1 skipped) → replace (1 запись).
 ```

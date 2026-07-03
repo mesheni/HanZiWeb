@@ -12,3 +12,4 @@ export * from './schemas/etymology.js';
 export * from './schemas/leaderboard.js';
 export * from './schemas/achievement.js';
 export * from './schemas/userSettings.js';
+export * from './schemas/progressExport.js';

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target } from 'lucide-react';
 import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
 import { Button, Card } from '@/components/ui';
+import ProgressExportImport from '@/components/ProgressExportImport';
 import { clearWordsCollection, resetLocalDatabase } from '@/db/database';
 import { apiGet, apiPost, apiPut } from '@/api/client';
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/api/push';
@@ -329,6 +330,8 @@ export default function SettingsScreen() {
             </div>
           </div>
         </Card>
+
+        <ProgressExportImport />
 
         <Card padding="lg" className="space-y-4">
           <div className="flex items-start gap-3">
