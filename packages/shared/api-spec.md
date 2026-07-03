@@ -253,6 +253,44 @@
 
 ---
 
+## Настройки пользователя (User Settings)
+
+Все эндпоинты: `GET/PUT /api/users/*` (см. PLAN_Features_v0.2 §9).
+
+### GET /api/users/settings
+
+Текущие пользовательские настройки (ежедневная цель и т.п.).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true, data: UserSettingsSchema }` |
+
+```json
+// Response
+{ "success": true, "data": { "dailyGoal": 20 } }
+```
+
+### PUT /api/users/settings
+
+Обновление пользовательских настроек. Сейчас поддерживается `dailyGoal` (1–200).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Request** | `UpdateUserSettingsSchema` (все поля optional) |
+| **Response 200** | `{ success: true, data: UserSettingsSchema }` |
+
+```json
+// Request
+{ "dailyGoal": 30 }
+
+// Response
+{ "success": true, "data": { "dailyGoal": 30 } }
+```
+
+---
+
 ## Достижения (Achievements)
 
 Все эндпоинты: `GET /api/achievements/*` (см. PLAN_Features_v0.2 §8).
@@ -337,5 +375,7 @@
 | 14 | GET | /api/stats/activity | JWT | Stats |
 | 15 | GET | /api/stats/leaderboard | JWT | Stats |
 | 16 | GET | /api/achievements | JWT | Achievements |
+| 17 | GET | /api/users/settings | JWT | Users |
+| 18 | PUT | /api/users/settings | JWT | Users |
 
-Всего: **16 эндпоинтов** в 5 модулях.
+Всего: **18 эндпоинтов** в 6 модулях.

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff } from 'lucide-react';
+import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target } from 'lucide-react';
+import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
 import { Button, Card } from '@/components/ui';
 import { clearWordsCollection, resetLocalDatabase } from '@/db/database';
 import { apiGet, apiPost, apiPut } from '@/api/client';
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/api/push';
 import { toast } from '@/stores/toastStore';
+import { useUpdateUserSettings, DAILY_GOAL_FALLBACK } from '@/queries/stats';
 import type { PaginatedResponse, WordListItem } from '@hanzi/shared';
 
 type NotificationTime = 'morning' | 'evening' | 'both';
@@ -49,6 +51,35 @@ export default function SettingsScreen() {
     notificationFrequency: 1,
   });
 
+  // Ежедневная цель (PLAN_Features_v0.2 §9).
+  const updateUserSettings = useUpdateUserSettings();
+  const [dailyGoal, setDailyGoal] = useState<number>(DAILY_GOAL_FALLBACK);
+  const [dailyGoalLoaded, setDailyGoalLoaded] = useState(false);
+
+  const loadDailyGoal = useCallback(async () => {
+    try {
+      const data = await apiGet<{ dailyGoal: number }>('/users/settings');
+      setDailyGoal(data.dailyGoal);
+    } catch {
+      // Не блокируем экран — оставляем дефолт.
+    } finally {
+      setDailyGoalLoaded(true);
+    }
+  }, []);
+
+  const handleDailyGoalChange = async (next: number) => {
+    const clamped = Math.max(DAILY_GOAL_MIN, Math.min(DAILY_GOAL_MAX, Math.round(next)));
+    if (clamped === dailyGoal) return;
+    const prev = dailyGoal;
+    setDailyGoal(clamped); // optimistic
+    try {
+      await updateUserSettings.mutateAsync({ dailyGoal: clamped });
+    } catch {
+      setDailyGoal(prev);
+      toast('Не удалось сохранить ежедневную цель', 'error');
+    }
+  };
+
   const loadSettings = useCallback(async () => {
     try {
       const data = await apiGet<NotificationSettings>('/devices/notification-settings');
@@ -63,6 +94,10 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    loadDailyGoal();
+  }, [loadDailyGoal]);
 
   const upsertWords = async (words: WordListItem[]) => {
     const { getDb } = await import('@/db/database');
@@ -256,6 +291,44 @@ export default function SettingsScreen() {
             </div>
           </Card>
         )}
+
+        <Card padding="lg" className="space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-tone-3-bg text-tone-3 flex items-center justify-center shrink-0">
+              <Target size={18} />
+            </div>
+            <div className="flex-1">
+              <div className="font-medium text-text-primary">Ежедневная цель</div>
+              <div className="text-sm text-text-muted mt-1">
+                Сколько ревью в день вы хотите выполнять. Используется в кольцевом
+                прогрессе на главной странице.
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm text-text-secondary mb-2">
+              Цель: <span className="text-text-primary font-medium">{dailyGoal}</span> ревью/день
+            </div>
+            <input
+              type="range"
+              min={DAILY_GOAL_MIN}
+              max={DAILY_GOAL_MAX}
+              step={1}
+              value={dailyGoal}
+              onChange={(e) => handleDailyGoalChange(Number(e.target.value))}
+              disabled={!dailyGoalLoaded || updateUserSettings.isPending}
+              className="w-full accent-accent"
+            />
+            <div className="flex justify-between text-xs text-text-muted">
+              <span>{DAILY_GOAL_MIN}</span>
+              <span>{Math.round((DAILY_GOAL_MIN + DAILY_GOAL_MAX) / 4)}</span>
+              <span>{Math.round((DAILY_GOAL_MIN + DAILY_GOAL_MAX) / 2)}</span>
+              <span>{Math.round(((DAILY_GOAL_MIN + DAILY_GOAL_MAX) * 3) / 4)}</span>
+              <span>{DAILY_GOAL_MAX}</span>
+            </div>
+          </div>
+        </Card>
 
         <Card padding="lg" className="space-y-4">
           <div className="flex items-start gap-3">

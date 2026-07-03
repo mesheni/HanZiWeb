@@ -18,6 +18,9 @@ model User {
   notificationEnabled   Boolean   @default(false)
   notificationTime      String    @default("morning")
   notificationFrequency Int       @default(1)
+  /// Ежедневная цель по ревью (количество ответов в день).
+  /// См. PLAN_Features_v0.2 §9.
+  dailyGoal             Int       @default(20)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 

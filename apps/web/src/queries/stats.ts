@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '../api/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { DAILY_GOAL_DEFAULT } from '@hanzi/shared';
+import { apiGet, apiPut } from '../api/client';
 
 export interface Overview {
   xp: number;
@@ -25,6 +26,8 @@ export interface Dashboard {
   wordsDueToday: number;
   wordsLearned: number;
   totalReviews: number;
+  todayReviews: number;
+  dailyGoal: number;
   xp: number;
 }
 
@@ -87,6 +90,44 @@ export function useStreak() {
     queryFn: () => apiGet<{ currentStreak: number; lastActiveDate: string | null }>('/stats/streak'),
   });
 }
+
+/**
+ * Пользовательские настройки (ежедневная цель и т.п.).
+ * См. PLAN_Features_v0.2 §9.
+ */
+export interface UserSettings {
+  dailyGoal: number;
+}
+
+/** Хук для чтения пользовательских настроек. */
+export function useUserSettings() {
+  return useQuery({
+    queryKey: ['users', 'settings'],
+    queryFn: () => apiGet<UserSettings>('/users/settings'),
+    // Пока только `dailyGoal` — раз в минуту достаточно.
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Хук для обновления пользовательских настроек.
+ * Инвалидирует связанные ключи (`['users', 'settings']`,
+ * `['stats', 'dashboard']`) на успех, чтобы UI обновился.
+ */
+export function useUpdateUserSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<UserSettings>) =>
+      apiPut<UserSettings>('/users/settings', patch),
+    onSuccess: (data) => {
+      qc.setQueryData<UserSettings>(['users', 'settings'], data);
+      qc.invalidateQueries({ queryKey: ['stats', 'dashboard'] });
+    },
+  });
+}
+
+/** Дефолт, если сервер ещё не ответил. */
+export const DAILY_GOAL_FALLBACK = DAILY_GOAL_DEFAULT;
 
 /**
  * Хук для leaderboard (`GET /stats/leaderboard?period=...`).

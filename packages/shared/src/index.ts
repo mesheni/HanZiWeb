@@ -11,3 +11,4 @@ export * from './schemas/example.js';
 export * from './schemas/etymology.js';
 export * from './schemas/leaderboard.js';
 export * from './schemas/achievement.js';
+export * from './schemas/userSettings.js';

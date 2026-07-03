@@ -17,6 +17,7 @@ import { devicesRoutes } from './modules/devices/devices.routes.js';
 import { examplesRoutes } from './modules/examples/examples.routes.js';
 import { etymologyRoutes } from './modules/etymology/etymology.routes.js';
 import { achievementsRoutes } from './modules/achievements/achievements.routes.js';
+import { usersRoutes } from './modules/users/users.routes.js';
 
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
@@ -115,6 +116,7 @@ async function main() {
     await child.register(examplesRoutes);
     await child.register(etymologyRoutes);
     await child.register(achievementsRoutes, { prefix: '/achievements' });
+    await child.register(usersRoutes, { prefix: '/users' });
 
   }, { prefix: '/api' });
 

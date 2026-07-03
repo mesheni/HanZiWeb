@@ -365,11 +365,61 @@ run build` собирает прод-бандл.
 - `pnpm typecheck` — чисто во всех 3 пакетах.
 - `pnpm build` — прод-бандл server и web собирается.
 
-### 9. Ежедневная цель (daily goal)
+### 9. Ежедневная цель (daily goal) ✅ DONE
 Расширить `GET /stats/dashboard`: поле `dailyGoal` (по умолчанию
 20 ревью) + `todayReviews`. На главной кольцевой прогресс уже есть
 (`HomeScreen`), просто переключить источник. Настройка цели в
 `SettingsScreen` (`PUT /users/settings` + колонка `User.dailyGoal`).
+
+**Реализация**:
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260704000000_user_daily_goal` — колонка `User.dailyGoal Int @default(20)`.
+- `packages/shared/src/schemas/userSettings.ts` — `UserSettingsSchema`
+  (`{ dailyGoal: 1..200 }`), `UpdateUserSettingsSchema`
+  (все поля optional, расширяемая), `DAILY_GOAL_MIN = 1`,
+  `DAILY_GOAL_MAX = 200`, `DAILY_GOAL_DEFAULT = 20`.
+  Экспорт добавлен в `packages/shared/src/index.ts`.
+- `apps/server/src/modules/stats/stats.service.ts`:
+  - Чистые хелперы `getTodayUtcRange(now)` (полночь–полночь UTC) и
+    `countTodayReviews(userId, now)` (count SessionAnswer за окно).
+  - `getDashboard` теперь возвращает `dailyGoal` (из `User.dailyGoal`,
+    fallback `DAILY_GOAL_DEFAULT`) и `todayReviews`. Параллелит
+    `wordsDueToday` и `countTodayReviews` в `Promise.all`.
+- `apps/server/src/modules/users/users.{service,routes}.ts` — новый
+  модуль `users`:
+  - `GET /users/settings` (auth) → `UserSettings`.
+  - `PUT /users/settings` (auth) → `UpdateUserSettingsSchema.parse` →
+    `updateUserSettings` (upsert-патч; P2025 → 404).
+- `apps/server/src/index.ts` — регистрация `usersRoutes` в общем
+  rate-limited scope с префиксом `/api/users`.
+- `apps/web/src/queries/stats.ts` — `UserSettings` тип, хуки
+  `useUserSettings` (staleTime 60_000) и `useUpdateUserSettings`
+  (react-query `useMutation`, onSuccess инвалидирует
+  `['users','settings']` и `['stats','dashboard']`).
+  `Dashboard` дополнен `todayReviews: number` и `dailyGoal: number`.
+- `apps/web/src/screens/HomeScreen.tsx` — кольцо теперь использует
+  `dashboard.todayReviews` и `dashboard.dailyGoal` (вместо
+  `totalReviews` и хардкоженной 20). В блоке «Прогресс за сегодня»
+  показывается `X / Y` ревью; при `todayReviews >= dailyGoal` —
+  бейдж «✓ Цель на сегодня достигнута» вместо кнопки «Начать».
+  Хардкод `DAILY_REVIEW_GOAL = 20` удалён.
+- `apps/web/src/screens/SettingsScreen.tsx` — новая карточка
+  «Ежедневная цель» (иконка `Target`, тон 3) с range-слайдером
+  1–200 (метки на 1/2/3/4 от диапазона), оптимистичное обновление,
+  `useUpdateUserSettings`, тост на ошибку с откатом.
+- `packages/shared/api-spec.md` — добавлена секция «Настройки
+  пользователя (User Settings)» с GET/PUT `/api/users/settings`,
+  сводка эндпоинтов: **18 в 6 модулях**.
+
+**Тесты**:
+- 4 новых vitest-теста в `stats.service.test.ts` для `getTodayUtcRange`:
+  начало/конец дня в UTC, ровно 24 часа, полночь UTC,
+  переход через границу месяца.
+- `pnpm --filter @hanzi/server exec vitest run` — **92 passed**
+  (было 88, +4).
+- `pnpm --filter @hanzi/web run test` — 34 passed (без регрессий).
+- `pnpm typecheck` — чисто во всех 3 пакетах.
+- `pnpm build` — прод-бандл server и web собирается.
 
 ### 10. Экспорт/импорт прогресса
 - `GET /stats/export` → CSV/JSON всех `UserWordProgress`
@@ -595,6 +645,53 @@ feat(achievements): badges за стрик, слова, HSK1, ревью и ид
   perfect_session из глобальных).
 - pnpm --filter @hanzi/server exec vitest run — 88 passed
   (было 75, +13).
+- pnpm --filter @hanzi/web run test — 34 passed (без регрессий).
+- pnpm typecheck — чисто во всех 3 пакетах.
+- pnpm build — прод-бандл server и web собирается.
+```
+
+---
+
+## Коммит для пункта 9 (Ежедневная цель)
+
+```
+feat(daily-goal): ежедневная цель ревью с настройкой в SettingsScreen
+
+Закрывает PLAN_Features_v0.2 §9 (Ежедневная цель / daily goal).
+
+Что добавлено:
+- apps/server (Prisma): миграция 20260704000000_user_daily_goal
+  → колонка User.dailyGoal Int @default(20).
+- packages/shared: схемы UserSettingsSchema ({ dailyGoal: 1..200 }),
+  UpdateUserSettingsSchema (все поля optional, расширяемая),
+  константы DAILY_GOAL_MIN/MAX/DEFAULT.
+- apps/server: stats.service — чистые хелперы getTodayUtcRange
+  (полночь–полночь UTC) и countTodayReviews; getDashboard
+  расширен полями dailyGoal (fallback DAILY_GOAL_DEFAULT) и
+  todayReviews, wordsDueToday/countTodayReviews в Promise.all.
+- apps/server: новый модуль users (service + routes) —
+  GET /users/settings и PUT /users/settings (auth) с парсингом
+  UpdateUserSettingsSchema и upsert-патчем (P2025 → 404).
+- apps/server: index.ts — регистрация usersRoutes в /api/users.
+- apps/web: queries/stats — UserSettings тип, хуки useUserSettings
+  (staleTime 60_000) и useUpdateUserSettings (onSuccess
+  инвалидирует ['users','settings'] и ['stats','dashboard']);
+  Dashboard дополнен todayReviews/dailyGoal.
+- apps/web: HomeScreen — кольцо прогресса использует
+  dashboard.todayReviews/dashboard.dailyGoal вместо totalReviews
+  и хардкоженной 20; показ X / Y ревью и бейдж «✓ Цель на сегодня
+  достигнута» при достижении цели (вместо кнопки «Начать»).
+- apps/web: SettingsScreen — карточка «Ежедневная цель» (иконка
+  Target) с range-слайдером 1–200, оптимистичное обновление
+  через useUpdateUserSettings, откат + тост на ошибку.
+- packages/shared/api-spec.md — секция «Настройки пользователя»
+  с GET/PUT /api/users/settings, сводка: 18 эндпоинтов в 6 модулях.
+
+Тесты:
+- 4 новых vitest-теста в stats.service.test.ts для getTodayUtcRange:
+  начало/конец дня в UTC, ровно 24 часа, полночь UTC,
+  переход через границу месяца.
+- pnpm --filter @hanzi/server exec vitest run — 92 passed (было 88).
 - pnpm --filter @hanzi/web run test — 34 passed (без регрессий).
 - pnpm typecheck — чисто во всех 3 пакетах.
 - pnpm build — прод-бандл server и web собирается.

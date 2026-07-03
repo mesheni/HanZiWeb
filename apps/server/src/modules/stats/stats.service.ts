@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { DAILY_GOAL_DEFAULT } from '@hanzi/shared';
 import type { LeaderboardEntry, LeaderboardResponse } from '@hanzi/shared';
 
 /** Карта «rating → XP». Должна совпадать с sessions.service.recordAnswer. */
@@ -233,11 +234,37 @@ export async function getOverview(userId: string) {
   };
 }
 
+/**
+ * Возвращает [start, end) UTC для текущего календарного дня.
+ * Чистая функция — покрыта юнит-тестами.
+ */
+export function getTodayUtcRange(now: Date = new Date()): { start: Date; end: Date } {
+  const start = new Date(now);
+  start.setUTCHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return { start, end };
+}
+
+/**
+ * Считает количество ответов пользователя за текущий календарный день (UTC).
+ * Используется в `getDashboard` для кольцевого прогресса ежедневной цели.
+ */
+export async function countTodayReviews(userId: string, now: Date = new Date()): Promise<number> {
+  const { start, end } = getTodayUtcRange(now);
+  return prisma.sessionAnswer.count({
+    where: {
+      session: { userId },
+      answeredAt: { gte: start, lt: end },
+    },
+  });
+}
+
 export async function getDashboard(userId: string) {
   const [user, progressCounts, totalReviews] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { xp: true },
+      select: { xp: true, dailyGoal: true },
     }),
     prisma.userWordProgress.groupBy({
       by: ['state'],
@@ -256,16 +283,22 @@ export async function getDashboard(userId: string) {
 
   const wordsLearned = (stateMap.graduated ?? 0) + (stateMap.review ?? 0);
   const xp = user?.xp ?? 0;
+  // Если у пользователя почему-то dailyGoal == 0 (не должно быть благодаря
+  // Prisma @default(20), но null-страховка не мешает) — отдаём дефолт.
+  const dailyGoal = user?.dailyGoal && user.dailyGoal > 0 ? user.dailyGoal : DAILY_GOAL_DEFAULT;
 
   // Слова, которые нужно повторить сегодня: только learning/review, без новых слов.
   const now = new Date();
-  const wordsDueToday = await prisma.userWordProgress.count({
-    where: {
-      userId,
-      dueDate: { lte: now },
-      state: { in: ['learning', 'review'] },
-    },
-  });
+  const [wordsDueToday, todayReviews] = await Promise.all([
+    prisma.userWordProgress.count({
+      where: {
+        userId,
+        dueDate: { lte: now },
+        state: { in: ['learning', 'review'] },
+      },
+    }),
+    countTodayReviews(userId, now),
+  ]);
 
   const { currentStreak } = await getUserStreak(userId);
 
@@ -274,6 +307,8 @@ export async function getDashboard(userId: string) {
     wordsDueToday,
     wordsLearned,
     totalReviews,
+    todayReviews,
+    dailyGoal,
     xp,
   };
 }

@@ -100,11 +100,12 @@ export default function HomeScreen() {
   const wordsDueToday = dashboard?.wordsDueToday ?? 0;
   const wordsLearned = dashboard?.wordsLearned ?? 0;
   const totalReviews = dashboard?.totalReviews ?? 0;
+  const todayReviews = dashboard?.todayReviews ?? 0;
+  const dailyGoal = dashboard?.dailyGoal ?? 20;
   const xp = dashboard?.xp ?? 0;
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-  const DAILY_REVIEW_GOAL = 20;
   const hour = today.getHours();
   const greeting = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
 
@@ -192,14 +193,22 @@ export default function HomeScreen() {
       <div style={styles.progressSection}>
         <div className="section-label">Прогресс за сегодня</div>
         <div style={styles.progressRow}>
-          <CircularProgress value={totalReviews} max={DAILY_REVIEW_GOAL} size={88} strokeWidth={5} />
+          <CircularProgress value={todayReviews} max={dailyGoal} size={88} strokeWidth={5} />
           <div style={styles.progressInfo}>
-            <div style={styles.progressInfoNumber}>{wordsDueToday}</div>
-            <div style={styles.progressInfoLabel}>слов к повторению</div>
-            {wordsDueToday > 0 && (
-              <button style={styles.startSmallBtn} onClick={() => navigate('/study')}>
-                Начать →
-              </button>
+            <div style={styles.progressInfoNumber}>
+              {todayReviews} <span style={styles.progressInfoGoal}>/ {dailyGoal}</span>
+            </div>
+            <div style={styles.progressInfoLabel}>
+              {wordsDueToday > 0 ? `слов к повторению: ${wordsDueToday}` : 'слов к повторению'}
+            </div>
+            {todayReviews >= dailyGoal ? (
+              <div style={styles.goalReachedBadge}>✓ Цель на сегодня достигнута</div>
+            ) : (
+              wordsDueToday > 0 && (
+                <button style={styles.startSmallBtn} onClick={() => navigate('/study')}>
+                  Начать →
+                </button>
+              )
             )}
           </div>
         </div>
@@ -399,6 +408,11 @@ const styles: Record<string, CSSProperties> = {
     color: 'var(--text-secondary)',
     marginTop: 2,
   },
+  progressInfoGoal: {
+    fontSize: 14,
+    fontWeight: 400,
+    color: 'var(--text-muted)',
+  },
   startSmallBtn: {
     marginTop: 8,
     padding: '6px 14px',
@@ -409,6 +423,17 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontWeight: 500,
     cursor: 'pointer',
+  },
+  goalReachedBadge: {
+    marginTop: 8,
+    display: 'inline-block',
+    padding: '4px 10px',
+    background: 'var(--tone-3-bg)',
+    color: 'var(--tone-3)',
+    border: '1px solid rgba(251, 191, 36, 0.3)',
+    borderRadius: 8,
+    fontSize: 12,
+    fontWeight: 500,
   },
   wordRows: {
     display: 'flex',

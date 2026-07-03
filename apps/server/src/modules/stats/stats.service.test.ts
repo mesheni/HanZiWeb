@@ -4,6 +4,7 @@ import {
   aggregateWeeklyXp,
   computeRank,
   getCurrentWeekWindow,
+  getTodayUtcRange,
   maskEmail,
 } from './stats.service.js';
 
@@ -142,5 +143,35 @@ describe('computeRank', () => {
       ['b', 50],
     ]);
     expect(computeRank(0, map)).toBe(3);
+  });
+});
+
+describe('getTodayUtcRange', () => {
+  it('возвращает начало текущего дня в UTC и начало следующего', () => {
+    const wed = new Date('2026-07-08T15:30:45.123Z');
+    const { start, end } = getTodayUtcRange(wed);
+    expect(start.toISOString()).toBe('2026-07-08T00:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-09T00:00:00.000Z');
+  });
+
+  it('ровно один день (24 часа)', () => {
+    const now = new Date('2026-07-08T15:30:00.000Z');
+    const { start, end } = getTodayUtcRange(now);
+    expect(end.getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it('окно охватывает всю текущую дату независимо от часа', () => {
+    // Полночь UTC — это начало дня, и окно должно указывать на этот же день.
+    const midnight = new Date('2026-07-08T00:00:00.000Z');
+    const { start, end } = getTodayUtcRange(midnight);
+    expect(start.toISOString()).toBe('2026-07-08T00:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-09T00:00:00.000Z');
+  });
+
+  it('переходит через границу месяца', () => {
+    const last = new Date('2026-07-31T23:59:59.999Z');
+    const { start, end } = getTodayUtcRange(last);
+    expect(start.toISOString()).toBe('2026-07-31T00:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-08-01T00:00:00.000Z');
   });
 });
