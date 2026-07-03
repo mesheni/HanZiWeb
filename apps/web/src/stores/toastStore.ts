@@ -34,3 +34,13 @@ export const useToastStore = create<ToastState>((set) => ({
 export function toast(message: string, type: ToastType = 'info') {
   useToastStore.getState().addToast(message, type);
 }
+
+/**
+ * Алиас для удобного вызова `const toast = useToast()`.
+ * Возвращает функцию `(message, type?) => void` — обёртку над
+ * `addToast` из `useToastStore`. Имя совпадает с упоминанием в
+ * `PLAN_Features_v0.2 §8` («toast через useToast»).
+ */
+export function useToast() {
+  return useToastStore((s) => s.addToast);
+}

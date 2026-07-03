@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useStartSession, useRecordAnswer } from '../queries/sessions';
 import { useStudyStore } from '../stores/studyStore';
-import { useToastStore } from '../stores/toastStore';
+import { useToast } from '../stores/toastStore';
 import { useOnlineStatus } from './useOnlineStatus';
 import { getDb } from '../db/database';
 import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
+import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
 import type { SrsRating, StudyMode, PracticeType } from '@hanzi/shared';
 
 export interface UseStudySessionOptions {
@@ -32,7 +33,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
   const cardsCount = useStudyStore((s) => s.cards.length);
   const currentIndex = useStudyStore((s) => s.currentIndex);
   const practiceTypeInStore = useStudyStore((s) => s.practiceType);
-  const addToast = useToastStore((s) => s.addToast);
+  const addToast = useToast();
 
   // Если practiceType не передан явно — берём из стора (позволяет менять
   // его до старта сессии через setPracticeType).
@@ -157,6 +158,13 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
           rating,
         },
         {
+          onSuccess: (data) => {
+            for (const ach of data.unlockedAchievements ?? []) {
+              const meta = ACHIEVEMENT_CATALOG.find((a) => a.type === (ach.type as AchievementType));
+              const title = meta?.title ?? ach.type;
+              addToast(`🏆 Достижение: ${title}`, 'success');
+            }
+          },
           onError: () => {
             useStudyStore.setState((state) => {
               const updated = [...state.cards];

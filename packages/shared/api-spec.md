@@ -151,19 +151,21 @@
 
 ### POST /api/sessions/:id/answer
 
-Записать ответ на карточку. Сервер пересчитывает FSRS (stability, difficulty, dueDate), начисляет XP.
+Записать ответ на карточку. Сервер пересчитывает FSRS (stability, difficulty, dueDate), начисляет XP, проверяет условия достижений (см. §8).
 
 | | |
 |---|---|
 | **Auth** | Bearer JWT |
 | **Request** | `RecordAnswerSchema` |
-| **Response 200** | `{ success: true, data: SrsRecalcResultSchema }` |
+| **Response 200** | `{ success: true, data: SrsRecalcResultSchema & { unlockedAchievements: UserAchievement[] } }` |
 
 ```json
 // Request
 { "sessionId": "uuid", "wordId": "uuid", "rating": 3, "responseTimeMs": 2500 }
 
-// Response: новый dueDate, stability, difficulty, state, intervalDays, xpGain
+// Response: новый dueDate, stability, difficulty, state, intervalDays, xpGain,
+// unlockedAchievements — массив только что разблокированных достижений
+// (типы: streak_7 | words_100 | hsk1_complete | reviews_10k | perfect_session).
 ```
 
 ### GET /api/sessions/:id
@@ -251,6 +253,34 @@
 
 ---
 
+## Достижения (Achievements)
+
+Все эндпоинты: `GET /api/achievements/*` (см. PLAN_Features_v0.2 §8).
+
+### GET /api/achievements
+
+Список разблокированных достижений пользователя. Типы и метаданные — в `ACHIEVEMENT_CATALOG` (`packages/shared/src/schemas/achievement.ts`).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true, data: { achievements: UserAchievement[] } }` |
+
+```json
+// Response
+{
+  "success": true,
+  "data": {
+    "achievements": [
+      { "id": "uuid", "type": "streak_7", "unlockedAt": "2026-07-03T19:30:00.000Z" },
+      { "id": "uuid", "type": "perfect_session", "unlockedAt": "2026-07-03T20:12:45.000Z" }
+    ]
+  }
+}
+```
+
+---
+
 ## Health Check
 
 ### GET /api/health
@@ -306,5 +336,6 @@
 | 13 | GET | /api/stats/overview | JWT | Stats |
 | 14 | GET | /api/stats/activity | JWT | Stats |
 | 15 | GET | /api/stats/leaderboard | JWT | Stats |
+| 16 | GET | /api/achievements | JWT | Achievements |
 
-Всего: **15 эндпоинтов** в 4 модулях.
+Всего: **16 эндпоинтов** в 5 модулях.

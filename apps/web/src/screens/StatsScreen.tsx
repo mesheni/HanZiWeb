@@ -1,7 +1,31 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ChevronLeft, ChevronRight, Crown, Loader2, Trophy } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Crown,
+  Flame,
+  BookCheck,
+  GraduationCap,
+  Loader2,
+  Lock,
+  Sparkles,
+  Trophy,
+} from 'lucide-react';
 import { useActivity, useLeaderboard, useOverview, type LeaderboardEntry, type LeaderboardPeriod } from '../queries/stats';
+import { useAchievements } from '../queries/achievements';
+import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
+
+const ACHIEVEMENT_ICONS: Record<
+  AchievementType,
+  typeof Flame
+> = {
+  streak_7: Flame,
+  words_100: BookCheck,
+  hsk1_complete: GraduationCap,
+  reviews_10k: Trophy,
+  perfect_session: Sparkles,
+};
 
 const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -221,6 +245,69 @@ function Leaderboard({
   );
 }
 
+function Achievements() {
+  const { data, isLoading, isError } = useAchievements();
+
+  const unlockedMap = useMemo(() => {
+    const map = new Map<AchievementType, string>();
+    if (data?.achievements) {
+      for (const a of data.achievements) {
+        map.set(a.type as AchievementType, a.unlockedAt);
+      }
+    }
+    return map;
+  }, [data]);
+
+  const unlockedCount = unlockedMap.size;
+  const totalCount = ACHIEVEMENT_CATALOG.length;
+
+  if (isLoading) {
+    return (
+      <div className="lb-loading">
+        <Loader2 size={16} className="spinner-inline" />
+      </div>
+    );
+  }
+  if (isError) {
+    return <div className="ach-empty">Не удалось загрузить достижения.</div>;
+  }
+
+  return (
+    <>
+      <div className="ach-progress">
+        <span className="ach-progress-text">
+          {unlockedCount} / {totalCount}
+        </span>
+        <div className="ach-progress-bar">
+          <div
+            className="ach-progress-fill"
+            style={{ width: `${(unlockedCount / totalCount) * 100}%` }}
+          />
+        </div>
+      </div>
+      <div className="ach-grid">
+        {ACHIEVEMENT_CATALOG.map((meta) => {
+          const isUnlocked = unlockedMap.has(meta.type);
+          const Icon = ACHIEVEMENT_ICONS[meta.type];
+          return (
+            <div
+              key={meta.type}
+              className={`ach-card${isUnlocked ? ' ach-card-unlocked' : ' ach-card-locked'}`}
+              title={meta.description}
+            >
+              <div className="ach-card-icon">
+                {isUnlocked ? <Icon size={20} /> : <Lock size={20} />}
+              </div>
+              <div className="ach-card-title">{meta.title}</div>
+              <div className="ach-card-desc">{meta.description}</div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 export default function StatsScreen() {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
@@ -324,6 +411,14 @@ export default function StatsScreen() {
           isLoading={lbLoading}
           isError={lbError}
         />
+      </div>
+
+      {/* Achievements */}
+      <div style={styles.calSection}>
+        <div style={styles.calHeader}>
+          <span className="section-label" style={{ margin: 0 }}>Достижения</span>
+        </div>
+        <Achievements />
       </div>
     </div>
   );

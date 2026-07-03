@@ -1,7 +1,8 @@
 import { prisma } from '../../lib/prisma.js';
 import type { Prisma } from '@prisma/client';
 import { recalcFsrs } from './srs.js';
-import type { StartSession, RecordAnswer } from '@hanzi/shared';
+import * as achievementsService from '../achievements/achievements.service.js';
+import type { StartSession, RecordAnswer, UserAchievement } from '@hanzi/shared';
 
 /** Тип прогресса с включённым словом и примерами */
 type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
@@ -162,6 +163,11 @@ export async function startSession(userId: string, input: StartSession) {
 
 /**
  * Записывает ответ пользователя и пересчитывает SRS.
+ *
+ * После записи ответа проверяет условия достижений (см.
+ * `apps/server/src/modules/achievements`) и возвращает список
+ * только что разблокированных в `unlockedAchievements`. Клиент
+ * показывает их через toast (`useToast`).
  */
 export async function recordAnswer(userId: string, input: RecordAnswer) {
   const progress = await prisma.userWordProgress.findUnique({
@@ -218,6 +224,21 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
     data: { xp: { increment: xpGain } },
   });
 
+  // Проверка достижений (глобальные + идеальная сессия).
+  // Делается после всех мутаций, чтобы checkPerfectSession
+  // видел уже записанный ответ. Не блокирует ответ: даже при
+  // ошибке пользователь получит корректный SRS-результат.
+  let unlockedAchievements: UserAchievement[] = [];
+  try {
+    unlockedAchievements = await achievementsService.checkAllAchievements(
+      userId,
+      input.sessionId,
+    );
+  } catch (err) {
+    // Достижения не должны ломать основной поток
+    console.error('checkAllAchievements failed', err);
+  }
+
   return {
     wordId: input.wordId,
     newStability,
@@ -226,6 +247,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
     newDueDate: newDueDate.toISOString(),
     intervalDays,
     xpGain,
+    unlockedAchievements,
   };
 }
 

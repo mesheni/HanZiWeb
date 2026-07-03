@@ -26,9 +26,25 @@ model User {
   devices       UserDevice[]
   clozeProgress ClozeProgress[]
   decks         Deck[]
+  achievements  UserAchievement[]
 
   /// Индекс для быстрого leaderboard (топ по XP за всё время).
   @@index([xp(sort: Desc)])
+}
+
+/// Достижения (badges) пользователя.
+/// См. PLAN_Features_v0.2 §8 — «7 дней стрика», «100 выученных»,
+/// «HSK 1 пройден», «10 000 ревью», «идеальная сессия».
+model UserAchievement {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Тип достижения: streak_7 | words_100 | hsk1_complete | reviews_10k | perfect_session
+  type       String
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, type])
+  @@index([userId])
 }
 
 model UserDevice {
