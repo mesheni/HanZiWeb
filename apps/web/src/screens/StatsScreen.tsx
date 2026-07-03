@@ -38,11 +38,11 @@ function getIntensity(count: number): number {
 }
 
 const INTENSITY_COLORS = [
-  '#1A1F2E',
-  'rgba(220,38,38,0.2)',
-  'rgba(220,38,38,0.4)',
-  'rgba(220,38,38,0.65)',
-  'rgba(220,38,38,0.9)',
+  'var(--bg-secondary)',
+  'color-mix(in srgb, var(--accent) 20%, transparent)',
+  'color-mix(in srgb, var(--accent) 40%, transparent)',
+  'color-mix(in srgb, var(--accent) 65%, transparent)',
+  'color-mix(in srgb, var(--accent) 90%, transparent)',
 ];
 
 interface TooltipData {

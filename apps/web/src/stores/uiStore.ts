@@ -1,6 +1,9 @@
 import { create } from 'zustand';
-
-type Theme = 'dark' | 'light';
+import {
+  type Theme,
+  applyTheme,
+  persistTheme,
+} from '@/ui/theme';
 
 interface UiState {
   theme: Theme;
@@ -9,6 +12,7 @@ interface UiState {
   autoPlayAudio: boolean;
 
   toggleTheme: () => void;
+  setTheme: (theme: Theme) => void;
   setSidebarOpen: (open: boolean) => void;
   setAutoPlayAudio: (on: boolean) => void;
 }
@@ -50,6 +54,9 @@ function persist(slice: PersistedSlice): void {
 
 const initial = loadInitial();
 
+/** Синхронизируем тему с DOM сразу при загрузке стора. */
+applyTheme(initial.theme);
+
 export const useUiStore = create<UiState>((set) => ({
   theme: initial.theme,
   sidebarOpen: initial.sidebarOpen,
@@ -58,8 +65,19 @@ export const useUiStore = create<UiState>((set) => ({
   toggleTheme: () =>
     set((state) => {
       const theme: Theme = state.theme === 'dark' ? 'light' : 'dark';
+      applyTheme(theme);
+      persistTheme(theme);
       persist({ theme, sidebarOpen: state.sidebarOpen, autoPlayAudio: state.autoPlayAudio });
       return { theme };
+    }),
+
+  setTheme: (theme) =>
+    set((state) => {
+      const next: Theme = theme === 'light' ? 'light' : 'dark';
+      applyTheme(next);
+      persistTheme(next);
+      persist({ theme: next, sidebarOpen: state.sidebarOpen, autoPlayAudio: state.autoPlayAudio });
+      return { theme: next };
     }),
 
   setSidebarOpen: (open) =>

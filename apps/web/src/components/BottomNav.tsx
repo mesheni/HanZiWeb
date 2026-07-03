@@ -26,7 +26,7 @@ export default function BottomNav() {
             aria-label={item.label}
             className="flex flex-col items-center justify-center gap-0.5 w-16 h-12 rounded-xl transition-colors duration-150 border-none cursor-pointer bg-transparent"
             style={{
-              color: active ? 'var(--accent)' : '#48495C',
+              color: active ? 'var(--accent)' : 'var(--text-muted)',
             }}
           >
             <Icon size={18} />

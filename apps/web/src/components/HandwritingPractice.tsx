@@ -15,6 +15,12 @@ interface CharWriterHandle {
 
 const CHAR_SIZE = 220;
 
+function readCssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 const CharWriter = forwardRef<CharWriterHandle, { char: string }>(({ char }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<any>(null);
@@ -29,9 +35,9 @@ const CharWriter = forwardRef<CharWriterHandle, { char: string }>(({ char }, ref
       width: CHAR_SIZE,
       height: CHAR_SIZE,
       padding: 12,
-      strokeColor: '#E8EAED',
-      radicalColor: '#DC2626',
-      outlineColor: '#45475A',
+      strokeColor: readCssVar('--text-primary', '#E8EAED'),
+      radicalColor: readCssVar('--accent', '#DC2626'),
+      outlineColor: readCssVar('--text-muted', '#45475A'),
       showCharacter: true,
       strokeAnimationSpeed: 1.2,
       delayBetweenStrokes: 250,

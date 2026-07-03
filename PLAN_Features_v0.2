@@ -501,12 +501,49 @@ run build` собирает прод-бандл.
   CSV содержит 3 строки → import с ghost wordId (1 skipped) →
   replace (только 1 запись осталась).
 
-### 11. Тёмная тема
+### 11. Тёмная тема ✅ DONE
 Дизайн завязан на цвета тонов, но явной темы нет.
 
-- `ui/theme.ts` (CSS-переменные).
-- Переключатель в `SettingsScreen`, persist в `localStorage`.
-- Цвета тонов параметризовать через CSS-вары `--tone-1..4`.
+- `ui/theme.ts` (CSS-переменные). ✅ — `apps/web/src/ui/theme.ts`
+  + `apps/web/src/ui/useTheme.ts` (хук вынесен отдельно, чтобы
+  разорвать цикл `theme ↔ uiStore`).
+- Палитра: `:root[data-theme="dark"]` (по умолчанию) и
+  `:root[data-theme="light"]` в `apps/web/src/styles/global.css`.
+  Тон-цвета параметризованы через `--tone-0..4`; в светлой теме
+  тона чуть насыщеннее/темнее для контраста. ✅
+- Применение темы к DOM: `applyTheme(theme)` ставит
+  `data-theme` и `color-scheme` на `<html>`. ✅
+  Инициализация до React-маунта — `bootstrapTheme()` в `main.tsx`,
+  чтобы не было вспышки неправильной палитры.
+- Persist в `localStorage`: ключ `hanzi:theme` (`persistTheme`)
+  + общий срез `hanzi:ui` в `stores/uiStore.ts`. ✅
+- Переключатель в `SettingsScreen` (новая карточка «Тема
+  оформления» с двумя кнопками «Тёмная» / «Светлая»)
+  и быстрая кнопка в `Sidebar` (Sun/Moon). ✅
+- `TONE_COLORS` в `utils/toneColors.tsx` теперь ссылается на
+  CSS-переменные (`var(--tone-1)` и т.д.), чтобы `ToneRecognitionCard`
+  автоматически подстраивался под тему. ✅
+- Тяжёлые хардкоды заменены на CSS-переменные/var:
+  - `.bg-black\/60`, `.shadow-*`, `.lb-tab-active`,
+    `.deck-builder-tab-active` — через `--tone-overlay`,
+    `--shadow-card`, `--shadow-modal`.
+  - Прозрачные границы тон-цветов и фон иконок — через
+    `color-mix(in srgb, var(--tone-N) X%, transparent)`.
+  - `Sidebar` (онлайн-индикатор), `NavButton`, `BottomNav`,
+    `LibraryScreen` (chips, search), `HomeScreen` (streak),
+    `StatsScreen` (ActivityCalendar `INTENSITY_COLORS`) —
+    приведены к CSS-переменным.
+- `HandwritingPractice` читает цвета hanzi-writer из CSS-переменных
+  через `getComputedStyle(documentElement)`, чтобы штрихи и
+  контуры перекрашивались при смене темы. ✅
+- Покрытие тестами: `apps/web/src/ui/theme.test.ts` (5 тестов
+  на чистые утилиты) + `apps/web/src/utils/toneColors.test.ts`
+  (3 теста на `TONE_COLORS`/`parsePinyin`). ✅
+- `pnpm typecheck` — чисто во всех 3 пакетах.
+- `pnpm --filter @hanzi/web run test` — 42 passed (было 34, +8).
+- `pnpm --filter @hanzi/server exec vitest run` — 103 passed
+  (без регрессий).
+- `pnpm --filter @hanzi/web run build` — прод-бандл собирается.
 
 ### 12. Повторение по «лёгкости» и фильтры сессии
 Сейчас `POST /sessions/start` берёт `mode` + `deckId`/`hskLevel`.

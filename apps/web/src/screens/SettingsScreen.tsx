@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target } from 'lucide-react';
+import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target, Moon, Sun } from 'lucide-react';
 import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
 import { Button, Card } from '@/components/ui';
 import ProgressExportImport from '@/components/ProgressExportImport';
@@ -9,6 +9,7 @@ import { apiGet, apiPost, apiPut } from '@/api/client';
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/api/push';
 import { toast } from '@/stores/toastStore';
 import { useUpdateUserSettings, DAILY_GOAL_FALLBACK } from '@/queries/stats';
+import { useTheme } from '@/ui/useTheme';
 import type { PaginatedResponse, WordListItem } from '@hanzi/shared';
 
 type NotificationTime = 'morning' | 'evening' | 'both';
@@ -40,6 +41,7 @@ async function fetchAllWords() {
 
 export default function SettingsScreen() {
   const navigate = useNavigate();
+  const { theme, setTheme, isDark } = useTheme();
   const [resetLoading, setResetLoading] = useState(false);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [reindexLoading, setReindexLoading] = useState(false);
@@ -292,6 +294,51 @@ export default function SettingsScreen() {
             </div>
           </Card>
         )}
+
+        <Card padding="lg" className="space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-tone-2-bg text-tone-2 flex items-center justify-center shrink-0">
+              {isDark ? <Moon size={18} /> : <Sun size={18} />}
+            </div>
+            <div className="flex-1">
+              <div className="font-medium text-text-primary">Тема оформления</div>
+              <div className="text-sm text-text-muted mt-1">
+                Светлая или тёмная палитра. Выбор сохраняется локально.
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm text-text-secondary mb-2">Текущая тема</div>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  { value: 'dark', label: 'Тёмная', Icon: Moon },
+                  { value: 'light', label: 'Светлая', Icon: Sun },
+                ] as const
+              ).map(({ value, label, Icon }) => {
+                const active = theme === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTheme(value)}
+                    aria-pressed={active}
+                    aria-label={`Тема: ${label}`}
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer ${
+                      active
+                        ? 'bg-accent text-white border-accent'
+                        : 'bg-bg-card border-border-default text-text-secondary hover:bg-bg-hover'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
 
         <Card padding="lg" className="space-y-4">
           <div className="flex items-start gap-3">

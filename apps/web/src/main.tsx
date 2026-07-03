@@ -5,7 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import { initDb } from './db/database';
 import { initSyncEngine } from './db/sync';
+import { bootstrapTheme } from './ui/theme';
 import './styles/global.css';
+
+// Применяем тему до маунта React-дерева, чтобы избежать вспышки
+// неправильной палитры при загрузке.
+bootstrapTheme();
 
 initDb()
   .catch((error) => {

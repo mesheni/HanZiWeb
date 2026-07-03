@@ -1,7 +1,8 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Heart } from 'lucide-react';
+import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Heart, Moon, Sun } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { useTheme } from '@/ui/useTheme';
 
 const NAV_ITEMS = [
   { id: 'home', icon: Home, label: 'Главная', route: '/' },
@@ -21,6 +22,7 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const logout = useAuthStore((s) => s.logout);
   const isOnline = useOnlineStatus();
+  const { toggle, isDark } = useTheme();
 
   const isActive = (route: string) => location.pathname === route;
 
@@ -66,6 +68,16 @@ export default function Sidebar() {
 
         <button
           className="sidebar-btn"
+          onClick={() => toggle()}
+          aria-label={isDark ? 'Светлая тема' : 'Тёмная тема'}
+          title={isDark ? 'Светлая тема' : 'Тёмная тема'}
+        >
+          {isDark ? <Sun size={20} /> : <Moon size={20} />}
+          <span>{isDark ? 'Светлая' : 'Тёмная'}</span>
+        </button>
+
+        <button
+          className="sidebar-btn"
           onClick={() => logout()}
           aria-label="Выйти"
         >
@@ -86,8 +98,8 @@ export default function Sidebar() {
           marginTop: 10,
           marginLeft: 'auto',
           marginRight: 'auto',
-          color: isOnline ? '#22c55e' : '#ef4444',
-          background: isOnline ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+          color: isOnline ? '#22c55e' : 'var(--accent)',
+          background: isOnline ? 'rgba(34,197,94,0.1)' : 'var(--accent-bg)',
         }}
       >
         {isOnline ? <Wifi size={17} /> : <WifiOff size={17} />}

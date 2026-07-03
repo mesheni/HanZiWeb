@@ -241,7 +241,7 @@ export default function LibraryScreen() {
               style={{
                 ...styles.chip,
                 background: hskLevel === level ? 'var(--accent-bg-lite)' : 'var(--bg-card)',
-                borderColor: hskLevel === level ? 'var(--border-accent)' : 'rgba(255,255,255,0.07)',
+                borderColor: hskLevel === level ? 'var(--border-accent)' : 'var(--border-default)',
                 color: hskLevel === level ? 'var(--accent)' : 'var(--text-secondary)',
               }}
               onClick={() => setHskLevel(hskLevel === level ? null : level)}
@@ -258,7 +258,7 @@ export default function LibraryScreen() {
               style={{
                 ...styles.chip,
                 background: statusChip === s ? 'var(--accent-bg-lite)' : 'var(--bg-card)',
-                borderColor: statusChip === s ? 'var(--border-accent)' : 'rgba(255,255,255,0.07)',
+                borderColor: statusChip === s ? 'var(--border-accent)' : 'var(--border-default)',
                 color: statusChip === s ? 'var(--accent)' : 'var(--text-secondary)',
               }}
               onClick={() => setStatusChip(s)}
@@ -507,7 +507,7 @@ const styles: Record<string, CSSProperties> = {
     pointerEvents: 'none',
   },
   searchInput: {
-    width: '100%', background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.09)',
+    width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-default)',
     borderRadius: 10, padding: '9px 12px 9px 36px', color: 'var(--text-primary)',
     fontSize: 13, outline: 'none',
   },
@@ -539,7 +539,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 34, fontFamily: 'var(--font-cjk)', lineHeight: 1, marginBottom: 6,
   },
   cardTranslation: {
-    fontSize: 11, color: '#9899A8', marginTop: 3,
+    fontSize: 11, color: 'var(--text-secondary)', marginTop: 3,
   },
   cardStatus: {
     marginTop: 8,

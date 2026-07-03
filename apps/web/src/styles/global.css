@@ -1,4 +1,12 @@
-:root {
+/* ============================================================
+   THEME TOKENS
+   Два варианта: :root[data-theme="dark"] (по умолчанию) и
+   :root[data-theme="light"]. Тема переключается атрибутом на
+   <html>; логика — в src/ui/theme.ts.
+   ============================================================ */
+
+:root,
+:root[data-theme="dark"] {
   /* Backgrounds */
   --bg-primary: #0C0E16;
   --bg-secondary: #0F1118;
@@ -22,7 +30,8 @@
   --accent-bg: rgba(220, 38, 38, 0.13);
   --accent-bg-lite: rgba(220, 38, 38, 0.1);
 
-  /* Tone colors (1=blue, 2=green, 3=orange, 4=red, 0=neutral) */
+  /* Tone colors (1=blue, 2=green, 3=orange, 4=red, 0=neutral).
+     В тёмной теме — яркие/пастельные для контраста с тёмным фоном. */
   --tone-1: #4FC3F7;
   --tone-2: #81C784;
   --tone-3: #FFB74D;
@@ -36,6 +45,58 @@
   --tone-4-bg: rgba(229, 115, 115, 0.12);
   --tone-0-bg: rgba(158, 158, 158, 0.1);
 
+  /* Achievements / leaderboard-only */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 8px 48px rgba(0, 0, 0, 0.5);
+  --tone-overlay: rgba(0, 0, 0, 0.6);
+}
+
+:root[data-theme="light"] {
+  /* Backgrounds */
+  --bg-primary: #F5F6F8;
+  --bg-secondary: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-hover: rgba(15, 17, 24, 0.04);
+
+  /* Borders */
+  --border-default: rgba(15, 17, 24, 0.08);
+  --border-hover: rgba(15, 17, 24, 0.16);
+  --border-accent: rgba(220, 38, 38, 0.35);
+
+  /* Text */
+  --text-primary: #1A1D24;
+  --text-secondary: #5B6173;
+  --text-muted: #8A8F9E;
+  --text-dim: #B0B4C0;
+
+  /* Accent — тот же красный, чтобы бренд-цвет не плыл */
+  --accent: #DC2626;
+  --accent-hover: #B91C1C;
+  --accent-bg: rgba(220, 38, 38, 0.10);
+  --accent-bg-lite: rgba(220, 38, 38, 0.06);
+
+  /* Tone colors — те же оттенки, но чуть насыщеннее/темнее
+     для читаемости на светлом фоне. */
+  --tone-1: #0288D1;
+  --tone-2: #2E7D32;
+  --tone-3: #E65100;
+  --tone-4: #C62828;
+  --tone-0: #757575;
+
+  /* Tone backgrounds — менее прозрачные, чтобы не «исчезали» на белом */
+  --tone-1-bg: rgba(2, 136, 209, 0.10);
+  --tone-2-bg: rgba(46, 125, 50, 0.10);
+  --tone-3-bg: rgba(230, 81, 0, 0.10);
+  --tone-4-bg: rgba(198, 40, 40, 0.10);
+  --tone-0-bg: rgba(117, 117, 117, 0.10);
+
+  /* Achievements / leaderboard-only */
+  --shadow-card: 0 1px 2px rgba(15, 17, 24, 0.06);
+  --shadow-modal: 0 8px 32px rgba(15, 17, 24, 0.12);
+  --tone-overlay: rgba(15, 17, 24, 0.4);
+}
+
+:root {
   /* Spacing */
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -45,6 +106,12 @@
   /* Fonts */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-cjk: 'Noto Serif SC', var(--font-sans);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 *,
@@ -178,7 +245,7 @@ input {
 .bg-accent-hover { background: var(--accent-hover); }
 .bg-transparent { background: transparent; }
 .bg-white\/5 { background: rgba(255,255,255,0.05); }
-.bg-black\/60 { background: rgba(0,0,0,0.6); }
+.bg-black\/60 { background: var(--tone-overlay); }
 
 /* ===== Border utilities ===== */
 .border { border: 1px solid; }
@@ -187,10 +254,10 @@ input {
 .border-b { border-bottom: 1px solid; }
 .border-none { border: none; }
 .border-border-default { border-color: var(--border-default); }
-.border-tone-2\/40 { border-color: rgba(52,211,153,0.4); }
-.border-tone-1\/40 { border-color: rgba(79,195,247,0.4); }
-.border-tone-4\/40 { border-color: rgba(229,115,115,0.4); }
-.border-tone-4\/30 { border-color: rgba(229,115,115,0.3); }
+.border-tone-2\/40 { border-color: color-mix(in srgb, var(--tone-2) 40%, transparent); }
+.border-tone-1\/40 { border-color: color-mix(in srgb, var(--tone-1) 40%, transparent); }
+.border-tone-4\/40 { border-color: color-mix(in srgb, var(--tone-4) 40%, transparent); }
+.border-tone-4\/30 { border-color: color-mix(in srgb, var(--tone-4) 30%, transparent); }
 .border-transparent { border-color: transparent; }
 
 /* ===== Text utilities ===== */
@@ -248,9 +315,9 @@ input {
 .rounded-2xl { border-radius: 16px; }
 .rounded-full { border-radius: 9999px; }
 .rounded-\[10px\] { border-radius: 10px; }
-.shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-.shadow-lg { box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
-.shadow-2xl { box-shadow: 0 8px 48px rgba(0,0,0,0.5); }
+.shadow-sm { box-shadow: var(--shadow-card); }
+.shadow-lg { box-shadow: 0 4px 24px var(--tone-overlay); }
+.shadow-2xl { box-shadow: var(--shadow-modal); }
 .backdrop-blur-sm { backdrop-filter: blur(4px); }
 .overflow-hidden { overflow: hidden; }
 .overflow-y-auto { overflow-y: auto; }
@@ -525,7 +592,7 @@ input {
 }
 
 .rate-again {
-  border-color: rgba(229, 115, 115, 0.3);
+  border-color: color-mix(in srgb, var(--tone-4) 30%, transparent);
   color: var(--tone-4);
 }
 
@@ -535,7 +602,7 @@ input {
 }
 
 .rate-hard {
-  border-color: rgba(255, 183, 77, 0.3);
+  border-color: color-mix(in srgb, var(--tone-3) 30%, transparent);
   color: var(--tone-3);
 }
 
@@ -545,7 +612,7 @@ input {
 }
 
 .rate-good {
-  border-color: rgba(129, 199, 132, 0.3);
+  border-color: color-mix(in srgb, var(--tone-2) 30%, transparent);
   color: var(--tone-2);
 }
 
@@ -1112,8 +1179,8 @@ input {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1903,7 +1970,7 @@ input {
 }
 
 .word-detail-example-del:hover {
-  background: rgba(229, 115, 115, 0.15);
+  background: color-mix(in srgb, var(--tone-4) 15%, transparent);
   color: var(--tone-4);
 }
 
@@ -2069,7 +2136,7 @@ input {
 .deck-builder-tab-active {
   background: var(--bg-card);
   color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-card);
 }
 
 .deck-builder-fields {
@@ -2305,7 +2372,7 @@ input {
 }
 
 .deck-builder-preview-remove:hover {
-  background: rgba(229, 115, 115, 0.15);
+  background: color-mix(in srgb, var(--tone-4) 15%, transparent);
   color: var(--tone-4);
 }
 
@@ -2885,7 +2952,7 @@ input {
 .lb-tab-active {
   background: var(--bg-card);
   color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-card);
 }
 
 .lb-loading {
@@ -3089,7 +3156,7 @@ input {
   border-color: var(--border-accent);
   background: linear-gradient(
     180deg,
-    rgba(220, 38, 38, 0.07) 0%,
+    color-mix(in srgb, var(--accent) 7%, transparent) 0%,
     var(--bg-primary) 100%
   );
 }
@@ -3147,12 +3214,12 @@ input {
 .import-result-ok {
   color: var(--tone-2);
   background: var(--tone-2-bg);
-  border-color: rgba(129, 199, 132, 0.25);
+  border-color: color-mix(in srgb, var(--tone-2) 25%, transparent);
 }
 
 .import-result-err {
   color: var(--tone-4);
   background: var(--tone-4-bg);
-  border-color: rgba(229, 115, 115, 0.3);
+  border-color: color-mix(in srgb, var(--tone-4) 30%, transparent);
 }
 

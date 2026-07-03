@@ -291,7 +291,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 6,
     background: 'var(--tone-3-bg)',
-    border: '1px solid rgba(251,191,36,0.2)',
+    border: '1px solid color-mix(in srgb, var(--tone-3) 20%, transparent)',
     borderRadius: 20,
     padding: '5px 13px',
     fontSize: 12,
