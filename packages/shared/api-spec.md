@@ -221,6 +221,34 @@
 { "success": true, "data": [{ "day": 1, "count": 12 }, { "day": 2, "count": 8 }] }
 ```
 
+### GET /api/stats/leaderboard
+
+Таблица лидеров (PLAN_Features_v0.2 §7).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Query** | `period` (`week` \| `all`, default `week`), `limit` (int, 1-100, default 100) |
+| **Response 200** | см. `LeaderboardResponseSchema` (`packages/shared/src/schemas/leaderboard.ts`) |
+
+```json
+// Response (period=week)
+{
+  "success": true,
+  "data": {
+    "period": "week",
+    "total": 17,
+    "entries": [
+      { "rank": 1, "userId": "…", "displayName": "al***@gmail.com", "xp": 220, "currentStreak": 9, "isCurrentUser": false },
+      …
+    ],
+    "currentUser": { "rank": 42, "userId": "…", "displayName": "ma***@yandex.ru", "xp": 30, "currentStreak": 1, "isCurrentUser": true },
+    "windowStart": "2026-07-06T00:00:00.000Z",
+    "windowEnd": "2026-07-13T00:00:00.000Z"
+  }
+}
+```
+
 ---
 
 ## Health Check
@@ -277,5 +305,6 @@
 | 12 | GET | /api/sessions/:id | JWT | Sessions |
 | 13 | GET | /api/stats/overview | JWT | Stats |
 | 14 | GET | /api/stats/activity | JWT | Stats |
+| 15 | GET | /api/stats/leaderboard | JWT | Stats |
 
-Всего: **14 эндпоинтов** в 4 модулях.
+Всего: **15 эндпоинтов** в 4 модулях.

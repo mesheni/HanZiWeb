@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useActivity, useOverview } from '../queries/stats';
+import { ChevronLeft, ChevronRight, Crown, Loader2, Trophy } from 'lucide-react';
+import { useActivity, useLeaderboard, useOverview, type LeaderboardEntry, type LeaderboardPeriod } from '../queries/stats';
 
 const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
@@ -159,12 +159,76 @@ function ActivityCalendar({
   }, [activityMap, year, tooltip]);
 }
 
+function LeaderboardRow({ entry, isMe }: { entry: LeaderboardEntry; isMe: boolean }) {
+  const rankClass = entry.rank === 1 ? 'rank-gold' : entry.rank === 2 ? 'rank-silver' : entry.rank === 3 ? 'rank-bronze' : 'rank-default';
+  return (
+    <div className={`lb-row${isMe ? ' lb-row-me' : ''}`}>
+      <div className={`lb-rank ${rankClass}`}>
+        {entry.rank === 1 ? <Crown size={12} /> : `#${entry.rank}`}
+      </div>
+      <div className="lb-name">
+        {entry.displayName}
+        {isMe && <span className="lb-me-badge">вы</span>}
+      </div>
+      <div className="lb-xp">{entry.xp} XP</div>
+      <div className="lb-streak">🔥 {entry.currentStreak}</div>
+    </div>
+  );
+}
+
+function Leaderboard({
+  entries,
+  currentUser,
+  isLoading,
+  isError,
+}: {
+  entries: LeaderboardEntry[];
+  currentUser: LeaderboardEntry | null;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="lb-loading">
+        <Loader2 size={16} className="spinner-inline" />
+      </div>
+    );
+  }
+  if (isError) {
+    return <div className="lb-empty">Не удалось загрузить таблицу лидеров.</div>;
+  }
+  if (entries.length === 0 && !currentUser) {
+    return (
+      <div className="lb-empty">
+        <Trophy size={14} />
+        <span>За эту неделю ещё никто не заработал XP. Будь первым!</span>
+      </div>
+    );
+  }
+  const meInTop = entries.some((e) => e.isCurrentUser);
+  return (
+    <div className="lb-list">
+      {entries.map((e) => (
+        <LeaderboardRow key={e.userId} entry={e} isMe={e.isCurrentUser} />
+      ))}
+      {currentUser && !meInTop && (
+        <>
+          <div className="lb-divider" aria-hidden="true">· · ·</div>
+          <LeaderboardRow entry={currentUser} isMe />
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function StatsScreen() {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
+  const [period, setPeriod] = useState<LeaderboardPeriod>('week');
 
   const { data: overview } = useOverview();
   const { data: activityData } = useActivity(year);
+  const { data: leaderboard, isLoading: lbLoading, isError: lbError } = useLeaderboard(period);
 
   const activityMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -227,6 +291,39 @@ export default function StatsScreen() {
           </div>
         </div>
         <ActivityCalendar activityMap={activityMap} year={year} />
+      </div>
+
+      {/* Leaderboard */}
+      <div style={styles.calSection}>
+        <div style={styles.calHeader}>
+          <span className="section-label" style={{ margin: 0 }}>Таблица лидеров</span>
+          <div className="lb-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={period === 'week'}
+              className={`lb-tab${period === 'week' ? ' lb-tab-active' : ''}`}
+              onClick={() => setPeriod('week')}
+            >
+              Неделя
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={period === 'all'}
+              className={`lb-tab${period === 'all' ? ' lb-tab-active' : ''}`}
+              onClick={() => setPeriod('all')}
+            >
+              Всё время
+            </button>
+          </div>
+        </div>
+        <Leaderboard
+          entries={leaderboard?.entries ?? []}
+          currentUser={leaderboard?.currentUser ?? null}
+          isLoading={lbLoading}
+          isError={lbError}
+        />
       </div>
     </div>
   );

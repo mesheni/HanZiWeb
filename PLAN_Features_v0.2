@@ -213,13 +213,66 @@ FSRS v5, hanzi-writer, Google Cloud TTS).
 `tsc --noEmit` чисто во всех трёх пакетах. `pnpm --filter @hanzi/web
 run build` собирает прод-бандл.
 
-### 7. Leaderboard / социальная статистика
+### 7. Leaderboard / социальная статистика ✅ DONE
 `User.xp` уже считается.
 
 - Эндпоинты `GET /stats/leaderboard?period=week|all`
-  (топ-100 по XP/стрику).
-- Экран с табом «Неделя / Все время».
-- Нужен только индекс по `xp DESC`.
+  (топ-100 по XP/стрику). ✅
+- Экран с табом «Неделя / Все время». ✅
+- Нужен только индекс по `xp DESC`. ✅ (Prisma migration
+  `20260703183300_user_xp_desc_index` → `User_xp_idx`)
+
+**Реализация**:
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260703183300_user_xp_desc_index` — индекс `User_xp_idx`
+  на `xp DESC` для быстрого leaderboard.
+- `packages/shared/src/schemas/leaderboard.ts` — `LeaderboardQuerySchema`
+  (period: week|all, limit: 1-100), `LeaderboardEntrySchema`
+  (rank, userId, displayName, xp, currentStreak, isCurrentUser)
+  и `LeaderboardResponseSchema` (period, total, entries, currentUser,
+  windowStart, windowEnd).
+- `apps/server/src/modules/stats/stats.service.ts` — экспортируемые
+  чистые функции `getCurrentWeekWindow` (Пн 00:00 UTC — следующий Пн),
+  `maskEmail` (`alice@x.com` → `al***@x.com`), `aggregateWeeklyXp`
+  и `computeRank`. Сервис `getLeaderboard(userId, period, limit)`:
+  - `all`  — `prisma.user.findMany({ orderBy: { xp: 'desc' }, take: limit })`
+    с использованием индекса `User_xp_idx`;
+  - `week` — агрегация XP из `SessionAnswer.answeredAt` за текущую
+    ISO-неделю, по `RATING_XP = {1:0, 2:1, 3:3, 4:5}` (та же
+    карта, что в `sessions.service.recordAnswer`).
+  Текущий пользователь помечается `isCurrentUser: true`; если не
+  вошёл в топ, выдаётся в `currentUser` с правильным рангом.
+- `apps/server/src/modules/stats/stats.routes.ts` — `GET /stats/leaderboard`
+  с `LeaderboardQuerySchema.parse` + authenticate, лимит 1-100.
+- `apps/web/src/queries/stats.ts` — `useLeaderboard(period)` со
+  `staleTime: 60_000`, типы `LeaderboardPeriod`, `LeaderboardEntry`,
+  `LeaderboardResponse`.
+- `apps/web/src/screens/StatsScreen.tsx` — секция «Таблица лидеров»
+  с табами «Неделя / Всё время», `LeaderboardRow` показывает ранг
+  (с короной для 1-го места и градиентом золото/серебро/бронза
+  для топ-3), имя, XP и стрик; если текущий пользователь вне
+  топа — отображается отдельной карточкой под разделителем.
+- `apps/web/src/styles/global.css` — стили `.lb-tabs`/`.lb-tab`,
+  `.lb-list`/`.lb-row`/`.lb-rank` (`.rank-gold`/`.rank-silver`/
+  `.rank-bronze`/`.rank-default`), `.lb-me-badge`, `.lb-divider`,
+  мобильный адаптив (скрывает стрик-колонку на < 480px).
+- `packages/shared/api-spec.md` — документация эндпоинта
+  `/api/stats/leaderboard` и обновлённая сводка (15 эндпоинтов).
+
+**Тесты** (apps/server, vitest):
+- 17 новых тестов в `stats.service.test.ts`:
+  - `RATING_XP` — соответствие `recordAnswer`;
+  - `maskEmail` — обычный/короткий/невалидный email;
+  - `getCurrentWeekWindow` — середина/Пн/Вс недели, ровно 7 дней,
+    пересечение месяца;
+  - `aggregateWeeklyXp` — корректная сумма, пустой ввод, неизвестный
+    рейтинг, no-op для rating=1;
+  - `computeRank` — пустой список, лучший, равный XP, аутсайдер.
+- `pnpm --filter @hanzi/server exec vitest run` — 75 passed
+  (было 58, +17).
+- `pnpm --filter @hanzi/web run test` — 34 passed (без регрессий).
+- `pnpm typecheck` — чисто во всех 3 пакетах.
+- `pnpm build` — прод-бандл server и web собирается.
 
 ### 8. Достижения (achievements / badges)
 Таблица `UserAchievement(userId, type, unlockedAt)` с типами:
@@ -346,4 +399,55 @@ feat(etymology): карточка разбора иероглифа в WordDetai
 
 Источники данных: Make Me a Hanzi (компоненты), Unihan (радикалы
 1–214, число черт), cjk-decomp (идея структуры IDS).
+```
+
+---
+
+## Коммит для пункта 7 (Leaderboard / социальная статистика)
+
+```
+feat(leaderboard): топ пользователей по XP с табами Неделя / Всё время
+
+Закрывает PLAN_Features_v0.2 §7 (Leaderboard / социальная статистика).
+
+Что добавлено:
+- apps/server (Prisma): миграция 20260703183300_user_xp_desc_index
+  → индекс User_xp_idx на xp DESC для быстрого leaderboard.
+- packages/shared: схемы LeaderboardQuerySchema (period: week|all,
+  limit: 1-100), LeaderboardEntrySchema (rank, userId,
+  displayName, xp, currentStreak, isCurrentUser) и
+  LeaderboardResponseSchema (period, total, entries, currentUser,
+  windowStart, windowEnd).
+- apps/server: stats.service — чистые экспортируемые хелперы
+  RATING_XP (та же карта, что в recordAnswer), getCurrentWeekWindow
+  (Пн 00:00 UTC — следующий Пн), maskEmail (alice@x.com → al***@x.com),
+  aggregateWeeklyXp, computeRank; сервис getLeaderboard(userId,
+  period, limit) с period=all (top по User.xp) и period=week
+  (агрегация XP из SessionAnswer.answeredAt за текущую неделю).
+- apps/server: stats.routes — GET /stats/leaderboard с
+  LeaderboardQuerySchema.parse + authenticate.
+- apps/web: queries/stats.ts — useLeaderboard(period) со staleTime
+  60_000; типы LeaderboardPeriod, LeaderboardEntry,
+  LeaderboardResponse.
+- apps/web: screens/StatsScreen.tsx — секция «Таблица лидеров» с
+  табами «Неделя / Всё время», LeaderboardRow (корона для 1-го,
+  градиент золото/серебро/бронза для топ-3, имя, XP, стрик);
+  если текущий пользователь вне топа — отдельной карточкой под
+  разделителем.
+- apps/web: styles/global.css — стили .lb-tabs/.lb-tab, .lb-list,
+  .lb-row, .lb-rank (.rank-gold/.rank-silver/.rank-bronze/
+  .rank-default), .lb-me-badge, .lb-divider, мобильный адаптив.
+- packages/shared/api-spec.md — документация /api/stats/leaderboard
+  и обновлённая сводка (15 эндпоинтов).
+
+Тесты:
+- 17 новых vitest-тестов в stats.service.test.ts: RATING_XP
+  соответствие recordAnswer, maskEmail (обычный/короткий/невалидный),
+  getCurrentWeekWindow (середина/Пн/Вс/граница месяца, ровно 7 дней),
+  aggregateWeeklyXp (сумма, пустой ввод, неизвестный рейтинг,
+  no-op для rating=1), computeRank (лучший, равный XP, аутсайдер).
+- pnpm --filter @hanzi/server exec vitest run — 75 passed (было 58).
+- pnpm --filter @hanzi/web run test — 34 passed (без регрессий).
+- pnpm typecheck — чисто во всех 3 пакетах.
+- pnpm build — прод-бандл server и web собирается.
 ```

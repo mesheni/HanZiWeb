@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { LeaderboardQuerySchema } from '@hanzi/shared';
 import * as statsService from './stats.service.js';
 
 export async function statsRoutes(app: FastifyInstance) {
@@ -31,6 +32,25 @@ export async function statsRoutes(app: FastifyInstance) {
     const streak = await statsService.getUserStreak(request.userId);
     return reply.send({ success: true, data: streak });
   });
+
+  /**
+   * GET /stats/leaderboard?period=week|all&limit=100
+   * Топ пользователей по XP/стрику.
+   * См. PLAN_Features_v0.2 §7.
+   */
+  app.get<{ Querystring: { period?: string; limit?: string } }>(
+    '/leaderboard',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const query = LeaderboardQuerySchema.parse(request.query);
+      const data = await statsService.getLeaderboard(
+        request.userId,
+        query.period,
+        query.limit,
+      );
+      return reply.send({ success: true, data });
+    },
+  );
 
   /** POST /stats/reset-progress — полный сброс прогресса */
   app.post('/reset-progress', { preHandler: [app.authenticate] }, async (request, reply) => {

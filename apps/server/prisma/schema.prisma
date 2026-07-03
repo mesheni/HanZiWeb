@@ -26,6 +26,9 @@ model User {
   devices       UserDevice[]
   clozeProgress ClozeProgress[]
   decks         Deck[]
+
+  /// Индекс для быстрого leaderboard (топ по XP за всё время).
+  @@index([xp(sort: Desc)])
 }
 
 model UserDevice {

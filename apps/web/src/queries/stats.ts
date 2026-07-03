@@ -28,6 +28,26 @@ export interface Dashboard {
   xp: number;
 }
 
+export type LeaderboardPeriod = 'week' | 'all';
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  xp: number;
+  currentStreak: number;
+  isCurrentUser: boolean;
+}
+
+export interface LeaderboardResponse {
+  period: LeaderboardPeriod;
+  total: number;
+  entries: LeaderboardEntry[];
+  currentUser: LeaderboardEntry | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+}
+
 /**
  * Хук для общей статистики.
  */
@@ -65,5 +85,17 @@ export function useStreak() {
   return useQuery({
     queryKey: ['stats', 'streak'],
     queryFn: () => apiGet<{ currentStreak: number; lastActiveDate: string | null }>('/stats/streak'),
+  });
+}
+
+/**
+ * Хук для leaderboard (`GET /stats/leaderboard?period=...`).
+ * См. PLAN_Features_v0.2 §7.
+ */
+export function useLeaderboard(period: LeaderboardPeriod) {
+  return useQuery({
+    queryKey: ['stats', 'leaderboard', period],
+    queryFn: () => apiGet<LeaderboardResponse>(`/stats/leaderboard?period=${period}`),
+    staleTime: 60_000, // 1 мин — топ редко меняется, но свежесть важна.
   });
 }

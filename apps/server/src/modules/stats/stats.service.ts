@@ -1,4 +1,195 @@
 import { prisma } from '../../lib/prisma.js';
+import type { LeaderboardEntry, LeaderboardResponse } from '@hanzi/shared';
+
+/** Карта «rating → XP». Должна совпадать с sessions.service.recordAnswer. */
+export const RATING_XP: Record<number, number> = { 1: 0, 2: 1, 3: 3, 4: 5 };
+
+/** Начало текущей ISO-недели (Пн 00:00:00 UTC) и конец (exclusive). */
+export function getCurrentWeekWindow(now: Date = new Date()): { start: Date; end: Date } {
+  const start = new Date(now);
+  // getUTCDay: 0=Вс, 1=Пн, ..., 6=Сб. Приводим к 0..6 где 0=Пн.
+  const dow = (start.getUTCDay() + 6) % 7;
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - dow);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 7);
+  return { start, end };
+}
+
+/** Маскирует email в короткое публичное имя: "alice@gmail.com" → "al***@gmail.com". */
+export function maskEmail(email: string): string {
+  if (!email || !email.includes('@')) return '***';
+  const [local, domain] = email.split('@', 2);
+  if (!local || !domain) return '***';
+  const head = local.slice(0, 2);
+  return `${head}***@${domain}`;
+}
+
+/**
+ * Считает суммарный XP за неделю по пользователю из плоского списка
+ * ответов. Чистая функция — используется в `getLeaderboard` и
+ * покрыта юнит-тестами.
+ */
+export function aggregateWeeklyXp(
+  answers: Array<{ rating: number; userId: string }>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const a of answers) {
+    const gain = RATING_XP[a.rating] ?? 0;
+    if (gain === 0) continue;
+    out.set(a.userId, (out.get(a.userId) ?? 0) + gain);
+  }
+  return out;
+}
+
+/**
+ * Считает ранг текущего пользователя в `xpByUser` (1-based).
+ * Тот, у кого строго больше XP — обходит. При равном XP — оба делят
+ * место; мы возвращаем позицию «после всех с большим XP», что даёт
+ * стабильный порядок в плотных топах.
+ */
+export function computeRank(myXp: number, xpByUser: Map<string, number>): number {
+  let better = 0;
+  for (const xp of xpByUser.values()) {
+    if (xp > myXp) better += 1;
+  }
+  return better + 1;
+}
+
+/**
+ * Возвращает лидерборд за период (`week` | `all`).
+ *
+ * - `all`  — топ-100 пользователей по `User.xp` (использует индекс
+ *   `User_xp_idx`).
+ * - `week` — топ-100 пользователей по XP, заработанному за текущую
+ *   календарную неделю (Пн–Вс, UTC), агрегированному из
+ *   `SessionAnswer.answeredAt` + `rating`.
+ *
+ * Текущий пользователь помечается `isCurrentUser: true` и в
+ * `currentUser` отдельной записью, если не вошёл в топ.
+ */
+export async function getLeaderboard(
+  userId: string,
+  period: 'week' | 'all',
+  limit: number = 100,
+): Promise<LeaderboardResponse> {
+  // ── 1. Сбор XP за выбранный период ─────────────────────────────
+  const weekWindow = period === 'week' ? getCurrentWeekWindow() : null;
+  let xpByUser: Map<string, number> = new Map();
+  if (weekWindow) {
+    const weekAnswers = await prisma.sessionAnswer.findMany({
+      where: { answeredAt: { gte: weekWindow.start, lt: weekWindow.end } },
+      select: { rating: true, session: { select: { userId: true } } },
+    });
+    xpByUser = aggregateWeeklyXp(
+      weekAnswers.map((a) => ({ rating: a.rating, userId: a.session.userId })),
+    );
+  }
+
+  // ── 2. Топ-N по XP ────────────────────────────────────────────
+  let topRows: Array<{ userId: string; xp: number; email: string; currentStreak: number }>;
+
+  if (period === 'all') {
+    const rows = await prisma.user.findMany({
+      orderBy: { xp: 'desc' },
+      take: limit,
+      select: { id: true, xp: true, email: true, currentStreak: true },
+    });
+    topRows = rows.map((r) => ({
+      userId: r.id,
+      xp: r.xp,
+      email: r.email,
+      currentStreak: r.currentStreak,
+    }));
+  } else {
+    const topUserIds = Array.from(xpByUser.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([uid]) => uid);
+    if (topUserIds.length === 0) {
+      topRows = [];
+    } else {
+      const users = await prisma.user.findMany({
+        where: { id: { in: topUserIds } },
+        select: { id: true, xp: true, email: true, currentStreak: true },
+      });
+      const userMap = new Map(users.map((u) => [u.id, u]));
+      topRows = topUserIds
+        .map((uid) => userMap.get(uid))
+        .filter((u): u is NonNullable<typeof u> => u != null)
+        .map((u) => ({
+          userId: u.id,
+          xp: xpByUser.get(u.id) ?? 0,
+          email: u.email,
+          currentStreak: u.currentStreak,
+        }));
+    }
+  }
+
+  // ── 3. Запись текущего пользователя (если не в топе) ───────────
+  const inTopIds = new Set(topRows.map((r) => r.userId));
+  let currentUserEntry: LeaderboardEntry | null = null;
+
+  if (!inTopIds.has(userId)) {
+    if (period === 'all') {
+      const me = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { xp: true, email: true, currentStreak: true },
+      });
+      if (me) {
+        const better = await prisma.user.count({ where: { xp: { gt: me.xp } } });
+        currentUserEntry = {
+          rank: better + 1,
+          userId,
+          displayName: maskEmail(me.email),
+          xp: me.xp,
+          currentStreak: me.currentStreak,
+          isCurrentUser: true,
+        };
+      }
+    } else {
+      const myXp = xpByUser.get(userId) ?? 0;
+      if (myXp > 0) {
+        const me = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, currentStreak: true },
+        });
+        if (me) {
+          currentUserEntry = {
+            rank: computeRank(myXp, xpByUser),
+            userId,
+            displayName: maskEmail(me.email),
+            xp: myXp,
+            currentStreak: me.currentStreak,
+            isCurrentUser: true,
+          };
+        }
+      }
+    }
+  }
+
+  // ── 4. Подсчёт total ────────────────────────────────────────────
+  const total = period === 'all' ? await prisma.user.count() : xpByUser.size;
+
+  // ── 5. Сборка entries ──────────────────────────────────────────
+  const entries: LeaderboardEntry[] = topRows.map((r, idx) => ({
+    rank: idx + 1,
+    userId: r.userId,
+    displayName: maskEmail(r.email),
+    xp: r.xp,
+    currentStreak: r.currentStreak,
+    isCurrentUser: r.userId === userId,
+  }));
+
+  return {
+    period,
+    total,
+    entries,
+    currentUser: currentUserEntry,
+    windowStart: weekWindow ? weekWindow.start.toISOString() : null,
+    windowEnd: weekWindow ? weekWindow.end.toISOString() : null,
+  };
+}
 
 export async function getOverview(userId: string) {
   const [user, progressCounts, accuracy] = await Promise.all([
