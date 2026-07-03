@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ExampleSchema } from './example.js';
+import { TagSchema } from './tag.js';
 
 /**
  * Слово (иероглиф) в словаре.
@@ -22,6 +23,8 @@ export const WordSchema = z.object({
   createdAt: z.string().datetime(),
   /** Примеры использования — вложенный массив */
   examples: z.array(ExampleSchema).default([]),
+  /** Теги слова (для фильтрации сессий). Может быть пустым массивом. */
+  tags: z.array(TagSchema).default([]),
 });
 
 export type Word = z.infer<typeof WordSchema>;

@@ -8,6 +8,10 @@ import { useStudyStore } from '../stores/studyStore';
 import { useUiStore } from '../stores/uiStore';
 import Flashcard from '../components/Flashcard';
 import SessionComplete from '../components/SessionComplete';
+import SessionFiltersPanel, {
+  type SessionFiltersValue,
+  toSessionFilters,
+} from '../components/SessionFiltersPanel';
 import { ProgressBar } from '../components/ui';
 import PracticeTypeSelector from '../components/practice/PracticeTypeSelector';
 import MultipleChoiceCard from '../components/practice/MultipleChoiceCard';
@@ -18,7 +22,7 @@ import SyllableConstructorCard from '../components/practice/SyllableConstructorC
 import ClozeCard from '../components/practice/ClozeCard';
 import { useWordExamples } from '../queries/examples';
 import { STUDY_MODE_LABELS, getPracticeTypeInfo } from '../utils/practiceTypes';
-import type { SrsRating, StudyMode, PracticeType, Word } from '@hanzi/shared';
+import type { SrsRating, StudyMode, PracticeType, Word, SessionFilters } from '@hanzi/shared';
 
 function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
   if ('caches' in window) {
@@ -95,12 +99,19 @@ export default function StudyScreen() {
     }
   }, [practiceFromUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Фильтры сессии (PLAN_Features_v0.2 §12). Хранятся в локальном стейте
+  // и передаются в /sessions/start при нажатии "Начать". Если фильтры
+  // не заданы (`enabled: false`) — отправляется `filters: undefined`.
+  const [filtersValue, setFiltersValue] = useState<SessionFiltersValue>({ enabled: false });
+  const activeFilters: SessionFilters | undefined = toSessionFilters(filtersValue);
+
   // Запускаем сессию только после явного "Начать" — иначе показываем
   // экран выбора практики. Хук не делает побочных эффектов, пока
   // enabled = false, поэтому на экране выбора мы не дёргаем /sessions/start.
   const { isLoading, isError, isSessionComplete, rateCard, retrySession, startNow } = useStudySession({
     mode,
     practiceType: activePracticeType,
+    filters: activeFilters,
     enabled: hasStarted,
   });
 
@@ -265,6 +276,16 @@ export default function StudyScreen() {
             <X size={18} />
           </button>
         </div>
+        {/* Панель фильтров сессии (PLAN_Features_v0.2 §12). Показываем
+            только для режимов, где фильтры осмыслены: в `learn` (новые
+            слова) stability=0, поэтому min/max стабильности не действует. */}
+        <div style={{ marginBottom: 12 }}>
+          <SessionFiltersPanel
+            value={filtersValue}
+            onChange={setFiltersValue}
+            mode={mode}
+          />
+        </div>
         <PracticeTypeSelector
           mode={mode}
           onStart={(t) => {
@@ -275,7 +296,7 @@ export default function StudyScreen() {
             params.set('practice', t);
             navigate(`/study?${params.toString()}`, { replace: true });
             setHasStarted(true);
-            startNow();
+            startNow(activeFilters);
           }}
           onCancel={() => navigate('/')}
         />

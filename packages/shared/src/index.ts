@@ -13,3 +13,4 @@ export * from './schemas/leaderboard.js';
 export * from './schemas/achievement.js';
 export * from './schemas/userSettings.js';
 export * from './schemas/progressExport.js';
+export * from './schemas/tag.js';

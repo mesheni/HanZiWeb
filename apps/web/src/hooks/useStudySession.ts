@@ -7,12 +7,18 @@ import { getDb } from '../db/database';
 import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
 import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
-import type { SrsRating, StudyMode, PracticeType } from '@hanzi/shared';
+import type { SrsRating, StudyMode, PracticeType, SessionFilters } from '@hanzi/shared';
 
 export interface UseStudySessionOptions {
   deckId?: string;
   mode?: StudyMode;
   practiceType?: PracticeType;
+  /**
+   * Фильтры сессии (см. PLAN_Features_v0.2 §12):
+   * `minStability`/`maxStability`/`tags`/`onlyWithAudio`/`onlyWithMnemonic`.
+   * Если `undefined` — фильтры не применяются.
+   */
+  filters?: SessionFilters;
   /**
    * Включает автоматический старт сессии при монтировании/смене параметров.
    * По умолчанию `false` — сессия запускается только по `startNow()` /
@@ -23,7 +29,13 @@ export interface UseStudySessionOptions {
 }
 
 export function useStudySession(input: UseStudySessionOptions = {}) {
-  const { deckId, mode = 'mixed', practiceType: practiceTypeProp, enabled = false } = input;
+  const {
+    deckId,
+    mode = 'mixed',
+    practiceType: practiceTypeProp,
+    filters,
+    enabled = false,
+  } = input;
   const startMutation = useStartSession();
   const answerMutation = useRecordAnswer();
   const isOnline = useOnlineStatus();
@@ -41,7 +53,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
 
   const generationRef = useRef(0);
 
-  // Запуск сессии при смене deckId/mode/practiceType, но только если хук
+  // Запуск сессии при смене deckId/mode/practiceType/filters, но только если хук
   // включён (enabled = true). Это нужно, чтобы экран выбора типа практики
   // отображался без побочного эффекта — обращения к /sessions/start.
   useEffect(() => {
@@ -50,7 +62,14 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     const gen = ++generationRef.current;
 
     startMutation.mutate(
-      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode, practiceType },
+      {
+        deckId,
+        cardLimit: 20,
+        includeNew: mode !== 'review',
+        mode,
+        practiceType,
+        filters,
+      },
       {
         onSuccess: (session) => {
           if (gen !== generationRef.current) return;
@@ -62,15 +81,22 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         },
       },
     );
-  }, [deckId, mode, practiceType, enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deckId, mode, practiceType, enabled, JSON.stringify(filters)]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startNow = () => {
+  const startNow = (overrideFilters?: SessionFilters) => {
     // Сбрасываем стор перед стартом
     useStudyStore.getState().resetSession();
     const gen = ++generationRef.current;
 
     startMutation.mutate(
-      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode, practiceType },
+      {
+        deckId,
+        cardLimit: 20,
+        includeNew: mode !== 'review',
+        mode,
+        practiceType,
+        filters: overrideFilters ?? filters,
+      },
       {
         onSuccess: (session) => {
           if (gen !== generationRef.current) return;
@@ -90,7 +116,14 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     const gen = ++generationRef.current;
 
     startMutation.mutate(
-      { deckId, cardLimit: 20, includeNew: mode !== 'review', mode, practiceType },
+      {
+        deckId,
+        cardLimit: 20,
+        includeNew: mode !== 'review',
+        mode,
+        practiceType,
+        filters,
+      },
       {
         onSuccess: (session) => {
           if (gen !== generationRef.current) return;

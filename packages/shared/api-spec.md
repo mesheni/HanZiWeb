@@ -143,10 +143,23 @@
 | **Response 201** | `{ success: true, data: FullSessionSchema }` |
 
 ```json
-// Request
-{ "deckId": "uuid (optional)", "cardLimit": 20, "includeNew": true }
+// Request (PLAN_Features_v0.2 §12 — фильтры сессии)
+{
+  "deckId": "uuid (optional)",
+  "cardLimit": 20,
+  "includeNew": true,
+  "mode": "mixed | review | learn",
+  "practiceType": "flip-card | multiple-choice | ...",
+  "filters": {
+    "minStability": 0,
+    "maxStability": 7,
+    "tags": ["uuid", "uuid"],
+    "onlyWithAudio": true,
+    "onlyWithMnemonic": false
+  }
+}
 
-// Response: FullSession (сессия + массив SessionCard)
+// Response: FullSession (сессия + массив SessionCard + appliedFilters)
 ```
 
 ### POST /api/sessions/:id/answer
@@ -423,6 +436,75 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 
 ---
 
+## Теги (Tags) — PLAN_Features_v0.2 §12
+
+Теги используются для фильтрации сессий (`tags[]` в `StartSession.filters`).
+
+### GET /api/tags
+
+Список всех тегов с подсчётом слов.
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true, data: (Tag & { wordCount: int })[] }` |
+
+```json
+// Response
+{ "success": true, "data": [{ "id": "uuid", "name": "С трудным тоном", "slug": "hard-tones", "color": "FFB74D", "createdAt": "ISO8601", "wordCount": 24 }] }
+```
+
+### POST /api/tags
+
+Создать новый тег.
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Request** | `CreateTagSchema` |
+| **Response 201** | `{ success: true, data: Tag }` |
+
+```json
+// Request
+{ "name": "С трудным тоном", "slug": "hard-tones", "color": "FFB74D" }
+```
+
+### DELETE /api/tags/:id
+
+Удалить тег (каскадно удаляет WordTag).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true, data: { deleted: "uuid" } }` |
+| **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
+
+### GET /api/tags/words/:wordId/tags
+
+Получить теги конкретного слова.
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true, data: Tag[] }` |
+
+### PUT /api/tags/words/:wordId/tags
+
+Заменить набор тегов слова (replace).
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Request** | `SetWordTagsSchema` |
+| **Response 200** | `{ success: true, data: Tag[] }` |
+
+```json
+// Request
+{ "tagIds": ["uuid", "uuid"] }
+```
+
+---
+
 ## Стандартные форматы ответов
 
 ### Успех (единичный объект)
@@ -470,5 +552,10 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 | 18 | GET | /api/achievements | JWT | Achievements |
 | 19 | GET | /api/users/settings | JWT | Users |
 | 20 | PUT | /api/users/settings | JWT | Users |
+| 21 | GET | /api/tags | JWT | Tags |
+| 22 | POST | /api/tags | JWT | Tags |
+| 23 | DELETE | /api/tags/:id | JWT | Tags |
+| 24 | GET | /api/tags/words/:wordId/tags | JWT | Tags |
+| 25 | PUT | /api/tags/words/:wordId/tags | JWT | Tags |
 
-Всего: **20 эндпоинтов** в 6 модулях.
+Всего: **25 эндпоинтов** в 8 модулях.

@@ -12,6 +12,7 @@ const makeWord = (id: string, character: string, pinyin: string, translation: st
   mnemonic: null,
   createdAt: new Date().toISOString(),
   examples: [],
+  tags: [],
 });
 
 const correct: Word = makeWord('1', '爱', 'ài', 'любить');

@@ -2,6 +2,25 @@ import { prisma } from '../../lib/prisma.js';
 import type { CreateWord, UpdateWord, WordFilters, Pagination } from '@hanzi/shared';
 import type { Prisma } from '@prisma/client';
 
+/** Какие relations подгружаются по умолчанию при запросах Word. */
+const WORD_INCLUDE = {
+  examples: true,
+  tags: { include: { tag: true } },
+} satisfies Prisma.WordInclude;
+
+/** Приводит записи WordTag к массиву Tag. */
+function extractTags(
+  word: Prisma.WordGetPayload<{ include: typeof WORD_INCLUDE }>,
+) {
+  return word.tags.map((wt) => ({
+    id: wt.tag.id,
+    name: wt.tag.name,
+    slug: wt.tag.slug,
+    color: wt.tag.color,
+    createdAt: wt.tag.createdAt.toISOString(),
+  }));
+}
+
 export async function listWords(filters: WordFilters, userId?: string) {
   const where: Prisma.WordWhereInput = {};
 
@@ -28,7 +47,7 @@ export async function listWords(filters: WordFilters, userId?: string) {
   const [data, total] = await Promise.all([
     prisma.word.findMany({
       where,
-      include: { examples: true },
+      include: WORD_INCLUDE,
       skip: filters.offset,
       take: filters.limit,
       orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
@@ -37,7 +56,10 @@ export async function listWords(filters: WordFilters, userId?: string) {
   ]);
 
   // Если есть userId, подмешиваем статус прогресса к каждому слову
-  let wordsWithStatus = data;
+  let wordsWithStatus = data.map((w) => ({
+    ...w,
+    tags: extractTags(w),
+  }));
   if (userId) {
     const wordIds = data.map((w) => w.id);
     const progressMap = new Map(
@@ -48,7 +70,7 @@ export async function listWords(filters: WordFilters, userId?: string) {
         })
       ).map((p) => [p.wordId, p.state]),
     );
-    wordsWithStatus = data.map((w) => ({
+    wordsWithStatus = wordsWithStatus.map((w) => ({
       ...w,
       status: progressMap.get(w.id) ?? 'new',
     }));
@@ -66,7 +88,7 @@ export async function listWords(filters: WordFilters, userId?: string) {
 export async function getWord(id: string, userId?: string) {
   const word = await prisma.word.findUnique({
     where: { id },
-    include: { examples: true },
+    include: WORD_INCLUDE,
   });
 
   if (!word) return null;
@@ -82,7 +104,7 @@ export async function getWord(id: string, userId?: string) {
     }
   }
 
-  return { ...word, userProgress };
+  return { ...word, tags: extractTags(word), userProgress };
 }
 
 export async function createWord(input: CreateWord) {
@@ -98,7 +120,7 @@ export async function createWord(input: CreateWord) {
         ? { create: input.examples.map((e) => ({ chinese: e.chinese, russian: e.russian })) }
         : undefined,
     },
-    include: { examples: true },
+    include: WORD_INCLUDE,
   });
 }
 
@@ -113,7 +135,7 @@ export async function updateWord(id: string, input: UpdateWord) {
       ...(input.audioUrl !== undefined && { audioUrl: input.audioUrl }),
       ...(input.mnemonic !== undefined && { mnemonic: input.mnemonic }),
     },
-    include: { examples: true },
+    include: WORD_INCLUDE,
   });
 }
 

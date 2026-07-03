@@ -87,6 +87,7 @@ export default function HomeScreen() {
           mnemonic: w.mnemonic ?? null,
           createdAt: w.createdAt ?? new Date().toISOString(),
           examples: w.examples ?? [],
+          tags: w.tags ?? [],
         });
       }
       setDlState('done');

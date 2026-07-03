@@ -2,11 +2,18 @@ import { prisma } from '../../lib/prisma.js';
 import type { Prisma } from '@prisma/client';
 import { recalcFsrs } from './srs.js';
 import * as achievementsService from '../achievements/achievements.service.js';
-import type { StartSession, RecordAnswer, UserAchievement } from '@hanzi/shared';
+import { wordIdsWithAnyTag } from '../tags/tags.service.js';
+import {
+  buildProgressWhereForFilters,
+  buildWordWhereForFilters,
+  intersectWithTagFilter,
+  intersectWordWithTagFilter,
+} from './sessionFilters.js';
+import type { StartSession, RecordAnswer, UserAchievement, Tag } from '@hanzi/shared';
 
 /** Тип прогресса с включённым словом и примерами */
 type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
-  include: { word: { include: { examples: true } } };
+  include: { word: { include: { examples: true; tags: { include: { tag: true } } } } };
 }>;
 
 const HSK_LEVELS = [1, 2, 3, 4, 5, 6] as const;
@@ -45,14 +52,34 @@ function orderCards(cards: ProgressWithWord[]): ProgressWithWord[] {
   });
 }
 
+/** Извлекает DTO Tag[] из связки WordTag. */
+function extractWordTags(
+  word: Prisma.WordGetPayload<{ include: { tags: { include: { tag: true } } } }>,
+): Tag[] {
+  return word.tags.map((wt) => ({
+    id: wt.tag.id,
+    name: wt.tag.name,
+    slug: wt.tag.slug,
+    color: wt.tag.color,
+    createdAt: wt.tag.createdAt.toISOString(),
+  }));
+}
+
 /**
  * Генерирует новую сессию:
  * - Берёт слова, у которых dueDate <= now() (повтор)
  * - Добирает новые слова (state = NEW) до cardLimit
+ *
+ * Поддерживает фильтры из `StartSession.filters` (см. PLAN_Features_v0.2 §12):
+ * - `minStability` / `maxStability` — тренировать только «забываемые»
+ * - `tags` — слова должны иметь хотя бы один из указанных тегов
+ * - `onlyWithAudio` — пропускать слова без audioUrl
+ * - `onlyWithMnemonic` — пропускать слова без mnemonic
  */
 export async function startSession(userId: string, input: StartSession) {
   const now = new Date();
   const mode = input.mode ?? 'mixed';
+  const filters = input.filters;
   const unlockedLevel = input.deckId ? null : await getUnlockedHskLevel(userId);
 
   const deckWhere: Prisma.WordWhereInput = input.deckId
@@ -60,6 +87,23 @@ export async function startSession(userId: string, input: StartSession) {
     : unlockedLevel
       ? { hskLevel: unlockedLevel }
       : { hskLevel: { in: HSK_LEVEL_LIST } };
+
+  // Если задан фильтр по тегам, заранее вычисляем id подходящих слов.
+  // Это сокращает выборку, если слов без тегов очень много.
+  const tagFilteredWordIds: string[] | null =
+    filters?.tags && filters.tags.length > 0
+      ? await wordIdsWithAnyTag(filters.tags)
+      : null;
+
+  // Для due-карточек: пересекаем фильтр stability + audio/mnemonic + tags с deckScope.
+  // `buildProgressWhereForFilters` уже накладывает deckScope (если не задан фильтр
+  // по audio/mnemonic). Передаём deckScope, чтобы deck-фильтрация работала вместе
+  // с audio/mnemonic.
+  const baseProgressWhere = buildProgressWhereForFilters(
+    filters,
+    input.deckId ? deckWhere : undefined,
+  );
+  const progressWhere = intersectWithTagFilter(baseProgressWhere, tagFilteredWordIds);
 
   const dueWords: ProgressWithWord[] =
     mode === 'learn'
@@ -69,10 +113,10 @@ export async function startSession(userId: string, input: StartSession) {
             userId,
             dueDate: { lte: now },
             state: { not: 'new' },
-            ...(input.deckId ? { word: { is: deckWhere } } : {}),
+            ...progressWhere,
           },
           include: {
-            word: { include: { examples: true } },
+            word: { include: { examples: true, tags: { include: { tag: true } } } },
           },
           orderBy: [
             { dueDate: 'asc' },
@@ -99,12 +143,17 @@ export async function startSession(userId: string, input: StartSession) {
     });
     const excludeIds = existingWordIds.map((p: { wordId: string }) => p.wordId);
 
+    const wordWhere = intersectWordWithTagFilter(
+      buildWordWhereForFilters(filters, deckWhere),
+      tagFilteredWordIds,
+    );
+
     const freshWords = await prisma.word.findMany({
       where: {
         id: { notIn: excludeIds },
-        ...deckWhere,
+        ...wordWhere,
       },
-      include: { examples: true },
+      include: { examples: true, tags: { include: { tag: true } } },
       orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
       take: newWordsNeeded,
     });
@@ -126,7 +175,9 @@ export async function startSession(userId: string, input: StartSession) {
         userId,
         wordId: { in: freshWords.map((w: { id: string }) => w.id) },
       },
-      include: { word: { include: { examples: true } } },
+      include: {
+        word: { include: { examples: true, tags: { include: { tag: true } } } },
+      },
       orderBy: [{ word: { hskLevel: 'asc' } }, { word: { createdAt: 'asc' } }],
     })) as ProgressWithWord[];
   }
@@ -150,14 +201,25 @@ export async function startSession(userId: string, input: StartSession) {
 
   // Избегаем union type issue — маппим карточки отдельно
   const cards: Array<{ index: number; word: unknown; answered: boolean; state: string }> = [
-    ...dueWords.map((p, i) => ({ index: i, word: p.word, answered: false, state: p.state })),
-    ...newWords.map((p, i) => ({ index: dueWords.length + i, word: p.word, answered: false, state: p.state })),
+    ...dueWords.map((p, i) => ({
+      index: i,
+      word: { ...p.word, tags: extractWordTags(p.word) },
+      answered: false,
+      state: p.state,
+    })),
+    ...newWords.map((p, i) => ({
+      index: dueWords.length + i,
+      word: { ...p.word, tags: extractWordTags(p.word) },
+      answered: false,
+      state: p.state,
+    })),
   ];
 
   return {
     ...session,
     deckName,
     cards,
+    appliedFilters: filters ?? null,
   };
 }
 
@@ -280,7 +342,7 @@ export async function getRandomWords(
   const skip = Math.max(0, Math.floor(Math.random() * Math.max(0, total - count)));
   return prisma.word.findMany({
     where,
-    include: { examples: true },
+    include: { examples: true, tags: { include: { tag: true } } },
     orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
     skip,
     take: count,

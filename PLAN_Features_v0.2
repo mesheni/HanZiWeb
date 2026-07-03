@@ -545,12 +545,65 @@ run build` собирает прод-бандл.
   (без регрессий).
 - `pnpm --filter @hanzi/web run build` — прод-бандл собирается.
 
-### 12. Повторение по «лёгкости» и фильтры сессии
+### 12. Повторение по «лёгкости» и фильтры сессии ✅ DONE
 Сейчас `POST /sessions/start` берёт `mode` + `deckId`/`hskLevel`.
 
 - Фильтры `minStability` / `maxStability` (тренировать только
-  «забываемые»).
-- `tags[]`, `onlyWithAudio`, `onlyWithMnemonic`.
+  «забываемые»). ✅
+- `tags[]`, `onlyWithAudio`, `onlyWithMnemonic`. ✅
+
+**Реализованные изменения**:
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260704010000_add_tags` — модели `Tag(id, name, slug[unique], color)`
+  и `WordTag(wordId, tagId)` (m2m с Cascade).
+- `packages/shared/src/schemas/tag.ts` — `TagSchema`, `CreateTagSchema`,
+  `SetWordTagsSchema` (slug — kebab-case, color — 6 hex без `#`).
+- `packages/shared/src/schemas/session.ts` — `SessionFiltersSchema`
+  (`.strict()`, `minStability`/`maxStability` — числа, `tags` ≤ 20,
+  `onlyWithAudio`/`onlyWithMnemonic` — bool) + `filters` в
+  `StartSessionSchema` + `appliedFilters` в `FullSessionSchema`.
+- `packages/shared/src/schemas/word.ts` — `Word.tags: Tag[]` (default `[]`).
+- `apps/server/src/modules/sessions/sessionFilters.ts` — чистые хелперы
+  `buildProgressWhereForFilters` / `buildWordWhereForFilters` /
+  `intersectWithTagFilter` / `intersectWordWithTagFilter` (легко тестируются).
+- `apps/server/src/modules/sessions/sessions.service.ts` — `startSession`
+  применяет все 4 фильтра: stability на `UserWordProgress.stability`,
+  `onlyWithAudio`/`onlyWithMnemonic` на `word` (relation), `tags` через
+  предвычисление `wordIdsWithAnyTag` (OR-логика). Фильтры комбинируются
+  с `deckId` через `AND`. Возвращается `appliedFilters`.
+- `apps/server/src/modules/tags/{tags.service,tags.routes}.ts` — CRUD:
+  `GET/POST /tags`, `DELETE /tags/:id`, `GET/PUT /tags/words/:wordId/tags`.
+  `tags.routes` смонтирован под `/api/tags` в `index.ts`.
+- `apps/server/src/modules/words/words.service.ts` — все ответы теперь
+  содержат `tags: Tag[]` (через общий `WORD_INCLUDE`).
+- `apps/web/src/db/database.ts` — `tags` добавлено в RxDB-схему (offline-кэш).
+- `apps/web/src/queries/tags.ts` — `useTags`, `useCreateTag`,
+  `useDeleteTag`, `useSetWordTags` (react-query).
+- `apps/web/src/components/SessionFiltersPanel.tsx` — UI-панель со
+  сворачиваемым блоком, числовыми полями min/max stability, чипами
+  тегов, toggle-кнопками «Только со звуком» / «Только с мнемоникой».
+  Активный фильтр показывается в шапке (badge).
+- `apps/web/src/hooks/useStudySession.ts` — принимает `filters: SessionFilters`
+  и передаёт в `/sessions/start`. Сериализует через `JSON.stringify` в deps.
+- `apps/web/src/screens/StudyScreen.tsx` — панель фильтров показывается
+  на экране выбора типа практики; `startNow(activeFilters)` использует
+  актуальные фильтры при нажатии «Начать».
+- `apps/web/src/screens/HomeScreen.tsx` — офлайн-загрузка сохраняет `tags`.
+- `apps/web/src/utils/distractors.test.ts` — `makeWord` обновлён под
+  обязательное поле `tags: []`.
+- `packages/shared/api-spec.md` — задокументированы `/api/sessions/start`
+  с `filters` (новые 5 эндпоинтов `/api/tags/*`).
+
+**Результаты**:
+- `pnpm typecheck` — чисто во всех 3 пакетах.
+- `pnpm --filter @hanzi/server exec vitest run` — **150 passed**
+  (было 103, **+47 новых тестов**):
+  - 26 в `sessionFilters.test.ts` (все комбинации фильтров);
+  - 21 в `tags.schemas.test.ts` (Tag/CreateTag/SetWordTags +
+    SessionFiltersSchema + StartSessionSchema с filters).
+- `pnpm --filter @hanzi/web run test` — 42 passed (без регрессий).
+- `pnpm --filter @hanzi/web run build` — прод-бандл собирается.
+- `pnpm --filter @hanzi/server run build` — `tsc` чисто.
 
 ---
 
@@ -873,4 +926,74 @@ feat(stats): экспорт/импорт UserWordProgress в JSON и CSV
 - E2E smoke на dev-сервере: register → export JSON/CSV пустые →
   import 3 записей → export 3 записей → CSV с 3 строками →
   import с ghost wordId (1 skipped) → replace (1 запись).
+```
+
+## Коммит для пункта 12 (Фильтры сессии)
+
+```
+feat(sessions): фильтры сессии — stability, теги, audio, mnemonic
+
+Закрывает PLAN_Features_v0.2 §12 (Повторение по «лёгкости» и
+фильтры сессии). POST /api/sessions/start теперь принимает блок
+`filters: { minStability?, maxStability?, tags?: uuid[], onlyWithAudio?,
+onlyWithMnemonic? }` — для тренировки только «забываемых» слов
+(stability ≤ N), только с тегами и/или только со звуком/мнемоникой.
+
+Что добавлено:
+- apps/server (Prisma): миграция 20260704010000_add_tags — Tag(id,
+  name, slug[unique kebab-case], color?), WordTag(wordId, tagId) m2m
+  с Cascade; relation `tags` у Word; индексы по slug и tagId.
+- packages/shared: TagSchema/CreateTagSchema/SetWordTagsSchema (slug —
+  lowercase kebab-case regex, color — 6 hex без #, tagIds ≤ 20).
+- packages/shared: SessionFiltersSchema (.strict, принимает undefined,
+  для StartSessionSchema) + appliedFilters в FullSessionSchema;
+  Word.tags: Tag[].
+- apps/server: sessions/sessionFilters.ts — чистые хелперы
+  buildProgressWhereForFilters / buildWordWhereForFilters /
+  intersectWithTagFilter / intersectWordWithTagFilter (легко тестируются
+  без Prisma-моков).
+- apps/server: sessions/sessions.service.ts — startSession применяет все
+  4 фильтра: stability на UserWordProgress.stability, onlyWithAudio/
+  onlyWithMnemonic на word (relation), tags через wordIdsWithAnyTag
+  (OR-логика). Фильтры комбинируются с deckId через AND, fresh-слова
+  фильтруются по word-условиям + intersectWordWithTagFilter.
+- apps/server: tags/{tags.service,tags.routes}.ts — CRUD: GET/POST /tags,
+  DELETE /tags/:id, GET/PUT /tags/words/:wordId/tags (slug unique →
+  409 TAG_EXISTS, missing tag → 404).
+- apps/server: words.service — общий WORD_INCLUDE, все ответы содержат
+  tags: Tag[] (раньше возвращались без тегов).
+- apps/server: index.ts — tagsRoutes смонтирован под /api/tags.
+- apps/web: db/database.ts — tags добавлены в RxDB-схему (offline-кэш).
+- apps/web: queries/tags.ts — useTags (staleTime 60_000), useCreateTag,
+  useDeleteTag, useSetWordTags (react-query).
+- apps/web: components/SessionFiltersPanel.tsx — сворачиваемая UI-панель
+  с числовыми полями min/max stability, чипами тегов (с цветом), toggle-
+  кнопками «Только со звуком» / «Только с мнемоникой». В шапке —
+  badge с активными фильтрами. Экспортирует SessionFiltersValue +
+  хелпер toSessionFilters.
+- apps/web: hooks/useStudySession.ts — принимает filters: SessionFilters,
+  сериализует через JSON.stringify в deps useEffect, передаёт в
+  /sessions/start; startNow() принимает overrideFilters.
+- apps/web: screens/StudyScreen.tsx — панель фильтров на экране выбора
+  типа практики; при «Начать» — startNow(activeFilters).
+- apps/web: screens/HomeScreen.tsx — офлайн-загрузка сохраняет tags.
+- apps/web: utils/distractors.test.ts — makeWord дополнен tags: [].
+- packages/shared/api-spec.md — задокументированы /api/sessions/start
+  с filters и 5 новых эндпоинтов /api/tags/*. Сводка: 25 эндпоинтов
+  в 8 модулях.
+
+Тесты:
+- 26 новых vitest-тестов в sessionFilters.test.ts — все комбинации
+  (minStability/maxStability, onlyWithAudio, onlyWithMnemonic, deckScope,
+  intersectWithTagFilter, intersectWordWithTagFilter, smoke на
+  SessionFiltersSchema).
+- 21 новый тест в tags.schemas.test.ts — TagSchema (color/slug), 
+  CreateTagSchema, SetWordTagsSchema (≤20 ids, uuid), SessionFiltersSchema
+  (5 кейсов), StartSessionSchema с filters.
+- pnpm --filter @hanzi/server exec vitest run — 150 passed
+  (было 103, +47).
+- pnpm --filter @hanzi/web run test — 42 passed (без регрессий).
+- pnpm typecheck — чисто во всех 3 пакетах.
+- pnpm --filter @hanzi/web run build — прод-бандл собирается.
+- pnpm --filter @hanzi/server run build — tsc чисто.
 ```

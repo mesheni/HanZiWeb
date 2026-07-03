@@ -67,9 +67,36 @@ export const SessionCardSchema = z.object({
 
 export type SessionCard = z.infer<typeof SessionCardSchema>;
 
+/**
+ * Фильтры сессии (см. PLAN_Features_v0.2 §12).
+ *
+ * - `minStability` / `maxStability` — ограничение по FSRS stability (дни).
+ *   Полезно для тренировки «забываемых» карточек: `minStability <= 7` и
+ *   `maxStability <= 21` даёт быстро-забываемые слова. `0` означает «без
+ *   ограничения» со стороны min/max.
+ * - `tags` — массив id тегов; карточка должна иметь **хотя бы один** из них.
+ *   Если массив пуст или не передан — фильтр не применяется.
+ * - `onlyWithAudio` — пропускать слова без `audioUrl`.
+ * - `onlyWithMnemonic` — пропускать слова без `mnemonic`.
+ */
+export const SessionFiltersSchema = z
+  .union([z.undefined(), z
+    .object({
+      minStability: z.number().nonnegative().optional(),
+      maxStability: z.number().positive().optional(),
+      tags: z.array(z.string().uuid()).max(20).optional(),
+      onlyWithAudio: z.boolean().optional(),
+      onlyWithMnemonic: z.boolean().optional(),
+    })
+    .strict()]);
+
+export type SessionFilters = z.infer<typeof SessionFiltersSchema>;
+
 /** Полная сессия с карточками */
 export const FullSessionSchema = SessionSchema.extend({
   cards: z.array(SessionCardSchema),
+  /** Фильтры, реально применённые к сессии (для UI-отображения). */
+  appliedFilters: SessionFiltersSchema.nullable().optional(),
 });
 
 export type FullSession = z.infer<typeof FullSessionSchema>;
@@ -85,6 +112,8 @@ export const StartSessionSchema = z.object({
   mode: StudyModeSchema.default('mixed'),
   /** Тип практики в сессии. По умолчанию — flip-card. */
   practiceType: PracticeTypeSchema.default('flip-card'),
+  /** Фильтры по «лёгкости» (stability) и метаданным слова. */
+  filters: SessionFiltersSchema.optional(),
 });
 
 export type StartSession = z.infer<typeof StartSessionSchema>;

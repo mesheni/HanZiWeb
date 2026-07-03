@@ -78,6 +78,35 @@ model Word {
   progress      UserWordProgress[]
   answers       SessionAnswer[]
   clozeProgress ClozeProgress[]
+  tags          WordTag[]
+}
+
+/// Тег для слова (для фильтрации сессий: «только забываемые», «с мнемоникой», …).
+/// См. PLAN_Features_v0.2 §12.
+model Tag {
+  id        String   @id @default(uuid())
+  /// Человекочитаемое имя (например, "С трудным тоном").
+  name      String
+  /// URL-slug — уникальный, латиницей (например, "hard-tones"). Используется в API.
+  slug      String   @unique
+  /// Цвет в UI (hex-строка без #, например "FFB74D"). Необязательный.
+  color     String?
+  createdAt DateTime @default(now())
+
+  words WordTag[]
+
+  @@index([slug])
+}
+
+/// Связь слова с тегом (многие-ко-многим).
+model WordTag {
+  wordId String
+  word   Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  tagId  String
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([wordId, tagId])
+  @@index([tagId])
 }
 
 model Example {

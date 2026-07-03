@@ -25,6 +25,18 @@ const WORDS_SCHEMA = {
         },
       },
     },
+    tags: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          slug: { type: 'string' },
+          color: { type: ['string', 'null'] },
+        },
+      },
+    },
   },
   required: ['id', 'character', 'pinyin', 'translation'],
 } as const;
