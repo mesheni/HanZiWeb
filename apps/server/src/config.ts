@@ -7,6 +7,9 @@ const envSchema = z.object({
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  // Публичный origin web-клиента (для редиректа после OAuth).
+  // По умолчанию совпадает с CORS_ORIGIN.
+  WEB_PUBLIC_URL: z.string().optional(),
 
   // --- Audio (Google Cloud TTS) ---
   // Путь к JSON-ключу сервисного аккаунта Google Cloud.
@@ -26,7 +29,15 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().default(''),
   VAPID_SUBJECT: z.string().default('mailto:admin@hanzi.app'),
 
-
+  // --- OAuth (PLAN_Features_v0.2 §13) ---
+  // Каждый провайдер опционален: если client_id+client_secret не заданы,
+  // соответствующая кнопка в UI даст понятное сообщение «не настроено».
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  APPLE_OAUTH_CLIENT_ID: z.string().optional(),
+  APPLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  YANDEX_OAUTH_CLIENT_ID: z.string().optional(),
+  YANDEX_OAUTH_CLIENT_SECRET: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;
@@ -38,4 +49,9 @@ export function loadConfig(): Config {
     process.exit(1);
   }
   return result.data;
+}
+
+/** Публичный origin web-клиента для редиректов после OAuth. */
+export function getWebPublicUrl(cfg: Config = loadConfig()): string {
+  return cfg.WEB_PUBLIC_URL ?? cfg.CORS_ORIGIN;
 }

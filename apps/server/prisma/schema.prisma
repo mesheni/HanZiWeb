@@ -10,7 +10,16 @@ datasource db {
 model User {
   id                    String    @id @default(uuid())
   email                 String    @unique
-  passwordHash          String
+  /// null для пользователей, зарегистрированных только через
+  /// социальные провайдеры (Google/Apple/Yandex). См. PLAN_Features_v0.2 §13.
+  passwordHash          String?
+  /// Отображаемое имя (из OAuth-профиля или `local-part` email).
+  displayName           String?
+  /// URL аватара из OAuth-профиля (опционально).
+  avatarUrl             String?
+  /// Email подтверждён (true для Google с verified email,
+  /// true после регистрации через email+pass). См. §13.
+  emailVerified         Boolean   @default(false)
   xp                    Int       @default(0)
   currentStreak         Int       @default(0)
   tokenVersion          Int       @default(0)
@@ -30,9 +39,37 @@ model User {
   clozeProgress ClozeProgress[]
   decks         Deck[]
   achievements  UserAchievement[]
+  accounts      UserAccount[]
 
   /// Индекс для быстрого leaderboard (топ по XP за всё время).
   @@index([xp(sort: Desc)])
+}
+
+/// Привязка аккаунта пользователя к внешнему провайдеру
+/// (Google / Apple / Yandex). Один User может иметь несколько
+/// привязок (например, Google + email+pass, или Google + Apple).
+/// См. PLAN_Features_v0.2 §13.
+model UserAccount {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Провайдер: google | apple | yandex.
+  provider        String
+  /// Уникальный ID пользователя у провайдера (sub для Google,
+  /// sub для Apple, id для Yandex).
+  providerUserId  String
+  /// Email, который вернул провайдер (для логов и отображения;
+  /// не используется как ключ — у одного провайдера email может
+  /// меняться).
+  providerEmail   String?
+  /// Произвольные метаданные провайдера (displayName, avatarUrl, …)
+  /// в виде JSON-строки. Полезно для логов и отладки.
+  providerMeta    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
 }
 
 /// Достижения (badges) пользователя.

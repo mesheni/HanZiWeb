@@ -4,6 +4,7 @@ import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target, Moon,
 import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
 import { Button, Card } from '@/components/ui';
 import ProgressExportImport from '@/components/ProgressExportImport';
+import LinkedAccountsCard from '@/components/LinkedAccountsCard';
 import { clearWordsCollection, resetLocalDatabase } from '@/db/database';
 import { apiGet, apiPost, apiPut } from '@/api/client';
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/api/push';
@@ -379,6 +380,8 @@ export default function SettingsScreen() {
         </Card>
 
         <ProgressExportImport />
+
+        <LinkedAccountsCard />
 
         <Card padding="lg" className="space-y-4">
           <div className="flex items-start gap-3">

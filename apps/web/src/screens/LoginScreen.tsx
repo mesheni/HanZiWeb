@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, Input, Card } from '@/components/ui';
+import SocialLoginButtons from '@/components/SocialLoginButtons';
 import { apiPost } from '@/api/client';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/stores/toastStore';
@@ -69,6 +70,14 @@ export default function LoginScreen() {
             Войти
           </Button>
         </form>
+
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-border-default" />
+          <span className="text-xs text-text-muted">или</span>
+          <div className="flex-1 h-px bg-border-default" />
+        </div>
+
+        <SocialLoginButtons />
 
         <p className="text-center text-xs text-text-muted mt-4">
           Нет аккаунта?{' '}

@@ -16,12 +16,14 @@ interface RefreshTokenPayload {
   tokenVersion: number;
 }
 
-function generateAccessToken(userId: string, email: string): string {
+/** Генерирует короткоживущий JWT (15 минут) для авторизации. */
+export function generateAccessToken(userId: string, email: string): string {
   const config = loadConfig();
   return jwt.sign({ userId, email } satisfies AccessTokenPayload, config.JWT_ACCESS_SECRET, { expiresIn: '15m' });
 }
 
-function generateRefreshToken(userId: string, tokenVersion: number): string {
+/** Генерирует долгоживущий refresh-токен (30 дней). */
+export function generateRefreshToken(userId: string, tokenVersion: number): string {
   const config = loadConfig();
   return jwt.sign({ userId, tokenVersion } satisfies RefreshTokenPayload, config.JWT_REFRESH_SECRET, { expiresIn: '30d' });
 }
@@ -34,7 +36,12 @@ export async function registerUser(input: Register) {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
   const user = await prisma.user.create({
-    data: { email: input.email, passwordHash, lastActiveDate: new Date() },
+    data: {
+      email: input.email,
+      passwordHash,
+      emailVerified: true,
+      lastActiveDate: new Date(),
+    },
   });
 
   const accessToken = generateAccessToken(user.id, user.email);
@@ -51,6 +58,14 @@ export async function loginUser(input: Login) {
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   if (!user) {
     throw Object.assign(new Error('Invalid credentials'), { statusCode: 401, code: 'INVALID_CREDENTIALS' });
+  }
+
+  // Пользователь без пароля = зарегистрирован через OAuth.
+  if (!user.passwordHash) {
+    throw Object.assign(new Error('This account uses social login'), {
+      statusCode: 400,
+      code: 'PASSWORD_NOT_SET',
+    });
   }
 
   const valid = await bcrypt.compare(input.password, user.passwordHash);

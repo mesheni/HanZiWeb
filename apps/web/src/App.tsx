@@ -9,6 +9,7 @@ import LibraryScreen from './screens/LibraryScreen';
 import StatsScreen from './screens/StatsScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import OAuthCallbackScreen from './screens/OAuthCallbackScreen';
 import HandwritingScreen from './screens/HandwritingScreen';
 import DonationScreen from './screens/DonationScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -46,6 +47,7 @@ export default function App() {
             </GuestGuard>
           }
         />
+        <Route path="/auth/callback" element={<OAuthCallbackScreen />} />
 
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<HomeScreen />} />

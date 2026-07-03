@@ -68,6 +68,146 @@
 
 ---
 
+## Социальный вход (OAuth, PLAN_Features_v0.2 §13)
+
+Все эндпоинты: `GET /api/auth/oauth/*`, `GET /api/auth/accounts`,
+`DELETE /api/auth/accounts/:provider`.
+
+Поддерживаются три провайдера: **Google**, **Apple** (Sign in with Apple),
+**Яндекс**. Каждый провайдер можно включить/выключить через env:
+`GOOGLE_OAUTH_CLIENT_ID/SECRET`, `APPLE_OAUTH_CLIENT_ID/SECRET`,
+`YANDEX_OAUTH_CLIENT_ID/SECRET`. Если client_id/secret не заданы,
+соответствующий маршрут возвращает 503 `PROVIDER_NOT_CONFIGURED`.
+
+### GET /api/auth/oauth/providers
+
+Список провайдеров и их статус (используется web-клиентом, чтобы
+показать или скрыть кнопки).
+
+| | |
+|---|---|
+| **Auth** | Нет |
+| **Response 200** | `{ success: true, data: { providers: [{ provider, enabled }] } }` |
+
+```json
+// Response
+{
+  "success": true,
+  "data": {
+    "providers": [
+      { "provider": "google", "enabled": true },
+      { "provider": "apple", "enabled": false },
+      { "provider": "yandex", "enabled": true }
+    ]
+  }
+}
+```
+
+### GET /api/auth/oauth/:provider
+
+Старт OAuth-flow. Сервер генерирует `state`, кладёт его в Redis
+на 10 минут и делает 302-редирект на authorize-endpoint
+провайдера.
+
+| | |
+|---|---|
+| **Auth** | Нет |
+| **Response 302** | Redirect → `https://accounts.google.com/o/oauth2/v2/auth?…` (или аналог Apple / Яндекс) |
+| **Response 404** | `{ success: false, error: { code: "UNKNOWN_PROVIDER" } }` |
+| **Response 503** | `{ success: false, error: { code: "PROVIDER_NOT_CONFIGURED" } }` |
+
+`:provider` — `google` \| `apple` \| `yandex`.
+
+### GET/POST /api/auth/oauth/:provider/callback
+
+Callback от провайдера. Сервер проверяет `state`, обменивает
+authorization `code` на `access_token` (POST на token-endpoint
+провайдера), забирает userinfo (или парсит `id_token` для Apple),
+создаёт/обновляет `User` + `UserAccount`, выдаёт одноразовый код
+и редиректит клиента на:
+
+```
+<WEB_PUBLIC_URL>/auth/callback?provider=<p>&code=<one-time>
+```
+
+| | |
+|---|---|
+| **Auth** | Нет |
+| **Response 302** | Redirect → `<WEB_PUBLIC_URL>/auth/callback?provider=…&code=…` (или `?error=…` при ошибке) |
+
+Apple использует `response_mode=form_post`, поэтому callback
+для Apple принимает и GET, и POST.
+
+### POST /api/auth/oauth/exchange
+
+Обмен одноразового кода на пару access + refresh. Защита от
+CSRF и replay-атак: код живёт в Redis ровно 60 секунд и может
+быть использован только один раз.
+
+| | |
+|---|---|
+| **Auth** | Нет (одноразовый код) |
+| **Request** | `OAuthExchangeSchema` (`{ code: string }`) |
+| **Response 200** | `{ success: true, data: AuthResponseSchema }` (refresh в HttpOnly cookie) |
+| **Response 400** | `{ success: false, error: { code: "INVALID_CODE" } }` |
+
+### GET /api/auth/accounts
+
+Список привязанных OAuth-аккаунтов текущего пользователя.
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true, data: UserAccountsResponseSchema }` |
+
+```json
+// Response
+{
+  "success": true,
+  "data": {
+    "accounts": [
+      {
+        "id": "uuid",
+        "provider": "google",
+        "providerEmail": "alice@gmail.com",
+        "createdAt": "2026-07-04T12:00:00.000Z"
+      }
+    ],
+    "canUnlink": true
+  }
+}
+```
+
+`canUnlink = false` означает, что у пользователя нет пароля
+и этот аккаунт — единственный способ входа. UI должен
+отключить кнопку «Отвязать».
+
+### DELETE /api/auth/accounts/:provider
+
+Отвязать OAuth-аккаунт. Защита от «замка»: 409, если
+`canUnlink = false`.
+
+| | |
+|---|---|
+| **Auth** | Bearer JWT |
+| **Response 200** | `{ success: true }` |
+| **Response 400** | `{ success: false, error: { code: "UNKNOWN_PROVIDER" } }` |
+| **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` (аккаунт не привязан) |
+| **Response 409** | `{ success: false, error: { code: "CANNOT_UNLINK" } }` |
+
+### Поведение auto-link
+
+При первом входе через Google / Яндекс с verified email,
+который уже зарегистрирован в HanZi (через `register` или
+другой провайдер), привязка автоматически добавляется к
+существующему `User`. Для Apple auto-link срабатывает, если
+`id_token.email` подтверждён (Apple всегда verified).
+
+Если провайдер не отдаёт verified email — создаётся
+новый `User` с placeholder email `<provider>+<providerUserId>@oauth.local`.
+
+---
+
 ## Слова (Words)
 
 Все эндпоинты: `GET/POST/PUT/DELETE /api/words/*`
@@ -527,6 +667,11 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 - **Access token**: короткоживущий JWT (15 минут), передаётся в заголовке `Authorization: Bearer <token>`
 - **Refresh token**: долгоживущий JWT (30 дней), передаётся в HttpOnly cookie `refreshToken`
 - **Схемы**: `RegisterSchema`, `LoginSchema`, `AuthResponseSchema`, `RefreshSchema` → `packages/shared/src/schemas/auth.ts`
+- **OAuth**: 3 провайдера (Google, Apple, Яндекс); обмен через
+  одноразовый `code` (TTL 60 сек в Redis). Схемы
+  `OAuthProviderSchema`, `OAuthProfileSchema`, `UserAccountSchema`,
+  `UserAccountsResponseSchema`, `OAuthExchangeSchema` →
+  `packages/shared/src/schemas/oauth.ts`.
 
 ## Сводка эндпоинтов
 
@@ -536,26 +681,32 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 | 2 | POST | /api/auth/login | No | Auth |
 | 3 | POST | /api/auth/refresh | Cookie | Auth |
 | 4 | POST | /api/auth/logout | Cookie | Auth |
-| 5 | GET | /api/words | No | Words |
-| 6 | GET | /api/words/:id | No | Words |
-| 7 | POST | /api/words | JWT | Words |
-| 8 | PUT | /api/words/:id | JWT | Words |
-| 9 | DELETE | /api/words/:id | JWT | Words |
-| 10 | POST | /api/sessions/start | JWT | Sessions |
-| 11 | POST | /api/sessions/:id/answer | JWT | Sessions |
-| 12 | GET | /api/sessions/:id | JWT | Sessions |
-| 13 | GET | /api/stats/overview | JWT | Stats |
-| 14 | GET | /api/stats/activity | JWT | Stats |
-| 15 | GET | /api/stats/leaderboard | JWT | Stats |
-| 16 | GET | /api/stats/export | JWT | Stats |
-| 17 | POST | /api/stats/import | JWT | Stats |
-| 18 | GET | /api/achievements | JWT | Achievements |
-| 19 | GET | /api/users/settings | JWT | Users |
-| 20 | PUT | /api/users/settings | JWT | Users |
-| 21 | GET | /api/tags | JWT | Tags |
-| 22 | POST | /api/tags | JWT | Tags |
-| 23 | DELETE | /api/tags/:id | JWT | Tags |
-| 24 | GET | /api/tags/words/:wordId/tags | JWT | Tags |
-| 25 | PUT | /api/tags/words/:wordId/tags | JWT | Tags |
+| 5 | GET | /api/auth/oauth/providers | No | Auth (OAuth) |
+| 6 | GET | /api/auth/oauth/:provider | No | Auth (OAuth) |
+| 7 | GET/POST | /api/auth/oauth/:provider/callback | No | Auth (OAuth) |
+| 8 | POST | /api/auth/oauth/exchange | Code | Auth (OAuth) |
+| 9 | GET | /api/auth/accounts | JWT | Auth (OAuth) |
+| 10 | DELETE | /api/auth/accounts/:provider | JWT | Auth (OAuth) |
+| 11 | GET | /api/words | No | Words |
+| 12 | GET | /api/words/:id | No | Words |
+| 13 | POST | /api/words | JWT | Words |
+| 14 | PUT | /api/words/:id | JWT | Words |
+| 15 | DELETE | /api/words/:id | JWT | Words |
+| 16 | POST | /api/sessions/start | JWT | Sessions |
+| 17 | POST | /api/sessions/:id/answer | JWT | Sessions |
+| 18 | GET | /api/sessions/:id | JWT | Sessions |
+| 19 | GET | /api/stats/overview | JWT | Stats |
+| 20 | GET | /api/stats/activity | JWT | Stats |
+| 21 | GET | /api/stats/leaderboard | JWT | Stats |
+| 22 | GET | /api/stats/export | JWT | Stats |
+| 23 | POST | /api/stats/import | JWT | Stats |
+| 24 | GET | /api/achievements | JWT | Achievements |
+| 25 | GET | /api/users/settings | JWT | Users |
+| 26 | PUT | /api/users/settings | JWT | Users |
+| 27 | GET | /api/tags | JWT | Tags |
+| 28 | POST | /api/tags | JWT | Tags |
+| 29 | DELETE | /api/tags/:id | JWT | Tags |
+| 30 | GET | /api/tags/words/:wordId/tags | JWT | Tags |
+| 31 | PUT | /api/tags/words/:wordId/tags | JWT | Tags |
 
-Всего: **25 эндпоинтов** в 8 модулях.
+Всего: **31 эндпоинт** в 8 модулях.

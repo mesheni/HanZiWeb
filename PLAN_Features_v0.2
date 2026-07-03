@@ -609,11 +609,86 @@ run build` собирает прод-бандл.
 
 ## Низкий приоритет / «аспирационные» (из `plan/Manifest.md`)
 
-### 13. Социальный вход (Google/Apple OAuth)
+### 13. Социальный вход (Google/Apple/Yandex OAuth) ✅ DONE
 Сейчас только email + bcrypt.
 
-- `@fastify/passport` + стратегия Google.
-- Таблица `UserAccount(userId, provider, providerUserId)`.
+- `UserAccount(userId, provider, providerUserId, providerEmail, providerMeta)` —
+  связь User ↔ внешний провайдер; один User может иметь
+  несколько привязок.
+- `User.passwordHash` стал `optional` (для social-only
+  пользователей); добавлены `displayName` / `avatarUrl` /
+  `emailVerified`.
+- OAuth 2.0 authorization-code flow для Google и Яндекс,
+  Sign in with Apple (form_post + id_token) — без
+  `@fastify/passport`/`@fastify/oauth2` (минимум зависимостей).
+  Реализован напрямую через `fetch` + Redis для `state` и
+  одноразового `code` обмена.
+- Auto-link по verified email: если Google/Yandex вернул
+  email, который уже есть в `User.email`, привязка добавляется
+  к существующему аккаунту. Иначе — создаётся новый User.
+- Защита от «замка»: `canUnlink` гарантирует, что у пользователя
+  всегда остаётся хотя бы один способ входа.
+- 3 провайдера: **Google**, **Apple** (включая российских
+  пользователей), **Яндекс** (для российских пользователей —
+  по запросу). Каждый опционален: без client_id/secret
+  соответствующая кнопка просто не показывается (503 на
+  сервере).
+
+**Реализация**:
+- `apps/server/prisma/schema.prisma` + миграция
+  `20260704120000_user_accounts_oauth`: новая таблица
+  `UserAccount(id, userId, provider, providerUserId,
+  providerEmail, providerMeta, createdAt, updatedAt)` с
+  `@@unique([provider, providerUserId])` и `@@index([userId])`;
+  relation `accounts` у `User` с Cascade; `User.passwordHash`
+  стал optional; добавлены `User.displayName`, `User.avatarUrl`,
+  `User.emailVerified`.
+- `apps/server/src/config.ts` + `apps/server/.env.example` —
+  новые env-переменные `GOOGLE/APPLE/YANDEX_OAUTH_CLIENT_ID`+
+  `_SECRET`, `WEB_PUBLIC_URL` (origin редиректа после OAuth).
+- `packages/shared/src/schemas/oauth.ts` — `OAuthProviderSchema`
+  (3 значения), `OAUTH_PROVIDER_LABELS`, `OAuthProfileSchema`,
+  `UserAccountSchema`, `UserAccountsResponseSchema`,
+  `OAuthExchangeSchema`.
+- `apps/server/src/modules/auth/oauth.providers.ts` —
+  регистрация маршрутов `/oauth/:provider` (start, 302 на
+  провайдера) и `/oauth/:provider/callback` (GET для Google/
+  Яндекс, POST для Apple form_post); спецификации провайдеров
+  (authorize_url, token_url, userinfo_url, scope, parseProfile);
+  хелперы `buildAuthorizeUrl`, `exchangeCodeForToken`,
+  `fetchUserinfo`, `parseAppleIdToken`.
+- `apps/server/src/modules/auth/oauth.service.ts` —
+  `findOrCreateOAuthUser` (auto-link по verified email,
+  иначе — новый User с placeholder email), `linkOAuthAccount`,
+  `unlinkOAuthAccount`, `getUserAccounts`, `issueTokensForUser`;
+  чистые хелперы `generateExchangeCode`, `buildOAuthRedirectUrl`,
+  `computeCanUnlink`, `displayNameFromEmail`; Redis-обёртки
+  `issueExchangeCode` / `redeemExchangeCode` (TTL 60 секунд).
+- `apps/server/src/modules/auth/auth.routes.ts` — 5 новых
+  эндпоинтов: `GET /oauth/providers`, `POST /oauth/exchange`,
+  `GET /accounts`, `DELETE /accounts/:provider` +
+  `/oauth/:provider` + `/oauth/:provider/callback` через
+  `registerOAuthRoutes`. `sameSite: 'lax'` для refresh-cookie
+  (нужно для редиректа).
+- `apps/server/src/modules/auth/auth.service.ts` —
+  `registerUser` ставит `emailVerified: true`; `loginUser`
+  бросает `PASSWORD_NOT_SET` для OAuth-only пользователей.
+- `apps/web/src/components/SocialLoginButtons.tsx` — кнопки
+  «Войти через Google / Apple / Яндекс» с запросом
+  `/auth/oauth/providers` для отображения только
+  сконфигурированных провайдеров.
+- `apps/web/src/screens/{LoginScreen,RegisterScreen}.tsx` —
+  разделитель «или» + `<SocialLoginButtons>`.
+- `apps/web/src/screens/OAuthCallbackScreen.tsx` — обработка
+  редиректа `/auth/callback?code=…&provider=…` →
+  `POST /auth/oauth/exchange` → login.
+- `apps/web/src/components/LinkedAccountsCard.tsx` — секция
+  «Привязанные аккаунты» в SettingsScreen со списком и
+  кнопкой «Отвязать» (disabled, если `canUnlink = false`).
+- `apps/web/src/App.tsx` — роут `/auth/callback` →
+  `OAuthCallbackScreen`.
+- `packages/shared/api-spec.md` — секция «Социальный вход»,
+  6 новых эндпоинтов в сводной таблице (итого 31).
 
 ### 14. Аналитика (PostHog)
 События `session_started`, `answer_rated`, `audio_generated`.
@@ -996,4 +1071,105 @@ onlyWithMnemonic? }` — для тренировки только «забыва
 - pnpm typecheck — чисто во всех 3 пакетах.
 - pnpm --filter @hanzi/web run build — прод-бандл собирается.
 - pnpm --filter @hanzi/server run build — tsc чисто.
+```
+
+---
+
+## Коммит для пункта 13 (Социальный вход)
+
+```
+feat(auth): социальный вход — Google, Apple, Яндекс (OAuth 2.0)
+
+Закрывает PLAN_Features_v0.2 §13 (Социальный вход).
+
+Что добавлено:
+- apps/server (Prisma): миграция 20260704120000_user_accounts_oauth
+  → таблица UserAccount(id, userId, provider, providerUserId,
+  providerEmail, providerMeta, createdAt, updatedAt) с
+  @@unique([provider, providerUserId]) и @@index([userId]);
+  relation `accounts` на User (Cascade); User.passwordHash стал
+  optional; добавлены User.displayName, User.avatarUrl,
+  User.emailVerified.
+- packages/shared: схемы OAuthProviderSchema (google | apple |
+  yandex), OAUTH_PROVIDER_LABELS, OAuthProfileSchema,
+  UserAccountSchema, UserAccountsResponseSchema
+  ({ accounts, canUnlink }), OAuthExchangeSchema ({ code }).
+- apps/server: config.ts + .env.example — env-переменные
+  GOOGLE/APPLE/YANDEX_OAUTH_CLIENT_ID/_SECRET и WEB_PUBLIC_URL
+  (origin редиректа после OAuth); хелпер getWebPublicUrl.
+- apps/server: auth.oauth_providers — спецификации 3 провайдеров
+  (authorize_url, token_url, userinfo_url, scope, parseProfile);
+  registerOAuthRoutes регистрирует /oauth/:provider (start,
+  302 на провайдера с state) и /oauth/:provider/callback
+  (GET для Google/Яндекс, POST для Apple form_post); хелперы
+  buildAuthorizeUrl, exchangeCodeForToken (POST на token-endpoint
+  провайдера), fetchUserinfo, parseAppleIdToken (id_token JWT).
+- apps/server: auth.oauth_service — findOrCreateOAuthUser
+  (auto-link по verified email, иначе — новый User с
+  placeholder email <provider>+<providerUserId>@oauth.local),
+  linkOAuthAccount (upsert), unlinkOAuthAccount,
+  getUserAccounts (canUnlink вычисляется в computeCanUnlink —
+  защита от "замка": хотя бы один способ входа должен
+  остаться), issueTokensForUser; чистые хелперы
+  generateExchangeCode, buildOAuthRedirectUrl, displayNameFromEmail;
+  Redis-обёртки issueExchangeCode / redeemExchangeCode
+  (TTL 60 секунд, single-use).
+- apps/server: auth.routes — 5 новых эндпоинтов:
+  GET /auth/oauth/providers, POST /auth/oauth/exchange,
+  GET /auth/accounts, DELETE /auth/accounts/:provider +
+  /auth/oauth/:provider + /auth/oauth/:provider/callback через
+  registerOAuthRoutes; cookieOptions sameSite='lax' (нужно
+  для редиректа после OAuth).
+- apps/server: auth.service.registerUser ставит emailVerified=true;
+  loginUser бросает PASSWORD_NOT_SET для OAuth-only пользователей
+  (passwordHash=null).
+- apps/web: components/SocialLoginButtons — кнопки "Войти через
+  Google / Apple / Яндекс"; запрашивает /auth/oauth/providers,
+  рендерит только сконфигурированные провайдеры (enabled=true).
+- apps/web: screens/LoginScreen, RegisterScreen — разделитель
+  "или" + <SocialLoginButtons> под основной формой.
+- apps/web: screens/OAuthCallbackScreen — обработка
+  /auth/callback?code=…&provider=… (или ?error=…); вызывает
+  POST /auth/oauth/exchange, делает login() и редиректит на /.
+- apps/web: components/LinkedAccountsCard — карточка
+  "Привязанные аккаунты" в SettingsScreen со списком и
+  кнопкой "Отвязать" (disabled при canUnlink=false).
+- apps/web: App.tsx — роут /auth/callback → OAuthCallbackScreen.
+- packages/shared/api-spec.md — секция "Социальный вход" с
+  описанием flow, 6 новых эндпоинтов в сводке (итого 31).
+
+Поток авторизации:
+1. Web: window.location.href = /api/auth/oauth/google
+2. Server: генерирует state в Redis (TTL 10 мин), 302 →
+   https://accounts.google.com/o/oauth2/v2/auth?...&state=...
+3. User: логинится у провайдера, редирект обратно на
+   /api/auth/oauth/google/callback?code=...&state=...
+4. Server: проверяет state, обменивает code на access_token,
+   забирает userinfo, findOrCreateOAuthUser (auto-link по
+   verified email), выдаёт одноразовый exchange code (TTL 60s),
+   302 → <WEB_PUBLIC_URL>/auth/callback?provider=google&code=...
+5. Web: <OAuthCallbackScreen> делает
+   POST /api/auth/oauth/exchange { code }, login() и navigate('/').
+
+Тесты:
+- 13 новых vitest-тестов в oauth.service.test.ts:
+  generateExchangeCode (length, alphabet, uniqueness),
+  computeCanUnlink (5 кейсов: пустой список / одна соц. / одна
+  с паролем / несколько соц. / lock-out без пароля),
+  displayNameFromEmail (обычный / null / malformed),
+  buildOAuthRedirectUrl (code / error / URL-encoding спецсимволов).
+- 12 новых vitest-тестов в oauth.schemas.test.ts: OAuthProviderSchema
+  (3 значения + отказ), OAUTH_PROVIDER_LABELS, OAuthProfileSchema
+  (полный / минимальный / отказ без providerUserId),
+  UserAccountSchema/UserAccountsResponseSchema (multi / empty /
+  невалидный uuid), OAuthExchangeSchema (валидная длина /
+  слишком короткий / слишком длинный).
+- pnpm --filter @hanzi/server exec vitest run — 175 passed
+  (было 150, +25).
+- pnpm --filter @hanzi/web run test — 42 passed (без регрессий).
+- pnpm typecheck — чисто во всех 3 пакетах.
+- pnpm --filter @hanzi/server run build — tsc чисто.
+- pnpm --filter @hanzi/web run build — прод-бандл собирается.
+- pnpm --filter @hanzi/server exec prisma generate — Prisma Client
+  обновлён (новая модель UserAccount).
 ```
