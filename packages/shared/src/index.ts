@@ -15,3 +15,4 @@ export * from './schemas/userSettings.js';
 export * from './schemas/progressExport.js';
 export * from './schemas/tag.js';
 export * from './schemas/oauth.js';
+export * from './schemas/analytics.js';

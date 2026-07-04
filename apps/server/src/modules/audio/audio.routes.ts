@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import * as audioService from './audio.service.js';
+import * as analyticsService from '../analytics/analytics.service.js';
 
 const GenerateAudioSchema = z.object({
   text: z.string().min(1).max(200),
@@ -23,6 +24,26 @@ export async function audioRoutes(app: FastifyInstance) {
       const result = wordId
         ? await audioService.generateAudioForWord(wordId, language)
         : await audioService.generateAudio(text, language);
+
+      // Аналитика: событие `audio_generated` с источником (cache | generated).
+      // Не блокирует ответ даже при сбое аналитики.
+      void analyticsService
+        .forward(
+          {
+            events: [
+              {
+                name: 'audio_generated',
+                properties: {
+                  source: result.source,
+                  language,
+                  has_word_id: wordId != null,
+                },
+              },
+            ],
+          },
+          { userId: request.userId, lib: 'hanzi-server' },
+        )
+        .catch((err) => request.log.warn({ err }, 'analytics forward failed'));
 
       return reply.send({
         success: true,

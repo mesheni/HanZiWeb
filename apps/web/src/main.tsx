@@ -6,11 +6,17 @@ import App from './App';
 import { initDb } from './db/database';
 import { initSyncEngine } from './db/sync';
 import { bootstrapTheme } from './ui/theme';
+import { initAnalytics } from './utils/analytics';
 import './styles/global.css';
 
 // Применяем тему до маунта React-дерева, чтобы избежать вспышки
 // неправильной палитры при загрузке.
 bootstrapTheme();
+
+// Аналитика: подключаем pagehide/beforeunload/visibilitychange.
+// Сам `initAnalytics` — no-op, если в окружении нет window (SSR/tests)
+// или пользователь отказался от трекинга (DNT, opt-out).
+initAnalytics();
 
 initDb()
   .catch((error) => {

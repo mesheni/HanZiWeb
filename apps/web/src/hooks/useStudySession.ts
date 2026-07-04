@@ -8,6 +8,7 @@ import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
 import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
 import type { SrsRating, StudyMode, PracticeType, SessionFilters } from '@hanzi/shared';
+import { trackSessionStarted, trackAnswerRated } from '../utils/analytics';
 
 export interface UseStudySessionOptions {
   deckId?: string;
@@ -47,11 +48,37 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
   const practiceTypeInStore = useStudyStore((s) => s.practiceType);
   const addToast = useToast();
 
+  // Таймстамп показа текущей карточки — нужен для расчёта
+  // `responseTimeMs` в событии `answer_rated`.
+  const cardShownAtRef = useRef<number>(Date.now());
+
   // Если practiceType не передан явно — берём из стора (позволяет менять
   // его до старта сессии через setPracticeType).
   const practiceType = practiceTypeProp ?? practiceTypeInStore;
 
   const generationRef = useRef(0);
+
+  // Обновляем таймстамп показа при смене карточки. Используется
+  // для расчёта `responseTimeMs` в `answer_rated`.
+  useEffect(() => {
+    cardShownAtRef.current = Date.now();
+  }, [currentIndex]);
+
+  // Обработчик успешного старта сессии — вызывается из трёх мест
+  // (useEffect, startNow, retrySession), чтобы не дублировать код.
+  const handleStartSuccess = (gen: number) =>
+    (session: { id: string; cards: unknown[] }) => {
+      if (gen !== generationRef.current) return;
+      startSession(session.cards as never, session.id, { mode, practiceType });
+      // Аналитика: пользователь начал сессию.
+      trackSessionStarted({
+        sessionId: session.id,
+        mode,
+        practiceType,
+        cardCount: session.cards.length,
+        deckId: deckId ?? null,
+      });
+    };
 
   // Запуск сессии при смене deckId/mode/practiceType/filters, но только если хук
   // включён (enabled = true). Это нужно, чтобы экран выбора типа практики
@@ -71,10 +98,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         filters,
       },
       {
-        onSuccess: (session) => {
-          if (gen !== generationRef.current) return;
-          startSession(session.cards, session.id, { mode, practiceType });
-        },
+        onSuccess: handleStartSuccess(gen),
         onError: () => {
           if (gen !== generationRef.current) return;
           addToast('Не удалось начать сессию', 'error');
@@ -98,10 +122,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         filters: overrideFilters ?? filters,
       },
       {
-        onSuccess: (session) => {
-          if (gen !== generationRef.current) return;
-          startSession(session.cards, session.id, { mode, practiceType });
-        },
+        onSuccess: handleStartSuccess(gen),
         onError: () => {
           if (gen !== generationRef.current) return;
           addToast('Не удалось начать сессию', 'error');
@@ -125,10 +146,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         filters,
       },
       {
-        onSuccess: (session) => {
-          if (gen !== generationRef.current) return;
-          startSession(session.cards, session.id, { mode, practiceType });
-        },
+        onSuccess: handleStartSuccess(gen),
         onError: () => {
           if (gen !== generationRef.current) return;
           addToast('Не удалось начать сессию', 'error');
@@ -138,7 +156,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
   };
 
   const rateCard = (rating: SrsRating) => {
-    const { cards, currentIndex, sessionId } = useStudyStore.getState();
+    const { cards, currentIndex, sessionId, practiceType: storePracticeType } = useStudyStore.getState();
 
     const card = cards[currentIndex];
     if (!card || !sessionId) return;
@@ -146,6 +164,18 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     // Захватываем индекс в замыкание этого конкретного вызова,
     // чтобы onError откатывал именно ту карточку, на которой был ответ
     const answeredIndex = currentIndex;
+    const shownAt = cardShownAtRef.current;
+
+    // Аналитика: пользователь оценил карточку. Шлём ДО обновления
+    // стора, чтобы событие содержало валидные card/wordId.
+    trackAnswerRated({
+      sessionId,
+      wordId: card.word.id,
+      rating,
+      isCorrect: rating >= 3,
+      responseTimeMs: Date.now() - shownAt,
+      practiceType: storePracticeType,
+    });
 
     const studyStore = useStudyStore.getState();
     studyStore.rateCard(rating);

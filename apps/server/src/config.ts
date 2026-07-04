@@ -38,6 +38,14 @@ const envSchema = z.object({
   APPLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   YANDEX_OAUTH_CLIENT_ID: z.string().optional(),
   YANDEX_OAUTH_CLIENT_SECRET: z.string().optional(),
+
+  // --- Analytics (PLAN_Features_v0.2 §14: PostHog) ---
+  // API-ключ проекта PostHog (Project API Key, НЕ personal API key).
+  // Если не задан — /ingest работает как no-op (200/204) и события
+  // отбрасываются, чтобы dev-окружение работало без внешних сервисов.
+  POSTHOG_API_KEY: z.string().optional(),
+  // Host PostHog. По умолчанию — облако PostHog (eu/host depending on region).
+  POSTHOG_HOST: z.string().default('https://eu.i.posthog.com'),
 });
 
 export type Config = z.infer<typeof envSchema>;

@@ -645,6 +645,70 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 
 ---
 
+## Аналитика (PLAN_Features_v0.2 §14, PostHog)
+
+Эндпоинт: `POST /api/ingest`.
+
+Web/app **никогда** не ходит в PostHog напрямую — иначе утекает
+Project API key и cookie. Вместо этого клиент шлёт события в
+наш backend, а сервер уже сам проксирует их в PostHog `/batch/`
+со своим `POSTHOG_API_KEY` (env).
+
+События:
+- `session_started` — старт учебной сессии.
+- `answer_rated` — пользователь оценил карточку.
+- `audio_generated` — пользователь прослушал аудио слова (клиент
+  шлёт `source: mp3 | fallback`); или сервер сгенерировал mp3
+  через Google TTS (источник `source: cache | generated`).
+
+### POST /api/ingest
+
+| | |
+|---|---|
+| **Auth** | Опционально (Bearer JWT) — если задан, сервер проставит `userId` как `distinct_id` |
+| **Request** | `AnalyticsIngestSchema` (`{ events: AnalyticsEventInput[] }`) |
+| **Response 200** | `{ success: true, data: { forwarded, skipped } }` |
+| **Response 204** | `No Content` — PostHog не сконфигурирован на сервере (`POSTHOG_API_KEY` пуст), события тихо отбрасываются |
+
+```json
+// Request
+{
+  "events": [
+    {
+      "name": "session_started",
+      "distinctId": "anon-uuid-1234",
+      "timestamp": "2026-07-04T10:00:00.000Z",
+      "properties": {
+        "session_id": "uuid",
+        "mode": "mixed",
+        "practice_type": "flip-card",
+        "card_count": 20
+      }
+    },
+    {
+      "name": "answer_rated",
+      "distinctId": "anon-uuid-1234",
+      "properties": {
+        "session_id": "uuid",
+        "word_id": "uuid",
+        "rating": 3,
+        "is_correct": true,
+        "response_time_ms": 1234,
+        "practice_type": "flip-card"
+      }
+    }
+  ]
+}
+```
+
+Если `POSTHOG_API_KEY` не задан, эндпоинт возвращает `204` и не
+выполняет сетевой запрос. Это позволяет dev-окружению работать
+без внешних сервисов. Web-клиент также уважает `navigator.doNotTrack`
+и флаг `hanzi:analytics-disabled` в localStorage — в этих случаях
+запросы не отправляются вовсе.
+
+---
+
 ## Стандартные форматы ответов
 
 ### Успех (единичный объект)
@@ -708,5 +772,6 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 | 29 | DELETE | /api/tags/:id | JWT | Tags |
 | 30 | GET | /api/tags/words/:wordId/tags | JWT | Tags |
 | 31 | PUT | /api/tags/words/:wordId/tags | JWT | Tags |
+| 32 | POST | /api/ingest | Optional | Analytics |
 
-Всего: **31 эндпоинт** в 8 модулях.
+Всего: **32 эндпоинта** в 9 модулях.

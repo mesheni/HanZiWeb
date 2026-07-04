@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiGet } from '../api/client';
+import { trackAudioGenerated } from '../utils/analytics';
 
 interface WordAudioInfo {
   audioUrl: string | null;
@@ -81,7 +82,13 @@ export function useAudio(wordId: string | null | undefined) {
       }
       audioRef.current
         .play()
-        .then(() => setIsPlaying(true))
+        .then(() => {
+          setIsPlaying(true);
+          // Аналитика: проиграли сгенерированный mp3.
+          if (wordId) {
+            trackAudioGenerated({ wordId, source: 'mp3' });
+          }
+        })
         .catch(() => {
           setIsPlaying(false);
         });
@@ -99,6 +106,10 @@ export function useAudio(wordId: string | null | undefined) {
         utter.onend = () => setIsPlaying(false);
         utter.onerror = () => setIsPlaying(false);
         window.speechSynthesis.speak(utter);
+        // Аналитика: использовали браузерный TTS.
+        if (wordId) {
+          trackAudioGenerated({ wordId, source: 'fallback' });
+        }
       } catch {
         setIsPlaying(false);
       }

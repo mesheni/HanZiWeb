@@ -690,9 +690,77 @@ run build` собирает прод-бандл.
 - `packages/shared/api-spec.md` — секция «Социальный вход»,
   6 новых эндпоинтов в сводной таблице (итого 31).
 
-### 14. Аналитика (PostHog)
+### 14. Аналитика (PostHog) ✅ DONE
 События `session_started`, `answer_rated`, `audio_generated`.
 Прокси через Fastify `/ingest`, чтобы не утекали куки.
+
+**Реализация**:
+
+- `packages/shared/src/schemas/analytics.ts` —
+  `AnalyticsEventNameSchema` (enum из 3 имён),
+  `AnalyticsEventInputSchema` (name, distinctId, timestamp, properties),
+  `AnalyticsIngestSchema` (`{ events: [...] }`).
+- `apps/server/src/lib/config.ts` — новые env
+  `POSTHOG_API_KEY` (опциональный, не задан → no-op) и
+  `POSTHOG_HOST` (default `https://eu.i.posthog.com`).
+- `apps/server/src/modules/analytics/analytics.service.ts` —
+  `forward(input, { userId, lib, anonymousId })` шлёт батч в
+  PostHog `/batch/` с серверным API key (заголовки клиента
+  НЕ пробрасываются — это и есть основная причина прокси).
+  `isAnalyticsConfigured()` для UI/health-check.
+- `apps/server/src/modules/analytics/analytics.routes.ts` —
+  `POST /api/ingest` (authenticateOptional, всегда 2xx; 204 при
+  no-op). Принимает анонимный батч, проставляет `userId` из JWT.
+- `apps/server/src/modules/analytics/analytics.service.test.ts` —
+  10 vitest-тестов: no-op без ключа, батч с правильными
+  заголовками, приоритет `userId` > client distinctId, fallback
+  на anonymous, отсутствие утечки клиентских заголовков,
+  обработка 4xx/5xx/network-ошибок, нормализация `POSTHOG_HOST`.
+- `apps/server/src/index.ts` — регистрация `analyticsRoutes` в
+  `/api` scope (rate-limited, как остальные модули).
+- `apps/server/src/modules/audio/audio.routes.ts` —
+  `POST /audio/generate` теперь шлёт `audio_generated`
+  с `source: cache | generated` (server-authoritative).
+- `apps/server/vitest.config.ts` + `vitest.setup.ts` — общий
+  setup с тестовыми DATABASE_URL/REDIS_URL/JWT-секретами.
+- `apps/web/src/utils/analytics.ts` — клиент-синглтон:
+  буферизация до 50 событий, флаш каждые 5с, на `pagehide`/
+  `beforeunload`/`visibilitychange:hidden` → `navigator.sendBeacon`
+  с `keepalive: true` (события не теряются при закрытии вкладки).
+  Анонимный `distinctId` в localStorage (`hanzi:analytics-anon-id`).
+  Уважает `navigator.doNotTrack` и флаг
+  `hanzi:analytics-disabled` (для UI-настройки).
+  В DEV по умолчанию выключено; для включения в dev —
+  `VITE_ANALYTICS_ENABLED=1`. Sanitize properties (depth 3,
+  первые 50 ключей, массивы до 20 элементов) — чтобы нечаянно
+  не отправить цикл или гигантский объект.
+  Фасады: `trackSessionStarted`, `trackAnswerRated`,
+  `trackAudioGenerated`.
+- `apps/web/src/utils/analytics.test.ts` — 10 vitest-тестов
+  (без jsdom — стаб window/document/navigator через
+  `Object.defineProperty` + `vi.stubEnv`):
+  буфер на 50 → флаш, батч, стабильный distinctId,
+  правильный URL/headers/credentials, возврат в буфер
+  при сбое, opt-out, DNT, setEnabled, depth-sanitize, SSR.
+- `apps/web/src/hooks/useStudySession.ts` — вызовы
+  `trackSessionStarted` (в `handleStartSuccess` для всех 3
+  путей старта) и `trackAnswerRated` (с `responseTimeMs`
+  через `cardShownAtRef` + `currentIndex` effect). `rateCard`
+  шлёт событие ДО обновления стора, чтобы захватить валидный
+  card/wordId.
+- `apps/web/src/hooks/useAudio.ts` — вызовы
+  `trackAudioGenerated({ source: 'mp3' | 'fallback' })`
+  на успешный play (mp3) и на старт speechSynthesis (fallback).
+- `apps/web/src/main.tsx` — `initAnalytics()` после
+  `bootstrapTheme()`, до маунта React.
+- `apps/web/src/vite-env.d.ts` — `/// <reference types="vite/client" />`
+  для типизации `import.meta.env`.
+- `packages/shared/api-spec.md` — новая секция
+  «Аналитика (PLAN_Features_v0.2 §14, PostHog)» с описанием
+  POST `/api/ingest`, формата payload и поведения no-op.
+  В сводке эндпоинтов: 32 (было 31), 9 модулей (было 8).
+- `.env.example` — секция «Analytics» с `POSTHOG_API_KEY`/
+  `POSTHOG_HOST`.
 
 ### 15. A/B-тесты (LaunchDarkly / Stytch)
 Гейтинг новых режимов тренировки.
@@ -1172,4 +1240,103 @@ feat(auth): социальный вход — Google, Apple, Яндекс (OAuth
 - pnpm --filter @hanzi/web run build — прод-бандл собирается.
 - pnpm --filter @hanzi/server exec prisma generate — Prisma Client
   обновлён (новая модель UserAccount).
+```
+
+---
+
+## Коммит для пункта 14 (Аналитика PostHog)
+
+```
+feat(analytics): PostHog proxy + session_started / answer_rated / audio_generated
+
+Закрывает PLAN_Features_v0.2 §14 (Аналитика / PostHog).
+
+Клиент НИКОГДА не ходит в PostHog напрямую — иначе в браузере
+утекают API key и cookie. Все события идут через наш backend
+`POST /api/ingest`, а сервер уже сам проксирует батч в
+`{POSTHOG_HOST}/batch/` со своим `POSTHOG_API_KEY` и подмешивает
+`userId` из JWT (если есть).
+
+Что добавлено:
+
+Backend (apps/server):
+- packages/shared: схемы AnalyticsEventNameSchema (3 значения:
+  session_started | answer_rated | audio_generated),
+  AnalyticsEventInputSchema, AnalyticsIngestSchema (events[1..50]).
+- apps/server/src/lib/config.ts: env POSTHOG_API_KEY (опциональный,
+  не задан → no-op, dev работает без внешних сервисов) и
+  POSTHOG_HOST (default https://eu.i.posthog.com).
+- apps/server/src/modules/analytics/analytics.service.ts:
+  forward(input, { userId, lib, anonymousId }) — POST в
+  /batch/, заголовки клиента НЕ пробрасываются (только
+  Authorization: Bearer <api_key> и Content-Type), приоритет
+  distinct_id: server userId → client distinctId → anonymousId.
+  isAnalyticsConfigured() для health-check.
+- apps/server/src/modules/analytics/analytics.routes.ts:
+  POST /api/ingest (authenticateOptional). Всегда 2xx; 204 при
+  no-op, 200 c { forwarded, skipped } при успехе. Сбой upstream
+  логируется, но клиенту не возвращается (события можно ретраить).
+- apps/server/src/modules/analytics/analytics.service.test.ts —
+  10 vitest-тестов (без сети): no-op без API key, корректный
+  URL/headers, приоритет userId, fallback на anonymousId,
+  отсутствие утечки клиентских заголовков, обработка 4xx и
+  network-ошибок, нормализация POSTHOG_HOST.
+- apps/server/src/modules/audio/audio.routes.ts: после успешной
+  генерации mp3 отправляется audio_generated с source: cache |
+  generated (server-authoritative — клиент этой информации не имеет).
+- apps/server/src/index.ts: регистрация analyticsRoutes в /api.
+- apps/server/vitest.config.ts + vitest.setup.ts: общий setup
+  с тестовыми DATABASE_URL/REDIS_URL/JWT-секретами, чтобы
+  loadConfig() не падал в vitest.
+- .env.example: секция "Analytics" с POSTHOG_API_KEY/POSTHOG_HOST.
+
+Frontend (apps/web):
+- apps/web/src/utils/analytics.ts: клиент-синглтон с буфером
+  до 50 событий, авто-флаш каждые 5с, на pagehide/beforeunload/
+  visibilitychange:hidden → navigator.sendBeacon с keepalive:true
+  (события не теряются при закрытии вкладки). Анонимный distinctId
+  в localStorage (hanzi:analytics-anon-id). Уважает
+  navigator.doNotTrack и флаг hanzi:analytics-disabled (для
+  будущей настройки в SettingsScreen). В DEV выключено по
+  умолчанию, для принудительного включения —
+  VITE_ANALYTICS_ENABLED=1. Sanitize properties: depth limit 3,
+  первые 50 ключей, массивы до 20 элементов. Фасады:
+  trackSessionStarted, trackAnswerRated, trackAudioGenerated.
+  initAnalytics() — идемпотентная инициализация слушателей.
+- apps/web/src/utils/analytics.test.ts — 10 vitest-тестов
+  (без jsdom — стаб window/document/navigator через
+  Object.defineProperty + vi.stubEnv): буфер на 50 → флаш,
+  один fetch на flush, стабильный distinctId из localStorage,
+  правильный URL/headers/credentials, возврат в буфер при
+  сбое сети, opt-out через localStorage, DNT, setEnabled,
+  depth-sanitize, SSR (no-op без window).
+- apps/web/src/hooks/useStudySession.ts: trackSessionStarted
+  через общий handleStartSuccess (вызывается из 3 путей:
+  useEffect, startNow, retrySession); trackAnswerRated с
+  responseTimeMs через cardShownAtRef + useEffect на
+  currentIndex; событие шлётся ДО обновления стора, чтобы
+  захватить валидный card/wordId.
+- apps/web/src/hooks/useAudio.ts: trackAudioGenerated с
+  source='mp3' на успешный play() и source='fallback' на
+  старт window.speechSynthesis.
+- apps/web/src/main.tsx: initAnalytics() после bootstrapTheme(),
+  до маунта React-дерева.
+- apps/web/src/vite-env.d.ts: /// <reference types="vite/client" />
+  для типизации import.meta.env.
+
+Документация:
+- packages/shared/api-spec.md: новая секция "Аналитика
+  (PLAN_Features_v0.2 §14, PostHog)" с описанием POST /api/ingest,
+  формата payload, поведения no-op и связки с DNT/opt-out.
+  В сводке: 32 эндпоинта (было 31), 9 модулей (было 8).
+- PLAN_Features_v0.2 §14 помечен ✅ DONE с описанием реализации.
+
+Тесты:
+- 10 новых vitest-тестов в analytics.service.test.ts.
+- 10 новых vitest-тестов в analytics.test.ts (web).
+- pnpm --filter @hanzi/server exec vitest run — 185 passed
+  (было 175, +10).
+- pnpm --filter @hanzi/web run test — 52 passed (было 42, +10).
+- pnpm typecheck — чисто во всех 3 пакетах.
+- pnpm --filter @hanzi/web run build — прод-бандл собирается.
 ```

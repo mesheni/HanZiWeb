@@ -19,6 +19,7 @@ import { etymologyRoutes } from './modules/etymology/etymology.routes.js';
 import { achievementsRoutes } from './modules/achievements/achievements.routes.js';
 import { usersRoutes } from './modules/users/users.routes.js';
 import { tagsRoutes } from './modules/tags/tags.routes.js';
+import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
 
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
@@ -119,6 +120,9 @@ async function main() {
     await child.register(achievementsRoutes, { prefix: '/achievements' });
     await child.register(usersRoutes, { prefix: '/users' });
     await child.register(tagsRoutes, { prefix: '/tags' });
+    // Analytics proxy: /api/ingest (см. PLAN_Features_v0.2 §14).
+    // Без префикса, чтобы путь был ровно /ingest.
+    await child.register(analyticsRoutes);
 
   }, { prefix: '/api' });
 
