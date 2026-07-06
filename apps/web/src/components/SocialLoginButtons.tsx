@@ -16,24 +16,30 @@ interface SocialLoginButtonsProps {
   redirectTo?: string;
 }
 
-const PROVIDER_ORDER: OAuthProvider[] = ['google', 'apple', 'yandex'];
+const PROVIDER_ORDER: OAuthProvider[] = ['yandex'];
 
 /**
- * Кнопки «Войти через Google / Apple / Яндекс» (PLAN_Features_v0.2 §13).
+ * Кнопки «Войти через Яндекс» (PLAN_Features_v0.2 §13,
+ * PLAN_Features_v0.3 §3 — Google/Apple скрыты из-за ограничения 152-ФЗ
+ * по локализации ПД на территории РФ).
  *
  * Поведение:
  * - При клике делает `window.location.href = /api/auth/oauth/:provider`,
  *   что приводит к редиректу на провайдера. После успешного flow
  *   провайдер редиректит на `/auth/callback?code=…&provider=…`,
  *   а `OAuthCallbackScreen` обменивает код на access+refresh.
- * - Кнопки для **сконфигурированных** провайдеров — активные.
- * - Кнопки для **не сконфигурированных** провайдеров (нет
- *   client_id/secret на сервере) показываются в disabled-состоянии
+ * - Кнопка для **сконфигурированного** провайдера — активная.
+ * - Кнопка для **не сконфигурированного** провайдера (нет
+ *   client_id/secret на сервере) показывается в disabled-состоянии
  *   с подсказкой «Не настроен на сервере». Так пользователь/дев
  *   сразу видит, что фича существует, и может включить её через
  *   env-переменные.
- * - Если запрос к `/auth/oauth/providers` упал, показываем все три
- *   кнопки как disabled (сервер недоступен / нет auth-routes).
+ * - Если запрос к `/auth/oauth/providers` упал, показываем кнопку
+ *   как disabled (сервер недоступен / нет auth-routes).
+ * - Кнопки Google/Apple **намеренно скрыты** в рамках PLAN_Features_v0.3
+ *   §3 (сервис работает только с российскими провайдерами, чтобы
+ *   соответствовать 152-ФЗ). Если потребуется снова показать —
+ *   верните `['google', 'apple', 'yandex']` в `PROVIDER_ORDER`.
  */
 export default function SocialLoginButtons({}: SocialLoginButtonsProps) {
   const [providers, setProviders] = useState<ProviderStatus[] | null>(null);
@@ -60,7 +66,7 @@ export default function SocialLoginButtons({}: SocialLoginButtonsProps) {
   }, []);
 
   // Строим карту provider → enabled; если ответ пустой, помечаем
-  // все три как disabled (или "сервер недоступен" — тогда тоже disabled).
+  // все кнопки как disabled (или "сервер недоступен" — тогда тоже disabled).
   const enabledMap = new Map<OAuthProvider, boolean>();
   for (const p of PROVIDER_ORDER) enabledMap.set(p, false);
   if (providers) {

@@ -59,6 +59,13 @@ const envSchema = z.object({
   SMTP_SECURE: z.coerce.boolean().default(false),
   // Адрес отправителя (From:). Должен быть валидным для SMTP-сервера.
   SMTP_FROM: z.string().default('HanZi <no-reply@hanzi.app>'),
+
+  // --- Email domain restriction (PLAN_Features_v0.3 §3) ---
+  // Список разрешённых TLD email-адресов при регистрации, через запятую.
+  // Регистрация с email в ином домене вернёт 400 EMAIL_DOMAIN_NOT_ALLOWED.
+  // Дефолт — `ru` (требование 152-ФЗ о локализации ПД на территории РФ).
+  // Пример: ALLOWED_EMAIL_TLDS="ru,su" — добавить .su в исключения.
+  ALLOWED_EMAIL_TLDS: z.string().default('ru'),
 });
 
 export type Config = z.infer<typeof envSchema>;
@@ -75,4 +82,15 @@ export function loadConfig(): Config {
 /** Публичный origin web-клиента для редиректов после OAuth. */
 export function getWebPublicUrl(cfg: Config = loadConfig()): string {
   return cfg.WEB_PUBLIC_URL ?? cfg.CORS_ORIGIN;
+}
+
+/**
+ * Список разрешённых TLD email-адресов при регистрации
+ * (PLAN_Features_v0.3 §3). Парсит comma-separated `ALLOWED_EMAIL_TLDS`,
+ * тримит пробелы, приводит к lowercase, отбрасывает пустые.
+ */
+export function getAllowedEmailTlds(cfg: Config = loadConfig()): string[] {
+  return cfg.ALLOWED_EMAIL_TLDS.split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => t.length > 0);
 }

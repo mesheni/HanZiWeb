@@ -323,7 +323,7 @@ Refs: PLAN_Features_v0.3 §2
 
 ---
 
-### 3. Ограничение регистрации почтами только домена .ru
+### 3. Ограничение регистрации почтами только домена .ru ✅ (2026-07-07)
 
 **Проблема**: Сервис ориентирован на российскую аудиторию и должен соответствовать
 действующему законодательству (152-ФЗ «О персональных данных», требование хранения
@@ -357,6 +357,114 @@ Refs: PLAN_Features_v0.3 §2
 **Ожидаемый результат**: Регистрация с email не в домене `.ru` отклоняется
 на сервере и на клиенте. Пользователь видит понятное сообщение со ссылкой
 на законодательство.
+
+**Реализовано**:
+- `packages/shared/src/schemas/auth.ts` — добавлены `DEFAULT_ALLOWED_EMAIL_TLDS = ['ru']`,
+  константа `EMAIL_DOMAIN_NOT_ALLOWED_CODE` и helper `isAllowedEmailTld(email, allowedTlds?)`
+  (регистронезависимо, отбрасывает пустые домены).
+  `RegisterSchema.email` теперь после `.email()` дополнительно вызывает
+  `.refine(isAllowedEmailTld)` с сообщением
+  `"Email domain not allowed. Only .ru domains are accepted."`.
+  Тот же helper экспортируется для повторного использования в сервисе.
+- `apps/server/src/config.ts` — env `ALLOWED_EMAIL_TLDS` (comma-separated,
+  default `ru`) и helper `getAllowedEmailTlds(cfg?)`, разбивающий строку,
+  триммящий пробелы и приводящий к lowercase. Дефолт совпадает с shared.
+- `apps/server/src/modules/auth/auth.service.ts` — в `registerUser` ПЕРЕД
+  запросом к БД добавлена проверка `isAllowedEmailTld(input.email, getAllowedEmailTlds())`.
+  При недопустимом домене бросается ошибка с `statusCode: 400`,
+  `code: EMAIL_DOMAIN_NOT_ALLOWED_CODE` и локализованным сообщением со
+  ссылкой на 152-ФЗ (https://base.garant.ru/12148542/). Проверка
+  делается до `prisma.user.findUnique`, чтобы не палить существование
+  email'а через разницу во времени ответа.
+- `apps/server/src/modules/auth/auth.schemas.test.ts` — новый файл с 11
+  тестами: дефолтный список TLD, `isAllowedEmailTld` (принимает `.ru`,
+  отвергает иностранные домены, case-insensitive, malformed input,
+  кастомный список), `RegisterSchema` (.ru принимается, иностранные
+  отвергаются с правильным сообщением, password-правила сохранены,
+  `.email()` тоже работает), `EMAIL_DOMAIN_NOT_ALLOWED_CODE`.
+- `apps/web/src/screens/RegisterScreen.tsx` — клиентская проверка домена
+  через `isAllowedEmailTld` в `useMemo`, при вводе email с чужим TLD
+  под полем показывается inline-предупреждение с текстом про 152-ФЗ и
+  ссылкой на garant.ru, кнопка «Зарегистрироваться» блокируется
+  (`disabled={!emailDomainValid}`), плейсхолдер email обновлён на
+  `user@example.ru`, `aria-invalid` ставится на input при ошибке.
+- `apps/web/src/components/SocialLoginButtons.tsx` — `PROVIDER_ORDER`
+  сокращён до `['yandex']`; кнопки Google/Apple больше не рендерятся.
+  В JSDoc отмечено, что это сделано намеренно в рамках §3 и как
+  вернуть обратно. Остальные ветки `ProviderIcon` (google/apple)
+  оставлены как defensive code.
+- `apps/web/src/components/LinkedAccountsCard.tsx` — описание карточки
+  обновлено: «Войти также можно через Яндекс» (раньше «Google, Apple
+  или Яндекс»), чтобы не вводить пользователя в заблуждение.
+- `packages/shared/api-spec.md` — `POST /api/auth/register` дополнен
+  строкой `400 EMAIL_DOMAIN_NOT_ALLOWED` и примечанием про `ALLOWED_EMAIL_TLDS`.
+  В сводке отмечено, что в web-клиенте активна только кнопка Яндекс.
+- `apps/server/.env.example` — задокументирована переменная
+  `ALLOWED_EMAIL_TLDS="ru"` с комментарием про 152-ФЗ и примером
+  расширения `ALLOWED_EMAIL_TLDS="ru,su"`.
+- `apps/server/vitest.setup.ts` — добавлен default `ALLOWED_EMAIL_TLDS=ru`,
+  чтобы `loadConfig()` не падал в тестах, которые загружают auth.service.
+
+**Проверка**:
+- `pnpm --filter @hanzi/shared typecheck` — OK
+- `pnpm --filter @hanzi/server typecheck` — OK
+- `pnpm --filter @hanzi/web typecheck` — OK
+- `pnpm lint` (turbo, 5 пакетов) — 7/7 задач OK (lint + build для shared/mobile-sdk)
+- `pnpm --filter @hanzi/server exec vitest run` — 227/227 тестов
+  пройдены (включая 11 новых в `auth.schemas.test.ts`).
+- Поведенческая проверка логики (Node REPL через `vitest`): `user@mail.ru`
+  проходит, `user@gmail.com` отвергается, регистр не важен,
+  кастомный список (`['ru','su']`) корректно пропускает `.su`.
+
+**Запись для коммита**:
+
+```
+feat(auth): restrict registration to .ru emails (PLAN_Features_v0.3 §3)
+
+Сервис ориентирован на российскую аудиторию и хранит персональные
+данные на территории РФ (152-ФЗ «О персональных данных»), поэтому
+регистрация разрешена только с почтой в домене `.ru`. Кнопки входа
+через Google и Apple скрыты в web-клиенте (оставлен только Яндекс).
+
+shared:
+- DEFAULT_ALLOWED_EMAIL_TLDS = ['ru'] и helper isAllowedEmailTld()
+  экспортированы из @hanzi/shared/schemas/auth.ts. Helper
+  регистронезависимый, корректно обрабатывает malformed input.
+- RegisterSchema.email дополнен .refine(isAllowedEmailTld) с
+  сообщением "Email domain not allowed. Only .ru domains are
+  accepted.".
+- Новая константа EMAIL_DOMAIN_NOT_ALLOWED_CODE = 'EMAIL_DOMAIN_NOT_ALLOWED'.
+
+server:
+- config.ts: env ALLOWED_EMAIL_TLDS (comma-separated, default "ru")
+  + helper getAllowedEmailTlds(). .env.example задокументирован.
+- auth.service.registerUser: до запроса к БД валидирует домен через
+  isAllowedEmailTld(email, getAllowedEmailTlds()). При недопустимом
+  TLD бросает 400 EMAIL_DOMAIN_NOT_ALLOWED с локализованным
+  сообщением и ссылкой на 152-ФЗ (https://base.garant.ru/12148542/).
+  Проверка до findUnique, чтобы не было утечки через тайминг.
+- vitest.setup.ts: default ALLOWED_EMAIL_TLDS=ru.
+- Новый auth.schemas.test.ts: 11 тестов (default TLD, isAllowedEmailTld
+  edge cases, RegisterSchema .ru/non-.ru/malformed/password rules,
+  EMAIL_DOMAIN_NOT_ALLOWED_CODE).
+
+web:
+- RegisterScreen: useMemo на isAllowedEmailTld; inline-предупреждение
+  под полем email со ссылкой на garant.ru; кнопка «Зарегистрироваться»
+  disabled пока домен не .ru; aria-invalid на input; плейсхолдер
+  обновлён на user@example.ru.
+- SocialLoginButtons: PROVIDER_ORDER сокращён до ['yandex'] — кнопки
+  Google/Apple скрыты. JSDoc объясняет, как вернуть.
+- LinkedAccountsCard: описание обновлено, чтобы не упоминать
+  скрытые Google/Apple.
+
+docs:
+- api-spec.md: POST /api/auth/register дополнен 400 EMAIL_DOMAIN_NOT_ALLOWED
+  и примечанием про ALLOWED_EMAIL_TLDS. В разделе «Аутентификация»
+  отмечено, что в web-клиенте активна только кнопка Яндекс.
+
+Refs: PLAN_Features_v0.3 §3
+```
 
 ---
 

@@ -10,3 +10,6 @@ process.env.CORS_ORIGIN ??= 'http://localhost:5173';
 // SMTP не обязателен в тестах; если тест вызовет email-функцию,
 // он сам должен замокать transport.
 process.env.SMTP_FROM ??= 'HanZi Test <test@hanzi.app>';
+// Разрешённые TLD email при регистрации (PLAN_Features_v0.3 §3).
+// Дефолт совпадает с продакшном (только .ru).
+process.env.ALLOWED_EMAIL_TLDS ??= 'ru';

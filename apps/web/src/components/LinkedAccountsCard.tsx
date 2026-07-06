@@ -60,7 +60,7 @@ export default function LinkedAccountsCard() {
         <div className="flex-1">
           <div className="font-medium text-text-primary">Привязанные аккаунты</div>
           <div className="text-sm text-text-muted mt-1">
-            Войти также можно через Google, Apple или Яндекс.
+            Войти также можно через Яндекс.
           </div>
         </div>
       </div>
@@ -97,8 +97,8 @@ export default function LinkedAccountsCard() {
         </ul>
       ) : (
         <div className="text-sm text-text-muted">
-          Социальные аккаунты не привязаны. Войдите через Google / Apple / Яндекс на экране
-          «Вход» — это автоматически создаст привязку.
+          Социальные аккаунты не привязаны. Войдите через Яндекс на экране «Вход» — это
+          автоматически создаст привязку.
         </div>
       )}
     </Card>

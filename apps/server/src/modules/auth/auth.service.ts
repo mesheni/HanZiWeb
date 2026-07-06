@@ -1,15 +1,17 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { loadConfig } from '../../config.js';
+import { loadConfig, getAllowedEmailTlds } from '../../config.js';
 import { prisma } from '../../lib/prisma.js';
 import { getRedis } from '../../lib/redis.js';
-import type {
-  Register,
-  Login,
-  ChangePassword,
-  ForgotPassword,
-  ResetPassword,
+import {
+  isAllowedEmailTld,
+  EMAIL_DOMAIN_NOT_ALLOWED_CODE,
+  type Register,
+  type Login,
+  type ChangePassword,
+  type ForgotPassword,
+  type ResetPassword,
 } from '@hanzi/shared';
 
 const SALT_ROUNDS = 12;
@@ -49,6 +51,22 @@ export function generateRefreshToken(userId: string, tokenVersion: number): stri
 }
 
 export async function registerUser(input: Register) {
+  // Ограничение по домену email (PLAN_Features_v0.3 §3): принимаем только
+  // TLD из белого списка (по умолчанию `.ru`, см. ALLOWED_EMAIL_TLDS).
+  // Проверяем до запроса к БД, чтобы не делать лишнюю работу и не палить
+  // существование email'а через разницу во времени ответа.
+  if (!isAllowedEmailTld(input.email, getAllowedEmailTlds())) {
+    throw Object.assign(
+      new Error(
+        'Регистрация доступна только с почтой в домене .ru. ' +
+          'Это связано с требованием Федерального закона №152-ФЗ «О персональных данных» ' +
+          'о локализации персональных данных на территории Российской Федерации. ' +
+          'Подробнее: https://base.garant.ru/12148542/',
+      ),
+      { statusCode: 400, code: EMAIL_DOMAIN_NOT_ALLOWED_CODE },
+    );
+  }
+
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     throw Object.assign(new Error('Email already registered'), { statusCode: 409, code: 'EMAIL_EXISTS' });

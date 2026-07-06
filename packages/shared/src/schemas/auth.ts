@@ -1,8 +1,44 @@
 import { z } from 'zod';
 
+/**
+ * Допустимые TLD для email при регистрации (PLAN_Features_v0.3 §3).
+ *
+ * Сервис ориентирован на российскую аудиторию и хранит персональные
+ * данные на территории РФ (152-ФЗ), поэтому регистрация разрешена
+ * только с почтой в домене `.ru`. Серверная конфигурация может
+ * дополнительно расширить список через `ALLOWED_EMAIL_TLDS` env.
+ */
+export const DEFAULT_ALLOWED_EMAIL_TLDS = ['ru'] as const;
+
+/** Код ошибки, возвращаемый сервером при попытке регистрации с запрещённым доменом. */
+export const EMAIL_DOMAIN_NOT_ALLOWED_CODE = 'EMAIL_DOMAIN_NOT_ALLOWED';
+
+/**
+ * Проверяет, что TLD email'а входит в список разрешённых.
+ * Сравнение регистронезависимое, домен нормализуется.
+ */
+export function isAllowedEmailTld(
+  email: string,
+  allowedTlds: readonly string[] = DEFAULT_ALLOWED_EMAIL_TLDS,
+): boolean {
+  const atIndex = email.lastIndexOf('@');
+  if (atIndex === -1) return false;
+  const domain = email.slice(atIndex + 1).toLowerCase().trim();
+  if (!domain || !domain.includes('.')) return false;
+  const tld = domain.split('.').pop() ?? '';
+  if (!tld) return false;
+  const normalized = allowedTlds.map((t) => t.toLowerCase());
+  return normalized.includes(tld);
+}
+
 /** Регистрация */
 export const RegisterSchema = z.object({
-  email: z.string().email(),
+  email: z
+    .string()
+    .email()
+    .refine((email) => isAllowedEmailTld(email), {
+      message: 'Email domain not allowed. Only .ru domains are accepted.',
+    }),
   password: z.string().min(8).max(128),
 });
 

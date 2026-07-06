@@ -1,11 +1,37 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button, Input, Card } from '@/components/ui';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
 import { apiPost } from '@/api/client';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from '@/stores/toastStore';
-import type { AuthResponse } from '@hanzi/shared';
+import {
+  isAllowedEmailTld,
+  type AuthResponse,
+} from '@hanzi/shared';
+
+/**
+ * Текст подсказки про ограничение `.ru` (PLAN_Features_v0.3 §3).
+ * Показывается под полем email, как только пользователь ввёл валидный
+ * по формату email, чей TLD не входит в белый список.
+ */
+const EMAIL_DOMAIN_HINT = (
+  <>
+    Регистрация доступна только с почтой в домене{' '}
+    <span className="font-semibold">.ru</span>. Это связано с требованием
+    Федерального закона №152-ФЗ «О персональных данных» о локализации
+    персональных данных на территории РФ.{' '}
+    <a
+      href="https://base.garant.ru/12148542/"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-accent hover:underline"
+    >
+      Подробнее о законодательстве
+    </a>
+    .
+  </>
+);
 
 export default function RegisterScreen() {
   const navigate = useNavigate();
@@ -17,12 +43,28 @@ export default function RegisterScreen() {
   const [error, setError] = useState('');
   const submitLock = useRef(false);
 
+  // Клиентская проверка домена (PLAN_Features_v0.3 §3). Источник
+  // истины — сервер, но ранняя блокировка UX-а на submit экономит
+  // round-trip и сразу подсказывает, какой домен принимается.
+  const emailDomainValid = useMemo(() => {
+    if (!email || !email.includes('@')) return true;
+    return isAllowedEmailTld(email);
+  }, [email]);
+  const showDomainHint = email.includes('@') && !emailDomainValid;
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (loading || submitLock.current) return;
     submitLock.current = true;
     setError('');
 
+    if (!emailDomainValid) {
+      setError(
+        'Регистрация доступна только с почтой в домене .ru. См. подсказку под полем email.',
+      );
+      submitLock.current = false;
+      return;
+    }
     if (password !== confirmPassword) {
       setError('Пароли не совпадают');
       submitLock.current = false;
@@ -63,9 +105,19 @@ export default function RegisterScreen() {
             label="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="user@example.com"
+            placeholder="user@example.ru"
             required
+            aria-invalid={showDomainHint ? true : undefined}
           />
+          {showDomainHint && (
+            <div
+              role="alert"
+              className="text-xs text-tone-4 bg-tone-4-bg px-3 py-2 rounded-lg leading-relaxed"
+            >
+              {EMAIL_DOMAIN_HINT}
+            </div>
+          )}
+
           <Input
             variant="password"
             label="Пароль"
@@ -87,7 +139,12 @@ export default function RegisterScreen() {
             <div className="text-xs text-tone-4 bg-tone-4-bg px-3 py-2 rounded-lg">{error}</div>
           )}
 
-          <Button type="submit" loading={loading} className="w-full">
+          <Button
+            type="submit"
+            loading={loading}
+            disabled={!emailDomainValid}
+            className="w-full"
+          >
             Зарегистрироваться
           </Button>
         </form>
