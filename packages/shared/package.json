@@ -1,17 +1,52 @@
 {
   "name": "@hanzi/shared",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Shared TypeScript contracts (Zod schemas + types) for HanZiWeb — used by web, server, and mobile clients.",
+  "license": "UNLICENSED",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./schemas/*": "./src/schemas/*.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./schemas/*": {
+      "types": "./src/schemas/*.ts",
+      "import": "./src/schemas/*.ts",
+      "default": "./src/schemas/*.ts"
+    },
+    "./package.json": "./package.json"
   },
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs",
+        "default": "./dist/index.js"
+      },
+      "./schemas/*": {
+        "types": "./dist/schemas/*.d.ts",
+        "import": "./dist/schemas/*.js",
+        "default": "./dist/schemas/*.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
     "clean": "rm -rf dist"
   },
   "dependencies": {

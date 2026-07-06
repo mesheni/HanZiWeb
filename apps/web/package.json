@@ -16,6 +16,7 @@
     "copy-hw-data": "node scripts/copy-hw-data.mjs"
   },
   "dependencies": {
+    "@hanzi/mobile-sdk": "workspace:*",
     "@hanzi/shared": "workspace:*",
     "@tanstack/react-query": "^5.60.0",
     "canvas-confetti": "^1.9.4",

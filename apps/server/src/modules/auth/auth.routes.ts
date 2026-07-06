@@ -40,7 +40,15 @@ export async function authRoutes(app: FastifyInstance) {
 
   /** POST /auth/refresh — обновление токенов */
   app.post('/refresh', async (request, reply) => {
-    const refreshToken = request.cookies.refreshToken;
+    // Accept the refresh token from either the HttpOnly cookie (web)
+    // or the request body / Authorization header (mobile clients
+    // running through `@hanzi/mobile-sdk` can't rely on cookies).
+    const body = request.body as { refreshToken?: string } | undefined;
+    const authHeader = request.headers.authorization;
+    const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+
+    const refreshToken =
+      request.cookies.refreshToken ?? body?.refreshToken ?? bearer;
     if (!refreshToken) {
       return reply.status(401).send({
         success: false,
@@ -48,10 +56,17 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
     const result = await authService.refreshTokens(refreshToken);
+    // Always rotate the HttpOnly cookie for web clients; mobile
+    // clients read the new refresh token from the response body.
     reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
     return reply.send({
       success: true,
-      data: { user: result.user, accessToken: result.accessToken, expiresIn: 900 },
+      data: {
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        expiresIn: 900,
+      },
     });
   });
 

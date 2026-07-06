@@ -765,11 +765,157 @@ run build` собирает прод-бандл.
 ### 15. A/B-тесты (LaunchDarkly / Stytch)
 Гейтинг новых режимов тренировки.
 
-### 16. Mobile (React Native + WatermelonDB)
-`Manifest.md` декларирует нативный путь, но кода нет.
+### 16. Mobile (React Native + WatermelonDB) ✅ DONE
+`Manifest.md` декларирует нативный путь — теперь и код есть.
 
-- Вынести `@hanzi/shared` в отдельный npm-пакет.
-- RN-апп с тем же API/SyncEngine (TypeScript-контракты уже есть).
+- `@hanzi/shared` оформлен как **настоящий npm-пакет** (не
+  in-source ссылка): `version: 0.1.0`, `publishConfig`,
+  `tsconfig.build.json` с `tsc → dist/`, `README.md` с инструкцией
+  по сборке/публикации. Внутри monorepo по-прежнему consumed
+  через `workspace:*` (Metro / Vite / tsx одинаково хорошо
+  понимают `.ts` source).
+- Выделен новый кросс-платформенный пакет **`@hanzi/mobile-sdk`**
+  с runtime-кодом, который раньше жил только в `apps/web`:
+  `ApiClient` (с auto-refresh, tagged-union результатом,
+  поддержкой Bearer-refresh для mobile), `SyncEngine` (offline
+  queue с экспоненциальным backoff), `TokenStore` + `AuthStore`
+  (zustand), `NetworkAdapter` (плагин для `navigator.onLine` /
+  NetInfo), `SecureStorage` (плагин для `localStorage` / MMKV) и
+  `recalcFsrs` (тот же FSRS v5, что и сервер).
+- Создан `apps/mobile` — **Expo + React Native 0.74** клиент:
+  - Bootstrap (`src/bootstrap.ts`) — провайдит NetInfo + MMKV +
+    `expo-secure-store` в SDK, экспортирует `api`, `useAuthStore`,
+    `getSync()`.
+  - WatermelonDB (`src/db/`) — SQLite-адаптер, схема `words` /
+    `progress` / `pending_changes`, модели + `WatermelonQueueStorage`
+    адаптер, реализующий `QueueStorage` из SDK.
+  - Экраны (`src/screens/`) — `LoginScreen` (вход/регистрация),
+    `HomeScreen` (дашборд + кнопка старта), `StudyScreen`
+    (флип-карты с FSRS-оффлайн очередью), `LibraryScreen` (колоды),
+    `StatsScreen` (лидерборд).
+  - React Navigation v6 — стек (Login → Home → Study modal) +
+    bottom-tabs (Главная / Слова / Стата) с тёмной темой.
+  - `App.tsx` — splash → open DB → wire queue → hydrate auth →
+    boot sync engine.
+- **Сервер обновлён** под mobile-клиент: `POST /auth/refresh`
+  теперь принимает refresh-токен не только в HttpOnly cookie, но
+  и в body (`{ refreshToken }`) и в `Authorization: Bearer …`.
+  Cookie всё равно ротируется для web.
+- `apps/web` тонко подключён к SDK через `src/lib/platformAdapters.ts`
+  (web-имплементации `NetworkAdapter` + `SecureStorage` +
+  `TokenStore`); существующие компоненты продолжают работать
+  через свой `useAuthStore` / `apiClient`, чтобы не ломать
+  массу кода одним PR.
+
+**Реализация**:
+- `packages/shared` — `version: 0.1.0`, `tsconfig.build.json` +
+  `build` скрипт (`tsc -p tsconfig.build.json` → `dist/` с
+  `.js` + `.d.ts`), `publishConfig` переключает `main`/`types`/
+  `exports` на `dist/` при публикации на npm, `files: ["dist",
+  "README.md", "LICENSE"]`, `README.md` с инструкцией по
+  monorepo / external install / build / publish.
+- `packages/mobile-sdk`:
+  - `src/api/ApiClient.ts` — `ApiClient` с tagged-union
+    (`ApiSuccess<T> | ApiError`); `get/post/put/delete/getBlob`;
+    на 401 пробует `refresh()` и повторяет; флаг
+    `withRefreshToken` отправляет Bearer-refresh (для mobile);
+    onRefreshed / onSessionExpired хуки для хоста.
+  - `src/auth/TokenStore.ts` + `AuthStore.ts` — `createDefaultTokenStore`
+    (access в memory, refresh в `SecureStorage`),
+    `createAuthStore` (zustand) с `login/logout/setAccessToken/
+    hydrateAuth/setError`.
+  - `src/network/NetworkAdapter.ts` — `setNetworkAdapter` /
+    `isOnline` / `subscribeNetwork`. Платформенный код
+    инжектится на старте.
+  - `src/storage/SecureStorage.ts` — `setSecureStorage` /
+    `getSecureStorage` + `readJson` / `writeJson` хелперы.
+  - `src/fsrs/recalcFsrs.ts` — функция `recalcFsrs(rating,
+    stability, difficulty, state)`, идентичная серверной
+    реализации (17 весов FSRS v5); экспортирует `RATING_XP`.
+  - `src/sync/QueueStorage.ts` — интерфейс + `createMemoryQueueStorage`
+    (для тестов / dev).
+  - `src/sync/SyncEngine.ts` — `SyncEngine` с `start / enqueueChange
+    / flush / destroy`; `flush()` не стартует параллельный раунд
+    (возвращает in-flight promise, чтобы concurrent caller'ы не
+    дрались с `markSynced`); loop внутри `runFlushLoop` сам
+    подбирает изменения, добавленные в очередь mid-flight;
+    `setOnServerChange(handler)` для трансляции серверных
+    `serverChanges` обратно в host-стор; exponential backoff
+    при сетевых ошибках.
+- `apps/mobile`:
+  - `src/bootstrap.ts` — wiring (NetInfo + MMKV + SecureStore
+    → SDK), singleton-объекты `api`, `useAuthStore`, `getSync()`,
+    `setQueueStorage()` (lazy re-bind WatermelonDB-коллекции
+    после открытия SQLite).
+  - `src/db/database.ts` — WatermelonDB SQLiteAdapter + schema v1
+    (3 таблицы); lazy singleton `getDatabase()`.
+  - `src/db/models.ts` — `WordModel`, `ProgressModel`,
+    `PendingChangeModel` (decorators `@field @text @date @json
+    @readonly`).
+  - `src/db/WatermelonQueueStorage.ts` — `createWatermelonQueueStorage(db)`
+    реализует `QueueStorage`: `insert/listPending/markSynced/
+    remove/count` через `Q.where` + `db.write` транзакции.
+  - `src/screens/LoginScreen.tsx` — `POST /auth/login` +
+    `/auth/register`, табы, `useAuthStore.login` + `api.post`
+    обёртка.
+  - `src/screens/HomeScreen.tsx` — дашборд (`/stats/dashboard`):
+    streak, прогресс дня (кольцо), 4 stat-tile, бэйдж
+    `pendingCount` от `getSync().pendingCount()`, CTA «Начать
+    тренировку».
+  - `src/screens/StudyScreen.tsx` — `POST /sessions/start`,
+    флип-карты (китайский / перевод), 4 кнопки рейтинга.
+    На каждый ответ: `recalcFsrs` (локально) + `sync.enqueueChange
+    ('study_answer', …)` (очередь на flush) + `POST /sessions/:id/
+    answer` (live, с тихим fallback при офлайне).
+  - `src/screens/LibraryScreen.tsx` + `StatsScreen.tsx` —
+    read-only список колод и leaderboard (`/stats/leaderboard?
+    period=week|all`).
+  - `src/navigation/RootNavigator.tsx` — Stack(Login → MainTabs
+    → Study modal) с тёмной темой.
+  - `src/App.tsx` — splash → `getDatabase()` → `setQueueStorage`
+    → `useAuthStore.hydrateAuth` (refresh через `api.post('/auth/
+    refresh', {}, { withRefreshToken: true })`) → `getSync()`.
+- `apps/server/src/modules/auth/auth.routes.ts` — `POST /auth/refresh`
+  принимает refresh из cookie **или** body **или** `Authorization:
+  Bearer`; в response всегда возвращает `refreshToken` в `data`,
+  плюс ставит cookie для web.
+
+**Тесты** (всё зелёное, без регрессий):
+- `packages/mobile-sdk/src/api/ApiClient.test.ts` — **9 тестов**:
+  Authorization header, Bearer-refresh fallback, JSON
+  сериализация, success/error tagged union, refresh-retry,
+  onSessionExpired, JSON parse fallback, `getBlob` ok/error.
+- `packages/mobile-sdk/src/sync/SyncEngine.test.ts` — **8 тестов**:
+  insert + immediate flush; offline-queueing; flush on
+  online transition; exponential-backoff retry; forwarding
+  server-side `serverChanges` в handler; no double-flush
+  при concurrent `flush()`; `destroy()` снимает network listener.
+- `packages/mobile-sdk/src/fsrs/recalcFsrs.test.ts` — **7 тестов**:
+  Easy / Again / graduated-demote, graduation threshold,
+  clamp difficulty и stability, `RATING_XP` совпадает с
+  сервером.
+- `packages/mobile-sdk/src/network/NetworkAdapter.test.ts` +
+  `src/storage/SecureStorage.test.ts` — **5 тестов**.
+- `apps/mobile/src/fsrs.test.ts` — **3 теста** (sanity-check
+  FSRS через cross-package импорт).
+- `pnpm --filter @hanzi/mobile-sdk test` — **29 passed**.
+- `pnpm --filter @hanzi/web test` — **52 passed** (без регрессий).
+- `pnpm --filter @hanzi/server exec vitest run` — **185 passed**
+  (без регрессий; refresh-эндпоинт обратно совместим).
+- `pnpm typecheck` — **чисто во всех 7 пакетах**
+  (`@hanzi/shared`, `@hanzi/mobile-sdk`, `@hanzi/server`,
+  `@hanzi/web`, `@hanzi/mobile`, плюс корневой `hanzi-web`).
+
+**Известные ограничения** (см. `apps/mobile/README.md`):
+- В `StudyScreen` портирован только flip-card; 5 остальных
+  практик (`multiple_choice`, `reverse_choice`, `pinyin_input`,
+  `tone_recognition`, `syllable_constructor`, `cloze`) пока
+  живут только в web — требуют отдельного PR.
+- LibraryScreen/StatsScreen read-only — создание колоды и
+  присоединение по коду только через web UI.
+- Push-уведомления (FCM) пока не подключены на RN-стороне
+  (server-side таблица `UserDevice` уже на месте, но
+  client-side регистрация токена — отдельный PR).
 
 ---
 
@@ -1339,4 +1485,149 @@ Frontend (apps/web):
 - pnpm --filter @hanzi/web run test — 52 passed (было 42, +10).
 - pnpm typecheck — чисто во всех 3 пакетах.
 - pnpm --filter @hanzi/web run build — прод-бандл собирается.
+```
+
+---
+
+## Коммит для пункта 16 (Mobile / React Native + WatermelonDB)
+
+```
+feat(mobile): React Native клиент с WatermelonDB-очередью и тем же API/SyncEngine
+
+Закрывает PLAN_Features_v0.2 §16 (Mobile). `Manifest.md` декларировал
+нативный путь — теперь и код есть. Ключевая идея: та же TypeScript-контракты
+(`@hanzi/shared`), тот же runtime (`@hanzi/mobile-sdk`) и тот же FSRS v5 —
+используются и на web, и на mobile, поэтому сессия, начатая на телефоне,
+досчитывается до бит-идентичного dueDate на вебе.
+
+Что добавлено:
+
+1) @hanzi/shared — настоящий npm-пакет
+- packages/shared/package.json: version 0.1.0, publishConfig с
+  main/types/exports → dist/ при публикации, files: ["dist", "README.md",
+  "LICENSE"], scripts.build (tsc -p tsconfig.build.json → dist/ с
+  .js + .d.ts).
+- packages/shared/tsconfig.build.json: outDir dist, rootDir src,
+  declaration/declarationMap/sourceMap, exclude **.test.ts.
+- packages/shared/README.md: инструкция по monorepo / external install /
+  build / publish.
+
+2) @hanzi/mobile-sdk — кросс-платформенный runtime
+- packages/mobile-sdk/src/api/ApiClient.ts: ApiClient с tagged-union
+  результатом (ApiSuccess<T> | ApiError), методами get/post/put/
+  delete/getBlob; на 401 — refresh() + retry (один раз параллельно,
+  дальше — единый promise); флаг withRefreshToken отправляет
+  Bearer-refresh (для mobile без cookie); хуки onRefreshed /
+  onSessionExpired для хоста.
+- packages/mobile-sdk/src/auth/TokenStore.ts: get/set AccessToken
+  и get/set RefreshToken; createDefaultTokenStore (access в module-
+  scope memory cell, refresh в SecureStorage); applyAuthResponse
+  (одна точка для login/register/refresh).
+- packages/mobile-sdk/src/auth/AuthStore.ts: createAuthStore (zustand)
+  с login/logout/setAccessToken/hydrateAuth/setError. hydrateAuth
+  принимает doRefresh() callback — host отвечает за форму вызова.
+- packages/mobile-sdk/src/network/NetworkAdapter.ts: setNetworkAdapter,
+  isOnline, subscribeNetwork. Платформенный код инжектируется.
+- packages/mobile-sdk/src/storage/SecureStorage.ts: setSecureStorage,
+  getSecureStorage, readJson, writeJson. Аналогично через инъекцию.
+- packages/mobile-sdk/src/fsrs/recalcFsrs.ts: та же FSRS v5, что и
+  на сервере, — 17 весов, RATING_XP, переходы new → learning → review
+  → graduated. Клиент пересчитывает стабильность/сложность мгновенно,
+  сервер делает это повторно для source of truth.
+- packages/mobile-sdk/src/sync/QueueStorage.ts: интерфейс +
+  createMemoryQueueStorage (для тестов и dev).
+- packages/mobile-sdk/src/sync/SyncEngine.ts: start / enqueueChange /
+  flush / destroy. flush() возвращает in-flight promise (concurrent
+  caller'ы не стартуют параллельный run); runFlushLoop перебирает
+  pending в цикле, подхватывая изменения, добавленные в очередь
+  mid-flight; setOnServerChange(handler) для трансляции серверных
+  serverChanges (другой девайс ответил на то же слово); exponential
+  backoff с cap при сетевых ошибках.
+- packages/mobile-sdk/src/{api,sync,fsrs,network,storage,auth}/
+  *.test.ts: 29 vitest-тестов (Authorization header, Bearer-refresh,
+  JSON serialization, tagged union, refresh-retry, onSessionExpired,
+  JSON parse fallback, getBlob ok/error, immediate flush, offline
+  queue, online reconnect, exponential backoff, serverChange
+  forwarding, no-double-flush, destroy unsubscribes, FSRS state
+  transitions, RATING_XP, network subscribe, secure storage JSON).
+
+3) apps/mobile — Expo + React Native 0.74 клиент
+- apps/mobile/package.json + babel.config.js + tsconfig.json
+  (experimentalDecorators для WatermelonDB) + app.json (Expo
+  config с bundleIdentifier/package) + index.js + vitest.config.ts.
+- apps/mobile/src/bootstrap.ts: wiring NetInfo + MMKV +
+  expo-secure-store в SDK, singleton api / useAuthStore / getSync();
+  setQueueStorage() для lazy re-bind WatermelonDB-коллекции после
+  открытия SQLite. Refresh-функция для ApiClient шлёт Bearer-refresh
+  в Authorization (server обновлён для приёма).
+- apps/mobile/src/db/database.ts: WatermelonDB SQLiteAdapter (jsi:true)
+  + schema v1 (3 таблицы: words, progress, pending_changes) +
+  lazy getDatabase() singleton.
+- apps/mobile/src/db/models.ts: WordModel / ProgressModel /
+  PendingChangeModel с @field / @text / @date / @json / @readonly
+  декораторами.
+- apps/mobile/src/db/WatermelonQueueStorage.ts:
+  createWatermelonQueueStorage(db) реализует QueueStorage из SDK —
+  insert/listPending/markSynced/remove/count через Q.where + db.write.
+- apps/mobile/src/screens/LoginScreen.tsx: POST /auth/login +
+  /auth/register, useAuthStore.login().
+- apps/mobile/src/screens/HomeScreen.tsx: GET /stats/dashboard —
+  streak card (большой flame), прогресс-дня (progress bar),
+  4 stat-tile (XP, слов выучено, повторений, к повторению), бейдж
+  pendingCount от getSync().pendingCount(), CTA "Начать тренировку".
+- apps/mobile/src/screens/StudyScreen.tsx: POST /sessions/start,
+  flip-card UI (иероглиф → перевод), 4 кнопки рейтинга
+  (Не помню / Трудно / Помню / Легко). На каждый ответ:
+  recalcFsrs() (локально) + sync.enqueueChange('study_answer', ...)
+  (очередь) + POST /sessions/:id/answer (live, silent fallback).
+- apps/mobile/src/screens/LibraryScreen.tsx + StatsScreen.tsx:
+  read-only список колод (с share-code badge) + leaderboard
+  (GET /stats/leaderboard?period=week|all, табы Неделя/Всё время).
+- apps/mobile/src/navigation/RootNavigator.tsx: Stack
+  (Login → MainTabs → Study modal) + bottom-tabs (Главная / Слова /
+  Стата) с тёмной темой (#0C0E16 фон, #4FC3F7 accent).
+- apps/mobile/src/App.tsx: splash → getDatabase() → setQueueStorage
+  → useAuthStore.hydrateAuth (refresh через api.post) → getSync().
+- apps/mobile/src/fsrs.test.ts: 3 sanity-check теста FSRS через
+  cross-package импорт.
+- apps/mobile/README.md: что внутри, bootstrap-порядок, как запустить,
+  известные ограничения.
+
+4) apps/server — обратно совместимое обновление refresh-эндпоинта
+- apps/server/src/modules/auth/auth.routes.ts: POST /auth/refresh
+  теперь принимает refresh-токен из cookie (web) ИЛИ из request body
+  (мобильный клиент через @hanzi/mobile-sdk) ИЛИ из Authorization:
+  Bearer. Response всегда содержит refreshToken в data (мобильный
+  клиент его сохраняет в MMKV) и дополнительно ставит HttpOnly
+  cookie для web.
+
+5) apps/web — точечная миграция
+- apps/web/package.json: добавлен @hanzi/mobile-sdk.
+- apps/web/src/lib/platformAdapters.ts: installWebAdapters() —
+  web-имплементации NetworkAdapter (navigator.onLine + window
+  events) и SecureStorage (localStorage). Существующие
+  apps/web/src/api/client.ts, db/sync.ts и stores/authStore.ts
+  остаются нетронутыми — миграция этих модулей на SDK может
+  произойти в отдельном PR, чтобы не раздувать дифф этого.
+
+Тесты (всё зелёное, без регрессий):
+- pnpm --filter @hanzi/mobile-sdk test — 29 passed (новые).
+- pnpm --filter @hanzi/mobile test — 3 passed (новые).
+- pnpm --filter @hanzi/web test — 52 passed (без регрессий).
+- pnpm --filter @hanzi/server exec vitest run — 185 passed
+  (без регрессий; refresh-эндпоинт обратно совместим).
+- pnpm typecheck — чисто во всех 7 пакетах:
+  @hanzi/shared, @hanzi/mobile-sdk, @hanzi/server, @hanzi/web,
+  @hanzi/mobile + корневой hanzi-web.
+- pnpm --filter @hanzi/mobile-sdk run build — dist/ с .js + .d.ts.
+
+Известные ограничения (см. apps/mobile/README.md):
+- В StudyScreen портирован только flip-card. 5 остальных практик
+  (multiple_choice, reverse_choice, pinyin_input, tone_recognition,
+  syllable_constructor, cloze) живут только в web — это отдельный PR.
+- LibraryScreen / StatsScreen read-only; создание колоды и
+  присоединение по share-коду — только через web UI.
+- FCM push-уведомления пока не заведены на RN-стороне: серверная
+  таблица UserDevice и cron-job уже есть, но client-side
+  регистрация токена — отдельный PR.
 ```

@@ -1,0 +1,75 @@
+{
+  "name": "@hanzi/mobile-sdk",
+  "version": "0.1.0",
+  "description": "Cross-platform runtime for HanZiWeb clients — API client, sync engine, network adapter, FSRS. Used by both web (apps/web) and React Native (apps/mobile).",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./api": {
+      "types": "./src/api/index.ts",
+      "import": "./src/api/index.ts",
+      "default": "./src/api/index.ts"
+    },
+    "./sync": {
+      "types": "./src/sync/index.ts",
+      "import": "./src/sync/index.ts",
+      "default": "./src/sync/index.ts"
+    },
+    "./network": {
+      "types": "./src/network/index.ts",
+      "import": "./src/network/index.ts",
+      "default": "./src/network/index.ts"
+    },
+    "./storage": {
+      "types": "./src/storage/index.ts",
+      "import": "./src/storage/index.ts",
+      "default": "./src/storage/index.ts"
+    },
+    "./fsrs": {
+      "types": "./src/fsrs/index.ts",
+      "import": "./src/fsrs/index.ts",
+      "default": "./src/fsrs/index.ts"
+    },
+    "./auth": {
+      "types": "./src/auth/index.ts",
+      "import": "./src/auth/index.ts",
+      "default": "./src/auth/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@hanzi/shared": "workspace:*",
+    "zod": "^3.23.0",
+    "zustand": "^5.0.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

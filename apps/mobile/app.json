@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "HanZi",
+    "slug": "hanzi-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "hanzimobile",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hanzi.mobile"
+    },
+    "android": {
+      "package": "com.hanzi.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0C0E16"
+      }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ],
+    "extra": {
+      "apiUrl": "https://api.hanzi.example.com"
+    }
+  }
+}
