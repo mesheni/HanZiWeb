@@ -16,3 +16,4 @@ export * from './schemas/progressExport.js';
 export * from './schemas/tag.js';
 export * from './schemas/oauth.js';
 export * from './schemas/analytics.js';
+export * from './schemas/featureFlag.js';

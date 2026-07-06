@@ -285,4 +285,32 @@ describe('analytics (client)', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('trackExperimentExposed sends the experiment_exposed event with flag context', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{}', { status: 200 }));
+
+    const { analytics, trackExperimentExposed } = await importModule();
+    trackExperimentExposed({ flagKey: 'practice:cloze', enabled: true, reason: 'rollout' });
+    trackExperimentExposed({ flagKey: 'practice:multiple-choice', enabled: false, reason: 'disabled' });
+    await analytics.flush();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body));
+    expect(body.events.map((e: { name: string }) => e.name)).toEqual([
+      'experiment_exposed',
+      'experiment_exposed',
+    ]);
+    expect(body.events[0].properties).toEqual({
+      flag_key: 'practice:cloze',
+      enabled: true,
+      reason: 'rollout',
+    });
+    expect(body.events[1].properties).toEqual({
+      flag_key: 'practice:multiple-choice',
+      enabled: false,
+      reason: 'disabled',
+    });
+  });
 });

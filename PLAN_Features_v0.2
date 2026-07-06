@@ -762,8 +762,108 @@ run build` собирает прод-бандл.
 - `.env.example` — секция «Analytics» с `POSTHOG_API_KEY`/
   `POSTHOG_HOST`.
 
-### 15. A/B-тесты (LaunchDarkly / Stytch)
+### 15. A/B-тесты (LaunchDarkly / Stytch) ✅ DONE
 Гейтинг новых режимов тренировки.
+
+Внутренняя альтернатива LaunchDarkly / Stytch — статический
+реестр флагов в коде + детерминированная оценка для пользователя.
+Поддерживает master switch, whitelist и percentage rollout,
+override через ENV. Используется для гейтинга новых режимов
+тренировки (`practice:cloze`, `practice:multiple-choice`, …) и
+будущих экспериментов.
+
+**Реализация**:
+- `packages/shared/src/schemas/featureFlag.ts` — `FlagReasonSchema`
+  (`whitelist | rollout | disabled | unknown`), `FlagEvaluationSchema`
+  (`key, enabled, reason`), `FlagsResponseSchema` (`flags: Record<>`).
+  Helper `practiceFlagKey(type)` для стабильного namespace
+  (`practice:cloze` и т.д.). Экспорт в `packages/shared/src/index.ts`.
+- `packages/shared/src/schemas/analytics.ts` — добавлено
+  `experiment_exposed` в `AnalyticsEventNameSchema` (4-е событие).
+- `apps/server/src/lib/featureFlags/flags.ts`:
+  - `FEATURE_FLAGS` (frozen) — реестр дефолтных конфигов для всех
+    7 `PracticeType` (flip-card, multiple-choice, reverse-choice,
+    pinyin-input, tone-recognition, syllable-constructor, cloze).
+    Все по умолчанию `enabled: true, rolloutPercent: 100` — поведение
+    не меняется, пока кто-то явно не закроет флаг.
+  - `FeatureFlagConfig` (`enabled, rolloutPercent, whitelist`).
+  - `getEffectiveConfig(key)` — конфиг с учётом ENV-override
+    (`FEATURE_FLAG_PRACTICE_CLOZE_ENABLED=true|false`,
+    `FEATURE_FLAG_PRACTICE_CLOZE_ROLLOUT=0..100`).
+  - `hashToBucket(input)` — SHA-256 → bucket 0-99 (стабильный,
+    один и тот же `(key, userId)` всегда даёт один bucket).
+  - `evaluateFlag(key, userId?)` — порядок: unknown → disabled →
+    whitelist → rollout (если `rolloutPercent > 0`) → иначе
+    `disabled`. Анонимные пользователи получают стабильный bucket
+    по `key:anonymous`.
+  - `evaluateAllFlags(userId?)` — bulk-оценка для `GET /api/flags`.
+  - `getKnownFlagKeys()` — список всех зарегистрированных ключей.
+- `apps/server/src/lib/featureFlags/flags.test.ts` — **23 vitest-теста**:
+  реестр (7 флагов, frozen), `hashToBucket` (детерминированность,
+  диапазон, распределение), `evaluateFlag` (unknown/disabled/
+  rollout 0/50/100, стабильность bucket'а для одного userId,
+  anonymous fallback), ENV override (ENABLED, ROLLOUT, валидация
+  диапазона, невалидные значения), `evaluateAllFlags` (полнота +
+  дефолт).
+- `apps/server/src/modules/featureFlags/featureFlags.service.ts` —
+  тонкий слой: `getAllFlagsForUser`, `getFlagForUser` + валидация
+  через `FlagsResponseSchema.parse` (защита от drift'а между
+  shared/server кодом).
+- `apps/server/src/modules/featureFlags/featureFlags.routes.ts`:
+  - `GET /flags` (authenticateOptional) — снимок всех флагов для
+    текущего пользователя (если авторизован — `userId` из JWT;
+    иначе — анонимный bucket).
+  - `GET /flags/:key` (authenticateOptional) — оценка одного флага.
+    404 `FLAG_NOT_FOUND` для незарегистрированных ключей.
+- `apps/server/src/index.ts` — `featureFlagsRoutes` зарегистрирован
+  в общем rate-limited scope с префиксом `/api/flags` (модуль
+  `featureFlags`).
+- `apps/web/src/hooks/useFeatureFlag.ts`:
+  - `useFeatureFlags()` — react-query `useQuery`, `staleTime: 60_000`,
+    дедупликация для нескольких компонентов.
+  - `useFeatureFlag(key)` — single-flag lookup (без exposure —
+    только для диагностики).
+  - `usePracticeTypes()` — фильтрованный список по флагам; пока
+    флаги грузятся, возвращает весь `PRACTICE_TYPES` (UI не
+    «мигает»). Через `useEffect` + `Set` ref шлёт
+    `experiment_exposed` ровно один раз на `flagKey` за
+    монтирование компонента.
+  - `isPracticeTypeEnabled(type, flags)` — sync-helper без exposure.
+  - `PRACTICE_FLAG_KEYS` — список ключей для UI.
+- `apps/web/src/components/practice/PracticeTypeSelector.tsx` —
+  заменил `PRACTICE_TYPES.map(...)` на `visibleTypes.map(...)`,
+  где `visibleTypes = usePracticeTypes()`. Скрытые флагом режимы
+  просто не появляются в UI.
+- `apps/web/src/utils/analytics.ts` — добавлен фасад
+  `trackExperimentExposed({ flagKey, enabled, reason })` →
+  `analytics.track('experiment_exposed', {...})`. Использует тот же
+  буфер + flush-механизм, что и `session_started` / `answer_rated`.
+- `apps/web/src/utils/analytics.test.ts` — +1 тест: `trackExperimentExposed`
+  шлёт корректное имя события и properties (включая `reason`).
+- `packages/shared/api-spec.md` — новая секция «Feature Flags /
+  A/B-тесты (PLAN_Features_v0.2 §15)» с описанием 2 эндпоинтов
+  (`GET /api/flags`, `GET /api/flags/:key`), алгоритма оценки и
+  ENV-override. В сводке: **34 эндпоинта** (было 32) в
+  **10 модулях** (было 9). В секции «Аналитика» добавлено событие
+  `experiment_exposed` с properties `{ flag_key, enabled, reason }`.
+
+**Тесты** (всё зелёное, без регрессий):
+- `pnpm --filter @hanzi/server exec vitest run` — **208 passed**
+  (было 185, **+23 новых** для `flags.test.ts`).
+- `pnpm --filter @hanzi/web test` — **53 passed** (было 52, +1).
+- `pnpm typecheck` — чисто во всех 7 пакетах.
+- `pnpm --filter @hanzi/web run build` — прод-бандл собирается.
+
+**Известные ограничения**:
+- Флаги определяются статически в коде (не БД). Дальнейшее
+  развитие: админ-эндпоинт `PATCH /api/admin/flags/:key` +
+  persist в Redis/Postgres для изменения без redeploy.
+- `whitelist` сейчас в коде; ENV-override для списка userIds
+  не предусмотрен (на практике белый список маленький и
+  меняется редко).
+- Mobile-клиент (`apps/mobile`) пока не использует фичевые флаги —
+  TODO на отдельный PR (его `StudyScreen` реализует только
+  flip-card, и gating остальных режимов там пока не нужен).
 
 ### 16. Mobile (React Native + WatermelonDB) ✅ DONE
 `Manifest.md` декларирует нативный путь — теперь и код есть.
@@ -1485,6 +1585,96 @@ Frontend (apps/web):
 - pnpm --filter @hanzi/web run test — 52 passed (было 42, +10).
 - pnpm typecheck — чисто во всех 3 пакетах.
 - pnpm --filter @hanzi/web run build — прод-бандл собирается.
+```
+
+---
+
+## Коммит для пункта 15 (A/B-тесты / Feature Flags)
+
+```
+feat(flags): внутренний feature-flag сервис + gating режимов тренировки
+
+Закрывает PLAN_Features_v0.2 §15 (A/B-тесты). Внутренняя альтернатива
+LaunchDarkly / Stytch: статический реестр флагов + детерминированная
+оценка для пользователя. Используется для гейтинга новых режимов
+тренировки (`practice:cloze`, `practice:multiple-choice`, …) и
+будущих экспериментов. Все 7 практик из `PracticeType` уже
+зарегистрированы как `practice:*` с `enabled: true,
+rolloutPercent: 100` — поведение не меняется, пока кто-то явно
+не закроет флаг через код или ENV.
+
+Что добавлено:
+
+1) Shared-контракт (packages/shared)
+- packages/shared/src/schemas/featureFlag.ts: FlagReasonSchema
+  (whitelist | rollout | disabled | unknown), FlagEvaluationSchema
+  (key, enabled, reason), FlagsResponseSchema (flags: Record<>),
+  helper practiceFlagKey(type) для стабильного namespace.
+  Экспорт в packages/shared/src/index.ts.
+- packages/shared/src/schemas/analytics.ts: добавлено
+  experiment_exposed в AnalyticsEventNameSchema (4-е событие).
+
+2) Серверная логика (apps/server)
+- apps/server/src/lib/featureFlags/flags.ts: FEATURE_FLAGS (frozen
+  реестр), FeatureFlagConfig, getEffectiveConfig(key) с ENV-override
+  (FEATURE_FLAG_PRACTICE_CLOZE_ENABLED / _ROLLOUT), hashToBucket
+  (SHA-256 → 0-99, стабильный), evaluateFlag (порядок: unknown →
+  disabled → whitelist → rollout), evaluateAllFlags, getKnownFlagKeys.
+- apps/server/src/lib/featureFlags/flags.test.ts: 23 vitest-теста
+  (реестр/frozen, hash distribution, evaluateFlag для всех веток,
+  ENV override + валидация, evaluateAllFlags).
+- apps/server/src/modules/featureFlags/featureFlags.service.ts:
+  тонкий слой (getAllFlagsForUser, getFlagForUser) + валидация
+  ответа через FlagsResponseSchema.parse (защита от drift'а).
+- apps/server/src/modules/featureFlags/featureFlags.routes.ts:
+  GET /flags (authOptional, снимок для пользователя) +
+  GET /flags/:key (authOptional, 404 FLAG_NOT_FOUND).
+- apps/server/src/index.ts: featureFlagsRoutes зарегистрирован
+  под /api/flags в общем rate-limited scope.
+
+3) Клиент (apps/web)
+- apps/web/src/hooks/useFeatureFlag.ts: useFeatureFlags (react-query
+  useQuery, staleTime 60_000, дедупликация), useFeatureFlag (single),
+  usePracticeTypes (фильтрованный список с Set-ref для дедупа
+  experiment_exposed через useEffect), isPracticeTypeEnabled (sync
+  helper), PRACTICE_FLAG_KEYS.
+- apps/web/src/components/practice/PracticeTypeSelector.tsx: вместо
+  PRACTICE_TYPES.map(...) теперь visibleTypes.map(...), где
+  visibleTypes = usePracticeTypes() — скрытые флагом режимы просто
+  не появляются в UI.
+- apps/web/src/utils/analytics.ts: фасад trackExperimentExposed
+  ({ flagKey, enabled, reason }) → analytics.track('experiment_exposed', ...).
+  Использует тот же буфер + flush-механизм, что и session_started /
+  answer_rated.
+- apps/web/src/utils/analytics.test.ts: +1 тест — trackExperimentExposed
+  шлёт корректное имя события и properties.
+
+4) Документация
+- packages/shared/api-spec.md: новая секция «Feature Flags / A/B-тесты
+  (PLAN_Features_v0.2 §15)» с описанием 2 эндпоинтов (GET /api/flags,
+  GET /api/flags/:key), алгоритма оценки, ENV-override. В секции
+  «Аналитика» — событие experiment_exposed с { flag_key, enabled, reason }.
+  В сводке: 34 эндпоинта (было 32) в 10 модулях (было 9).
+- PLAN_Features_v0.2 §15 помечен ✅ DONE с описанием реализации.
+
+Тесты (всё зелёное, без регрессий):
+- pnpm --filter @hanzi/server exec vitest run — 208 passed
+  (было 185, +23).
+- pnpm --filter @hanzi/web test — 53 passed (было 52, +1).
+- pnpm typecheck — чисто во всех 7 пакетах:
+  @hanzi/shared, @hanzi/mobile-sdk, @hanzi/server, @hanzi/web,
+  @hanzi/mobile + корневой hanzi-web.
+- pnpm --filter @hanzi/web run build — прод-бандл собирается.
+
+Известные ограничения (см. PLAN §15):
+- Флаги определяются статически в коде (не БД). Следующий шаг:
+  PATCH /api/admin/flags/:key + persist в Redis/Postgres для
+  изменения без redeploy.
+- whitelist сейчас в коде; ENV-override для списка userIds не
+  предусмотрен (на практике белый список маленький и меняется
+  редко).
+- Mobile-клиент (apps/mobile) пока не использует фичевые флаги —
+  TODO на отдельный PR.
 ```
 
 ---

@@ -20,6 +20,7 @@ import { achievementsRoutes } from './modules/achievements/achievements.routes.j
 import { usersRoutes } from './modules/users/users.routes.js';
 import { tagsRoutes } from './modules/tags/tags.routes.js';
 import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
+import { featureFlagsRoutes } from './modules/featureFlags/featureFlags.routes.js';
 
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
@@ -123,6 +124,8 @@ async function main() {
     // Analytics proxy: /api/ingest (см. PLAN_Features_v0.2 §14).
     // Без префикса, чтобы путь был ровно /ingest.
     await child.register(analyticsRoutes);
+    // Feature flags / A/B-тесты: /api/flags (см. PLAN_Features_v0.2 §15).
+    await child.register(featureFlagsRoutes, { prefix: '/flags' });
 
   }, { prefix: '/api' });
 

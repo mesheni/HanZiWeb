@@ -330,3 +330,25 @@ export function trackAudioGenerated(input: {
     source: input.source,
   });
 }
+
+/**
+ * `experiment_exposed` — пользователь увидел UI, зависящий от фичевого
+ * флага (см. PLAN_Features_v0.2 §15). Шлётся из `useFeatureFlag` /
+ * `usePracticeTypes` при показе карточки режима тренировки.
+ *
+ * `flagKey` — стабильный идентификатор эксперимента (`practice:cloze`).
+ * `enabled` — какое решение принял сервер именно для этого юзера.
+ * `reason` — `whitelist | rollout | disabled | unknown`; полезно
+ * для разбивки exposure-rate по «как попали в эксперимент».
+ */
+export function trackExperimentExposed(input: {
+  flagKey: string;
+  enabled: boolean;
+  reason: string;
+}): void {
+  analytics.track('experiment_exposed', {
+    flag_key: input.flagKey,
+    enabled: input.enabled,
+    reason: input.reason,
+  });
+}

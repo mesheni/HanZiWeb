@@ -8,7 +8,8 @@ import {
   WholeWord,
 } from 'lucide-react';
 import { useStudyStore } from '../../stores/studyStore';
-import { PRACTICE_TYPES, getPracticeTypeInfo } from '../../utils/practiceTypes';
+import { getPracticeTypeInfo } from '../../utils/practiceTypes';
+import { usePracticeTypes } from '../../hooks/useFeatureFlag';
 import { cn } from '../../utils/cn';
 import type { PracticeType, StudyMode } from '@hanzi/shared';
 
@@ -46,6 +47,7 @@ export default function PracticeTypeSelector({
   const practiceType = useStudyStore((s) => s.practiceType);
   const setPracticeType = useStudyStore((s) => s.setPracticeType);
   const modeInfo = getPracticeTypeInfo(practiceType);
+  const visibleTypes = usePracticeTypes();
 
   return (
     <div className="practice-selector">
@@ -56,7 +58,7 @@ export default function PracticeTypeSelector({
       </div>
 
       <div className="practice-selector-grid">
-        {PRACTICE_TYPES.map((p) => {
+        {visibleTypes.map((p) => {
           const Icon = ICONS[p.icon];
           const isActive = practiceType === p.id;
           return (

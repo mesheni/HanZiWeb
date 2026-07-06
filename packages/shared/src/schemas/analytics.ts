@@ -10,6 +10,7 @@ export const AnalyticsEventNameSchema = z.enum([
   'session_started',
   'answer_rated',
   'audio_generated',
+  'experiment_exposed',
 ]);
 export type AnalyticsEventName = z.infer<typeof AnalyticsEventNameSchema>;
 
