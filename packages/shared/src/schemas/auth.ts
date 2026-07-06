@@ -39,3 +39,23 @@ export const RefreshSchema = z.object({
 });
 
 export type Refresh = z.infer<typeof RefreshSchema>;
+
+/** Смена пароля (PLAN_Features_v0.3 §1) */
+export const ChangePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(8).max(128),
+    newPassword: z.string().min(8).max(128),
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: 'New password must be different from the current one',
+    path: ['newPassword'],
+  });
+
+export type ChangePassword = z.infer<typeof ChangePasswordSchema>;
+
+/** Ответ на смену пароля. */
+export const ChangePasswordResponseSchema = z.object({
+  success: z.literal(true),
+});
+
+export type ChangePasswordResponse = z.infer<typeof ChangePasswordResponseSchema>;

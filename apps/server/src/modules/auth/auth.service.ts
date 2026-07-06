@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { loadConfig } from '../../config.js';
 import { prisma } from '../../lib/prisma.js';
-import type { Register, Login } from '@hanzi/shared';
+import type { Register, Login, ChangePassword } from '@hanzi/shared';
 
 const SALT_ROUNDS = 12;
 
@@ -124,5 +124,72 @@ export async function logoutUser(userId: string) {
   await prisma.user.update({
     where: { id: userId },
     data: { tokenVersion: { increment: 1 } },
+  });
+}
+
+/**
+ * Смена пароля авторизованным пользователем (PLAN_Features_v0.3 §1).
+ *
+ * Проверяет `currentPassword` через `bcrypt.compare`, валидирует
+ * `newPassword` по тем же правилам, что и при регистрации (длина 8–128),
+ * хеширует новый пароль и обновляет запись `User`. Дополнительно
+ * инкрементит `tokenVersion` — это инвалидирует все ранее выданные
+ * refresh-токены, так что открытые сессии на других устройствах
+ * будут вынуждены перелогиниться.
+ *
+ * @throws Error с `statusCode` и `code`:
+ * - `404 USER_NOT_FOUND` — пользователь не найден.
+ * - `400 PASSWORD_NOT_SET` — OAuth-only аккаунт, пароля нет.
+ * - `401 INVALID_PASSWORD` — `currentPassword` не совпал.
+ * - `400 WEAK_PASSWORD` — `newPassword` не прошёл валидацию.
+ */
+export async function changePassword(
+  userId: string,
+  input: ChangePassword,
+): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw Object.assign(new Error('User not found'), {
+      statusCode: 404,
+      code: 'USER_NOT_FOUND',
+    });
+  }
+
+  // OAuth-only аккаунт: пароля нет — установить можно только через
+  // восстановление (PLAN_Features_v0.3 §2).
+  if (!user.passwordHash) {
+    throw Object.assign(
+      new Error('This account uses social login. Set a password via password recovery.'),
+      { statusCode: 400, code: 'PASSWORD_NOT_SET' },
+    );
+  }
+
+  const currentMatches = await bcrypt.compare(input.currentPassword, user.passwordHash);
+  if (!currentMatches) {
+    throw Object.assign(new Error('Current password is incorrect'), {
+      statusCode: 401,
+      code: 'INVALID_PASSWORD',
+    });
+  }
+
+  if (input.currentPassword === input.newPassword) {
+    throw Object.assign(new Error('New password must be different from the current one'), {
+      statusCode: 400,
+      code: 'WEAK_PASSWORD',
+    });
+  }
+
+  const newPasswordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
+
+  // Инкремент tokenVersion инвалидирует все существующие refresh-токены —
+  // это тот же приём, что и в `logoutUser`. После смены пароля все
+  // активные сессии (кроме текущей, у которой access-токен ещё жив)
+  // потребуют повторного входа.
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: newPasswordHash,
+      tokenVersion: { increment: 1 },
+    },
   });
 }

@@ -1,0 +1,919 @@
+# PLAN_Features_v0.3
+
+Дорожная карта доработок HanZiWeb v0.3.
+Сгруппирована по трём направлениям: **Сервис** (аутентификация, мобильная автономность),
+**Фичи** (новые экраны и режимы), **Баги** (исправления существующего поведения).
+Архитектура: Fastify 5 + Prisma/PostgreSQL + Redis, React 18 PWA + RxDB,
+React Native (Expo SDK 51) + WatermelonDB, FSRS v5, hanzi-writer, Google Cloud TTS.
+
+---
+
+## Сервис
+
+### 1. Смена пароля ✅ (2026-07-06)
+
+**Проблема**: Сейчас пользователь, зарегистрировавшийся по email + password, не может
+изменить свой пароль. Единственный способ — сброс через почту, которого тоже нет.
+
+**Решение**: Эндпоинт `PUT /auth/change-password`, доступный только авторизованным
+пользователям. Принимает `currentPassword` и `newPassword`. Сервер проверяет
+`currentPassword` через `bcrypt.compare` против `User.passwordHash`, валидирует
+`newPassword` по тем же правилам, что и при регистрации (минимальная длина, сложность),
+и обновляет `passwordHash` через `bcrypt.hash`. Для OAuth-only пользователей
+(`passwordHash === null`) — возврат `400 PASSWORD_NOT_SET` с подсказкой установить
+пароль через восстановление.
+
+**Что реализовать**:
+- `packages/shared/src/schemas/auth.ts` — `ChangePasswordSchema`
+  (`currentPassword: string min(8)`, `newPassword: string min(8) max(128)`),
+  `ChangePasswordResponseSchema`.
+- `apps/server/src/modules/auth/auth.service.ts` — метод `changePassword(userId, currentPassword, newPassword)`:
+  загрузка `User`, проверка `passwordHash !== null` (иначе `PASSWORD_NOT_SET`),
+  `bcrypt.compare(currentPassword, passwordHash)` (иначе `INVALID_PASSWORD`),
+  валидация `newPassword` через те же правила что и `registerUser`,
+  `bcrypt.hash(newPassword, 12)`, `prisma.user.update({ passwordHash })`.
+- `apps/server/src/modules/auth/auth.routes.ts` — `PUT /auth/change-password`
+  (auth, body — `ChangePasswordSchema.parse`). Ответ `200 { success: true }`.
+- `apps/web/src/screens/SettingsScreen.tsx` — новая карточка «Смена пароля»
+  с тремя полями (текущий пароль, новый пароль, подтверждение нового пароля),
+  валидация совпадения на клиенте, индикатор сложности пароля, toast на успех/ошибку.
+- `apps/web/src/queries/auth.ts` — `useChangePassword()` (react-query `useMutation`).
+- `packages/shared/api-spec.md` — документация `PUT /api/auth/change-password`.
+
+**Ожидаемый результат**: Пользователь может изменить пароль из настроек,
+указав текущий и новый. OAuth-only пользователи получают понятное сообщение.
+
+**Реализовано**:
+- `packages/shared/src/schemas/auth.ts` — `ChangePasswordSchema`
+  (`currentPassword` min(8) max(128), `newPassword` min(8) max(128),
+  плюс `.refine` запрещающий совпадение старого и нового),
+  `ChangePasswordResponseSchema` (`{ success: true }`).
+- `apps/server/src/modules/auth/auth.service.ts` — `changePassword(userId, input)`:
+  загрузка `User` (404 `USER_NOT_FOUND` если нет), проверка
+  `passwordHash !== null` (400 `PASSWORD_NOT_SET` для OAuth-only),
+  `bcrypt.compare(currentPassword, passwordHash)` (401 `INVALID_PASSWORD`),
+  проверка `newPassword !== currentPassword` (400 `WEAK_PASSWORD`),
+  `bcrypt.hash(newPassword, 12)`, `prisma.user.update` с инкрементом
+  `tokenVersion` (инвалидирует refresh-токены на других устройствах).
+- `apps/server/src/modules/auth/auth.routes.ts` — `PUT /auth/change-password`
+  с `preHandler: [app.authenticate]`, парсинг `ChangePasswordSchema`,
+  ответ `200 { success: true }`. Все ошибки маппятся глобальным
+  `setErrorHandler` (`statusCode` + `code` → JSON-ответ).
+- `apps/web/src/queries/auth.ts` — новый файл с `useChangePassword()`
+  (react-query `useMutation` → `PUT /api/auth/change-password`).
+- `apps/web/src/components/ChangePasswordCard.tsx` — карточка для
+  `SettingsScreen` с тремя полями (текущий, новый, подтверждение),
+  клиентской валидацией (длина 8–128, совпадение подтверждения,
+  несовпадение нового со старым), индикатором сложности (4 уровня),
+  toast'ами на успех/ошибку и понятным сообщением для OAuth-only
+  пользователей (подсказка про восстановление).
+- `apps/web/src/screens/SettingsScreen.tsx` — вставлен `<ChangePasswordCard />`
+  после `<LinkedAccountsCard />`.
+- `packages/shared/api-spec.md` — задокументирован `PUT /api/auth/change-password`
+  с кодами ошибок и примером; endpoint добавлен в сводную таблицу
+  (теперь 35 эндпоинтов).
+
+**Проверка**:
+- `pnpm --filter @hanzi/shared typecheck` — OK
+- `pnpm --filter @hanzi/server typecheck` — OK
+- `pnpm --filter @hanzi/web typecheck` — OK
+- `pnpm --filter @hanzi/shared build` — OK
+- `pnpm --filter @hanzi/server build` — OK
+- `pnpm --filter @hanzi/web build` — OK (vite + PWA sw)
+- `pnpm --filter @hanzi/server exec vitest run` — 208/208 тестов пройдены
+
+**Запись для коммита**:
+
+```
+feat(auth): password change endpoint and settings UI (PLAN_Features_v0.3 §1)
+
+- shared: add ChangePasswordSchema (currentPassword, newPassword min 8 / max 128)
+  with refine that disallows matching the current password, and
+  ChangePasswordResponseSchema in @hanzi/shared.
+- server: add changePassword(userId, input) to auth.service — checks
+  passwordHash presence, bcrypt.compare on current, validates new,
+  bcrypt.hash(12), prisma.user.update with tokenVersion++ to invalidate
+  other-device refresh tokens. Routes:
+    PUT /api/auth/change-password  (JWT, ChangePasswordSchema)
+  OAuth-only users get 400 PASSWORD_NOT_SET, wrong current -> 401
+  INVALID_PASSWORD, identical new -> 400 WEAK_PASSWORD.
+- web: new queries/auth.ts with useChangePassword() useMutation hook;
+  new components/ChangePasswordCard.tsx with 3 fields, password-strength
+  meter (0..4 levels), client-side validation and human-readable
+  messages for PASSWORD_NOT_SET / INVALID_PASSWORD. Wired into
+  SettingsScreen between LinkedAccounts and local-data cards.
+- docs: api-spec.md documents the new endpoint, error codes and adds
+  it to the endpoint summary (35 total).
+
+Refs: PLAN_Features_v0.3 §1
+```
+
+---
+
+### 2. Восстановление пароля по электронной почте
+
+**Проблема**: Пользователь, забывший пароль, не имеет способа его восстановить.
+Единственный выход — регистрация нового аккаунта.
+
+**Решение**: Классический flow «forgot password» через одноразовую ссылу:
+1. Пользователь запрашивает сброс → сервер генерирует токен, сохраняет в Redis
+   (TTL 15 минут), отправляет ссылку на email.
+2. Пользователь переходит по ссылке → клиент отправляет токен + новый пароль →
+   сервер проверяет токен в Redis, обновляет `passwordHash`, инвалидирует все
+   активные refresh-токены (через Redis blacklist или bump `passwordVersion`).
+
+**Что реализовать**:
+- `apps/server/prisma/schema.prisma` — опциональная колонка `User.passwordVersion Int @default(0)`
+  для инвалидации старых сессий при смене пароля. Миграция
+  `202607XX_add_password_version`.
+- `packages/shared/src/schemas/auth.ts` — `ForgotPasswordSchema` (`email: string email()`),
+  `ResetPasswordSchema` (`token: string`, `newPassword: string min(8) max(128)`),
+  `ForgotPasswordResponseSchema` (всегда `{ success: true }` — не раскрываем
+  существование email), `ResetPasswordResponseSchema`.
+- `apps/server/src/lib/email.ts` — обёртка над nodemailer / SMTP-транспорт
+  (или интеграция с Resend/SendGrid). Функция `sendPasswordResetEmail(to, resetLink)`.
+  Конфигурация через env: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+  `SMTP_FROM` (или `RESEND_API_KEY`).
+- `apps/server/src/modules/auth/auth.service.ts`:
+  - `requestPasswordReset(email)` — загрузка `User` по email (если не найден —
+    тихий возврат, без утечки), генерация `crypto.randomBytes(32).toString('hex')`,
+    сохранение в Redis с ключом `pwreset:<token>` → `userId` (TTL 900 сек),
+    отправка письма со ссылкой `${WEB_PUBLIC_URL}/reset-password?token=...`.
+  - `resetPassword(token, newPassword)` — lookup токена в Redis (если нет →
+    `INVALID_TOKEN`), `bcrypt.hash(newPassword, 12)`, `prisma.user.update`
+    (passwordHash + increment passwordVersion), `redis.del(pwreset:<token>)`.
+- `apps/server/src/modules/auth/auth.routes.ts`:
+  - `POST /auth/forgot-password` (публичный, rate-limited: 3 запроса / 15 мин / IP).
+  - `POST /auth/reset-password` (публичный, rate-limited: 5 запросов / 15 мин / IP).
+- `apps/server/src/modules/auth/auth.service.ts` — `loginUser` проверяет
+  `passwordVersion` при генерации JWT (claim `pv`), чтобы после сброса пароля
+  старые access-токены стали невалидны. Middleware `authenticate` сравнивает
+  `pv` из JWT с текущим `User.passwordVersion`.
+- `apps/web/src/screens/ForgotPasswordScreen.tsx` — форма ввода email,
+  сообщение «Если аккаунт существует, письмо отправлено».
+- `apps/web/src/screens/ResetPasswordScreen.tsx` — форма нового пароля
+  (читает `token` из URL query), валидация + подтверждение, редирект на `/login`
+  после успеха.
+- `apps/web/src/App.tsx` — роуты `/forgot-password` и `/reset-password`.
+- `apps/web/src/queries/auth.ts` — `useForgotPassword()`, `useResetPassword()`.
+- `apps/server/.env.example` — секция «Email» с SMTP-переменными.
+- `packages/shared/api-spec.md` — документация обоих эндпоинтов.
+
+**Ожидаемый результат**: Пользователь получает письмо со ссылкой, переходит,
+задаёт новый пароль. Старые сессии инвалидируются. Rate-limit защищает от brute-force.
+
+---
+
+### 3. Ограничение регистрации почтами только домена .ru
+
+**Проблема**: Сервис ориентирован на российскую аудиторию и должен соответствовать
+действующему законодательству (152-ФЗ «О персональных данных», требование хранения
+данных на территории РФ). Регистрация с иностранными почтами может нарушать
+требования о локализации.
+
+**Решение**: На уровне сервера валидировать домен email при регистрации —
+разрешать только `.ru` (и, опционально, `.su`, `.rf` — кириллические домены,
+если потребуется). При попытке регистрации с другим доменом возвращать понятное
+сообщение со ссылкой на обоснование (действующее законодательство).
+
+**Что реализовать**:
+- `packages/shared/src/schemas/auth.ts` — кастомная валидация `RegisterSchema.email`:
+  после стандартной `.email()` добавить `.refine()` с проверкой домена.
+  Допустимые TLD: `['ru']` (конфигурируемая константа `ALLOWED_EMAIL_TLDS`).
+  Сообщение об ошибке: «Регистрация доступна только с почтой в домене .ru.
+  Это связано с требованием Федерального закона №152-ФЗ о локализации
+  персональных данных на территории Российской Федерации.
+  [Подробнее о законодательстве](https://base.garant.ru/...)».
+- `apps/server/src/modules/auth/auth.service.ts` — `registerUser` дополнительно
+  проверяет домен email через `validateEmailDomain(email, ALLOWED_EMAIL_TLDS)`.
+  Возвращает `EMAIL_DOMAIN_NOT_ALLOWED` (400) с локализованным сообщением.
+- `apps/web/src/screens/RegisterScreen.tsx` — валидация на клиенте при вводе email:
+  если домен не `.ru`, показать inline-предупреждение с текстом о законодательстве
+  и ссылкой. Блокировка кнопки «Зарегистрироваться».
+- `apps/server/src/config.ts` — env `ALLOWED_EMAIL_TLDS` (default: `ru`),
+  для гибкости (если потребуется расширить список).
+- `packages/shared/api-spec.md` — обновление описания `POST /auth/register`
+  (новое ограничение, код ошибки `EMAIL_DOMAIN_NOT_ALLOWED`).
+
+**Ожидаемый результат**: Регистрация с email не в домене `.ru` отклоняется
+на сервере и на клиенте. Пользователь видит понятное сообщение со ссылкой
+на законодательство.
+
+---
+
+### 4. Максимальная автономность мобильного приложения (Android/iOS)
+
+**Проблема**: Текущая реализация `StudyScreen` в mobile делает сетевые запросы
+к серверу при каждом действии (старт сессии, запись ответа). Это означает,
+что без интернета приложение бесполезно, а при слабом соединении — тормозит.
+
+**Решение**: Мобильное приложение должно работать полностью автономно для
+всех операций изучения. Соединение с сервером — только для:
+1. Синхронизация прогресса с аккаунтом (фоновая, при наличии сети).
+2. Авторизация / аутентификация.
+3. Загрузка новых слов (при первом входе или обновлении колод).
+
+Все остальные операции (изучение, FSRS-пересчёт, формирование сессий,
+воспроизведение аудио) — локально.
+
+**Что реализовать**:
+- **Локальный FSRS**: `packages/mobile-sdk/src/fsrs/recalcFsrs.ts` уже реализует
+  FSRS v5. Расширить — `buildLocalSession(words, mode, filters)` формирует
+  сессию из локальной базы `UserWordProgress` + `Word` (WatermelonDB), без
+  обращения к `/sessions/start`.
+- **Локальная очередь ответов**: `SyncEngine` уже есть. Каждое действие
+  (`study_answer`) записывается в `PendingChange` и при появлении сети —
+  батчами отправляется на сервер. Сервер применяет их через
+  `POST /sync/apply` (уже существует).
+- **Офлайн-аудио**: Кэшировать TTS-файлы в `expo-file-system` при первой загрузке.
+  При повторном воспроизведении — читать из локального кэша. Индекс кэша —
+  в WatermelonDB (`AudioCache` таблица: `wordId`, `filePath`, `cachedAt`).
+- **Офлайн-формирование сессий**: `LocalSessionBuilder` в mobile-sdk:
+  - Читает `words` и `progress` из WatermelonDB.
+  - Применяет FSRS-фильтры (due today, overdue, new).
+  - Формирует сессию с перемешиванием (Fisher-Yates).
+  - Поддерживает все режимы (flip-card, multiple-choice, и т.д.) — дистракторы
+    берутся из локальной базы слов.
+- **Индикатор синхронизации**: В `HomeScreen` показывать статус:
+  «Онлайн — синхронизировано», «Офлайн — N изменений в очереди»,
+  «Синхронизация...».
+- **Фоновая синхронизация**: При появлении сети (`NetInfo` listener) —
+  автоматический `flush()` очереди. При возврате в приложение — проверка
+  pending changes.
+- **Конфликт-резолвинг**: Сервер — источник истины. При конфликте
+  (например, прогресс изменён на другом устройстве) — серверная версия
+  перезаписывает локальную (last-write-wins по `updatedAt`).
+
+**Ожидаемый результат**: Пользователь может открыть приложение в самолёте,
+пройти полноценную сессию изучения (все режимы), и при появлении сети
+прогресс синхронизируется с сервером.
+
+---
+
+## Фичи
+
+### 5. Карта изучения во вкладке «Итоги»
+
+**Проблема**: Вкладка «Итоги» (`StatsScreen`) показывает общую статистику,
+но не даёт наглядного представления о прогрессе по каждой колоде.
+Пользователь не видит, какие колоды изучены, а какие — нет.
+
+**Решение**: Добавить в `StatsScreen` секцию «Карта изучения» — визуальную
+карту (grid / tree), где каждая колода показана как блок с:
+- Названием колоды.
+- Общее количество слов в колоде.
+- Количество изученных слов (state = `graduated` или `mastered`).
+- Процент изучения (прогресс-бар + число).
+- Цветовая индикация: красный (0-25%), жёлтый (25-50%), зелёный (50-75%),
+  ярко-зелёный (75-100%).
+
+**Что реализовать**:
+- `packages/shared/src/schemas/stats.ts` — `DeckProgressSchema`
+  (`deckId, deckName, totalWords, learnedWords, percentage, color`),
+  `StudyMapResponseSchema` (`decks: DeckProgress[], totalWords, totalLearned,
+  overallPercentage`).
+- `apps/server/src/modules/stats/stats.service.ts` — метод `getStudyMap(userId)`:
+  для каждой не-системной колоды (`Deck.isSystemDeck = true` для HSK-колод)
+  считает `DeckWord` → `UserWordProgress` (state = graduated/mastered).
+  Возвращает массив `DeckProgress` + агрегированные totals.
+- `apps/server/src/modules/stats/stats.routes.ts` — `GET /stats/study-map` (auth).
+- `apps/web/src/queries/stats.ts` — `useStudyMap()` (react-query, staleTime 60_000).
+- `apps/web/src/screens/StatsScreen.tsx` — новая секция «Карта изучения»
+  между «Активность» и «Таблица лидеров». Grid-карточки колод с
+  прогресс-барами, цветовая индикация, клик по колоде → переход в
+  `LibraryScreen` с фильтром по этой колоде.
+- `apps/web/src/components/StudyMapCard.tsx` — компонент карточки колоды
+  (название, прогресс-бар, числа, цвет).
+- `apps/web/src/styles/global.css` — стили `.study-map-*` (grid layout,
+  прогресс-бары, цветовые классы `.progress-low/medium/high/complete`).
+- `packages/shared/api-spec.md` — документация `GET /api/stats/study-map`.
+
+**Ожидаемый результат**: Пользователь видит наглядную карту прогресса
+по всем основным колодам с процентами и цветовой индикацией.
+
+---
+
+### 6. Вкладка «Тестирование» — тесты по уровням HSK
+
+**Проблема**: Нет способа проверить свои знания в формате, приближенном
+к реальному экзамену HSK. Существующие режимы тренировки — это разрозненные
+упражнения, а не структурированный тест.
+
+**Решение**: Новая вкладка «Тестирование» (`TestScreen`), где пользователь
+выбирает уровень HSK (1-6) и проходит тест из разнообразных заданий.
+Результат — процент правильных ответов, время прохождения, разбор ошибок.
+
+**Типы заданий** (чередуются в тесте):
+1. **Выбор перевода** — показывается иероглиф / слово, 4 варианта перевода
+   (один верный). Аналогично `MultipleChoiceCard`, но без мгновенной обратной
+   связи — ответ выбирается и переходит к следующему вопросу.
+2. **Выбор иероглифа** — показывается перевод, 4 варианта иероглифов.
+   Обратный `ReverseChoiceCard`.
+3. **Набор пиньиня** — показывается иероглиф, нужно ввести пиньинь с тонами.
+4. **Выбор правильного тона** — воспроизводится аудио, нужно выбрать тон (1-4).
+5. **Собери слово** — перетаскивание иероглифов в правильном порядке
+   (использует механику `SyllableConstructorCard`, но с иероглифами).
+6. **Заполнение пропуска** — предложение с пропущенным словом, 4 варианта
+   (cloze-формат из `ClozeCard`).
+
+**Что реализовать**:
+- `packages/shared/src/schemas/test.ts` — `TestLevelSchema` (HSK 1-6),
+  `TestQuestionSchema` (type, word, options[], correctAnswer, audioUrl?),
+  `TestSessionSchema` (id, level, questions[], startedAt, completedAt,
+  answers[], score, percentage, timeSpentMs),
+  `TestResultSchema` (level, totalQuestions, correctAnswers, percentage,
+  timeSpentMs, breakdown: { type, correct, total }[]).
+- `apps/server/src/modules/tests/tests.service.ts`:
+  - `generateTest(userId, level)` — берёт случайные слова из HSK-уровня
+    (минимум 20, максимум 30), генерирует вопросы разных типов
+    (равномерное распределение), перемешивает (Fisher-Yates).
+  - `submitTest(userId, testId, answers[])` — проверяет ответы, считает
+    score, сохраняет результат в `TestResult`.
+- `apps/server/src/modules/tests/tests.routes.ts`:
+  - `POST /tests/start` (auth, body: `{ level: 1-6 }`) → `TestSession`.
+  - `POST /tests/:id/submit` (auth, body: `{ answers[] }`) → `TestResult`.
+  - `GET /tests/history` (auth) → список прошлых тестов.
+- `apps/server/prisma/schema.prisma` — модель `TestResult(id, userId, level,
+  totalQuestions, correctAnswers, percentage, timeSpentMs, breakdown, completedAt)`.
+  Миграция `202607XX_add_test_results`.
+- `apps/web/src/screens/TestScreen.tsx` — экран выбора уровня HSK (6 кнопок-карточек)
+  → экран прохождения теста (вопрос за вопросом, прогресс-бар, таймер) →
+  экран результатов (score, время, разбор по типам заданий, список ошибок).
+- `apps/web/src/components/test/TestQuestionCard.tsx` — универсальный компонент
+  вопроса, рендерит нужный тип задания по `question.type`.
+- `apps/web/src/components/test/TestResultCard.tsx` — экран результатов
+  с разбором ошибок (можно кликнуть на ошибку → `WordDetailModal`).
+- `apps/web/src/queries/tests.ts` — `useStartTest`, `useSubmitTest`, `useTestHistory`.
+- `apps/web/src/App.tsx` — роут `/test` → `TestScreen`.
+- `apps/web/src/components/Sidebar.tsx` + `BottomNav` — добавить пункт «Тестирование».
+- `apps/web/src/styles/global.css` — стили `.test-*`.
+- `packages/shared/api-spec.md` — документация 3 эндпоинтов `/api/tests/*`.
+
+**Ожидаемый результат**: Пользователь может пройти тест по любому уровню HSK,
+получить оценку и детальный разбор ошибок.
+
+---
+
+### 7. Режим «Собери слово из иероглифов»
+
+**Проблема**: Есть режим «Собери пиньинь» (из слогов), но нет аналогичного
+режима для иероглифов. Пользователь не тренирует порядок иероглифов в слове,
+что важно для запоминания.
+
+**Решение**: Новый режим тренировки `character_assembly` — пользователю
+показывается слово (перевод + аудио), а снизу — набор иероглифов
+(включая дистракторы). Нужно перетащить иероглифы в правильном порядке,
+чтобы составить слово. Аналогично `SyllableConstructorCard`, но с иероглифами
+вместо пиньинь-слогов.
+
+**Что реализовать**:
+- `packages/shared/src/schemas/session.ts` — добавить `character_assembly`
+  в `PracticeTypeSchema`.
+- `apps/web/src/components/practice/CharacterAssemblyCard.tsx`:
+  - Проп: `word` (целевое слово), `distractors` (дополнительные иероглифы).
+  - UI: сверху — перевод слова + кнопка аудио; снизу — перемешанный набор
+    иероглифов (кнопки, которые можно нажимать для добавления в «сборочную»
+    область); в середине — пустые слоты по числу иероглифов в слове.
+  - Логика: пользователь нажимает на иероглиф → он перемещается в слот.
+    Нажатие на заполненный слот → возврат иероглифа обратно. Кнопка «Проверить»
+    активируется когда все слоты заполнены.
+  - Проверка: посимвольное сравнение с `word.character`. Правильно → зелёная
+    подсветка + `rateCard(Easy/Good)`. Неправильно → красная подсветка +
+    показ правильного ответа + `rateCard(Again)`.
+- `apps/web/src/utils/practiceTypes.ts` — регистрация типа `character_assembly`
+  (название «Собери слово», иконка `Puzzle`).
+- `apps/web/src/components/practice/PracticeTypeSelector.tsx` — добавить
+  новый тип в список.
+- `apps/web/src/hooks/useStudySession.ts` — поддержка `character_assembly`
+  (передача `practiceType` на сервер).
+- `apps/server/src/modules/sessions/sessions.service.ts` — `startSession`
+  для `character_assembly`: подбор дистракторов из других слов того же
+  HSK-уровня (иероглифы, не входящие в целевое слово).
+- `apps/server/src/modules/sessions/sessions.routes.ts` — `GET /sessions/random-words`
+  уже возвращает дистракторы; расширить для генерации иероглифных дистракторов.
+- `apps/web/src/hooks/useDistractorPool.ts` — добавить метод
+  `getCharacterDistractors(word, count)` — возвращает случайные иероглифы
+  из других слов, не пересекающиеся с иероглифами целевого слова.
+
+**Ожидаемый результат**: Новый режим тренировки доступен в `StudyScreen`
+наряду с остальными. Пользователь собирает слово из иероглифов, получает
+обратную связь.
+
+---
+
+### 8. Вкладка «Чтение» — интерактивные тексты по уровням HSK
+
+**Проблема**: Нет возможности практиковать чтение китайских текстов
+в контексте приложения. Пользователь не может работать с реальными
+текстами, адаптированными под свой уровень.
+
+**Решение**: Новая вкладка «Чтение» (`ReadingScreen`) с библиотекой
+текстов, разделённых по уровням HSK. Каждый текст — интерактивный:
+можно навести на слово для показа пиньиня и перевода, есть кнопки
+«Показать все пиньинь» / «Показать все переводы», можно добавить
+незнакомое слово в приоритетную очередь для следующей сессии.
+
+**Что реализовать**:
+- **Данные текстов**:
+  - `apps/server/prisma/schema.prisma` — модель `ReadingText(id, title, content,
+    hskLevel, author, source, wordCount, createdAt)`. Модель
+    `ReadingTextWord(textId, wordId, position)` — связывает текст с
+    известными словами из словаря (для подсветки «знакомых» / «новых»).
+  - Миграция `202607XX_add_reading_texts`.
+  - Seed-скрипт `apps/server/scripts/seed-reading-texts.ts` — загрузка
+    текстов из JSON-файлов (подготовленные тексты для HSK 1-6,
+    ~10-20 текстов на уровень). Формат: `{ title, hskLevel, paragraphs: string[] }`.
+  - Парсинг текста: разбивка на предложения → токенизация (через
+    `jieba` или встроенный словарь) → сопоставление с `Word` из базы.
+
+- **Серверные эндпоинты**:
+  - `GET /reading/texts?hskLevel=1..6` — список текстов с мета-данными
+    (заголовок, уровень, число слов, число знакомых слов пользователя).
+  - `GET /reading/texts/:id` — полный текст с токенизацией и привязкой
+    к словам из словаря.
+  - `POST /reading/texts/:id/priority-words` — добавить слова из текста
+    в приоритетную очередь (`UserWordPriority` или через теги/метки).
+  - `apps/server/src/modules/reading/{reading.service,reading.routes}.ts`.
+
+- **Клиент**:
+  - `apps/web/src/screens/ReadingScreen.tsx` — список текстов с фильтрацией
+    по уровню HSK (табы или pill-кнопки), поиск по названию.
+    Каждый элемент — карточка (заголовок, уровень, число слов, процент
+    знакомых слов).
+  - `apps/web/src/screens/ReadingTextScreen.tsx` — экран чтения:
+    - Текст отображается по предложениям.
+    - Каждое слово — интерактивный элемент (`<span>` с `data-word-id`).
+    - **Hover/tap на слово** → всплывающее окно (tooltip/popover) с:
+      - Иероглиф + пиньинь (цветные тона).
+      - Перевод.
+      - Кнопка аудио (TTS этого слова).
+      - Кнопка «Добавить в приоритет» (★) — помечает слово для
+        приоритетного включения в следующую сессию.
+      - Если слово уже изучено — зелёная пометка.
+    - **Кнопки управления** (в шапке экрана):
+      - «Показать пиньинь» — toggle: над каждым иероглифом появляется
+        пиньинь (ruby-annotation или `<rt>` в `<ruby>`).
+      - «Показать перевод» — toggle: под каждым предложением появляется
+        перевод.
+      - «Словарь» — список незнакомых слов из этого текста.
+    - **Прогресс чтения**: отметка «прочитано» (сохраняется в
+      `UserReadingProgress`), процент знакомых слов.
+
+  - `apps/web/src/components/reading/ReadingWord.tsx` — компонент слова
+    с hover-обработчиком, tooltip, кнопкой приоритета.
+  - `apps/web/src/components/reading/ReadingTextCard.tsx` — карточка
+    текста в списке.
+  - `apps/web/src/components/reading/WordTooltip.tsx` — всплывающее
+    окно с пиньинем, переводом, аудио, кнопкой приоритета.
+  - `apps/web/src/queries/reading.ts` — `useReadingTexts`, `useReadingText`,
+    `useAddPriorityWords`.
+  - `apps/web/src/App.tsx` — роуты `/reading` и `/reading/:id`.
+  - `apps/web/src/components/Sidebar.tsx` + `BottomNav` — пункт «Чтение».
+  - `apps/web/src/styles/global.css` — стили `.reading-*` (ruby-annotation,
+    tooltip, карточки, hover-эффекты).
+
+- **Приоритетные слова**:
+  - `apps/server/prisma/schema.prisma` — модель `UserWordPriority(userId, wordId,
+    priority, addedAt)` с `@@unique([userId, wordId])`.
+  - `apps/server/src/modules/sessions/sessions.service.ts` — `startSession`
+    учитывает `UserWordPriority`: слова с приоритетом добавляются в начало
+    сессии (до обычных due-слов).
+  - `packages/shared/src/schemas/session.ts` — обновление `StartSessionSchema`
+    для поддержки `includePriority: boolean`.
+
+- `packages/shared/api-spec.md` — документация эндпоинтов `/api/reading/*`
+  и `/api/reading/texts/:id/priority-words`.
+
+**Ожидаемый результат**: Пользователь может читать тексты на своём уровне,
+наводить на незнакомые слова для мгновенного перевода, добавлять их
+в приоритет для изучения.
+
+---
+
+## Баги
+
+### 9. Кнопка «Продолжить» в режимах выбора — показывать информацию о словах и верный ответ
+
+**Проблема**: В режимах с выбором ответа (multiple-choice, reverse-choice,
+tone-recognition) после выбора варианта сразу показывается следующее слово.
+Пользователь не видит, правильный ли ответ он дал, и не видит информацию
+о слове (перевод, пиньинь, пример).
+
+**Решение**: После выбора ответа — пауза с обратной связью:
+1. Подсветить выбранный вариант (зелёный если верный, красный если нет).
+2. Если неверный — показать правильный ответ (подсветить зелёным).
+3. Показать краткую информацию о слове: иероглиф, пиньинь, перевод, аудио.
+4. Кнопка «Продолжить» для перехода к следующему слову.
+
+**Что исправить**:
+- `apps/web/src/components/practice/MultipleChoiceCard.tsx` — после выбора
+  варианта: блокировка кнопок, подсветка верного/неверного, показ блока
+  с информацией о слове, кнопка «Продолжить» (или автопереход через 2-3 сек).
+- `apps/web/src/components/practice/ReverseChoiceCard.tsx` — аналогично.
+- `apps/web/src/components/practice/ToneRecognitionCard.tsx` — аналогично.
+- `apps/web/src/hooks/useStudySession.ts` — добавить состояние
+  `showFeedback: boolean`, `lastAnswerCorrect: boolean`. `rateCard`
+  вызывается при нажатии «Продолжить», а не при выборе ответа.
+- `apps/web/src/styles/global.css` — стили `.feedback-*` (подсветка
+  верного/неверного, блок информации о слове).
+
+**Ожидаемый результат**: После выбора ответа пользователь видит обратную
+связь (верно/неверно, правильный ответ, информация о слове) и нажимает
+«Продолжить» для перехода дальше.
+
+---
+
+### 10. Отступы элементов во вкладке «Итоги»
+
+**Проблема**: Элементы на экране «Итоги» (`StatsScreen`) имеют неровные
+отступы — разное расстояние между секциями, элементы не выровнены
+последовательно.
+
+**Что исправить**:
+- `apps/web/src/screens/StatsScreen.tsx` — унифицировать отступы между
+  секциями (использовать постоянный `gap` или `margin-bottom`).
+- `apps/web/src/styles/global.css` — привести стили секций к единой
+  системе отступов (например, `gap: 24px` между секциями, `gap: 12px`
+  между элементами внутри секции).
+- Проверить padding карточек, margins заголовков, выравнивание grid-элементов.
+
+**Ожидаемый результат**: Все секции на экране «Итоги» имеют одинаковые,
+визуально согласованные отступы.
+
+---
+
+### 11. Календарь активности — выделить месяцы и исправить цвета сетки
+
+**Проблема**:
+1. Календарь активности (GitHub-style heatmap) не выделяет отдельные месяцы —
+   все дни выглядят как единая масса.
+2. В светлой теме цвета сетки дней сливаются с фоном — ячейки не видны.
+
+**Что исправить**:
+- `apps/web/src/screens/StatsScreen.tsx` — компонент `ActivityCalendar`:
+  - Добавить заголовки месяцев над колонками (Янв, Фев, Мар, ...).
+  - Добавить вертикальные разделители или разные фоновые полосы между
+    месяцами.
+  - Исправить `INTENSITY_COLORS` для светлой темы — использовать более
+    контрастные цвета (вместо тёмно-зелёных на тёмном фоне — зелёные
+    разной насыщенности на светлом фоне).
+- `apps/web/src/ui/theme.ts` / `apps/web/src/styles/global.css` —
+  CSS-переменные для цветов календаря: `--cal-empty` (фон пустой ячейки),
+  `--cal-level-0..4` (5 уровней интенсивности). В светлой теме:
+  `--cal-empty: #ebedf0`, `--cal-level-1: #9be9a8`, ..., `--cal-level-4: #216e39`.
+  В тёмной: `--cal-empty: #161b22`, `--cal-level-1: #0e4429`, ...,
+  `--cal-level-4: #39d353`.
+- Месячные метки: позиционировать над grid'ом, выравнивать по первой
+  колонке каждого месяца.
+
+**Ожидаемый результат**: Календарь чётко разделён на месяцы, цвета
+отличаются от фона в обеих темах.
+
+---
+
+### 12. Flash-card — следующее слово только после завершения анимации
+
+**Проблема**: В режиме flash-card при быстром переворачивании карточки
+можно подсмотреть перевод следующего слова, потому что следующее слово
+загружается до завершения анимации переворота.
+
+**Решение**: Блокировать переход к следующему слову до завершения
+CSS-анимации переворота карточки.
+
+**Что исправить**:
+- `apps/web/src/components/practice/Flashcard.tsx`:
+  - Добавить состояние `isAnimating: boolean`.
+  - При нажатии «Перевернуть» / «Следующее» — установить `isAnimating = true`,
+    запустить CSS-анимацию (transform: rotateY).
+  - По `onAnimationEnd` (или `setTimeout` с длительностью анимации) —
+    `isAnimating = false`, обновить содержимое карточки.
+  - Во время `isAnimating` — блокировать кнопки рейтинга и переворота
+    (disabled или pointer-events: none).
+  - Содержимое обратной стороны карточки обновляется ТОЛЬКО после
+    завершения анимации (не до).
+- `apps/web/src/styles/global.css` — убедиться, что `.flashcard-flip`
+  имеет `transition` / `animation` с фиксированной длительностью
+  (например, `0.6s`), и что `backface-visibility: hidden` работает
+  корректно.
+
+**Ожидаемый результат**: При быстром нажатии «Перевернуть» карточка
+полностью переворачивается, и только потом показывает новое содержимое.
+Подсмотреть следующее слово невозможно.
+
+---
+
+### 13. Рандомная сортировка слов для сессий
+
+**Проблема**: Слова в сессиях формируются по алфавиту (или по порядку
+вставки), а не случайно. Это приводит к тому, что пользователь всегда
+видит слова в одном и том же порядке, что снижает эффективность
+запоминания (контекстно-зависимая память).
+
+**Что исправить**:
+- `apps/server/src/modules/sessions/sessions.service.ts` — в `startSession`
+  после выборки слов из БД применить Fisher-Yates shuffle:
+  ```typescript
+  function shuffleArray<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  ```
+  Применить к массиву слов ДО нарезки на сессию (и к due-словам, и к
+  fresh-словам).
+- Убедиться, что shuffle применяется во всех путях формирования сессии:
+  due-слова, new-слова, mixed.
+- Проверить, что shuffle не ломает фильтры (stability, tags, etc.) —
+  фильтры применяются ДО shuffle.
+
+**Ожидаемый результат**: Слова в каждой сессии идут в случайном порядке.
+Повторные сессии с теми же словами дают разную последовательность.
+
+---
+
+### 14. Баг «Собери пиньинь» — пересборка списка при прослушивании звука
+
+**Проблема**: В режиме «Собери пиньинь» (`SyllableConstructorCard`) при
+нажатии кнопки воспроизведения звука список слогов пересобирается и
+слоги меняют своё расположение. Пользователь теряет позицию и вынужден
+искать слоги заново.
+
+**Решение**: Разделить логику — аудио-воспроизведение не должно вызывать
+re-render компонента с пересборкой списка слогов.
+
+**Что исправить**:
+- `apps/web/src/components/practice/SyllableConstructorCard.tsx`:
+  - Проверить, что `useAudio` (или `playAudio`) вызывает re-render
+    (например, через обновление состояния `isPlaying`). Если да —
+    вынести `isPlaying` в ref или в отдельный компонент-кнопку,
+    чтобы основной компонент не re-render'ился.
+  - Массив слогов (`syllables`) должен быть стабилизирован через
+    `useMemo` с правильными dependencies (только `word`, не `isPlaying`).
+  - Перемешивание слогов (`shuffle`) должно выполняться ОДИН раз
+    при монтировании компонента (или при смене слова), а не при
+    каждом re-render.
+  - Использовать `useRef` для хранения перемешанного массива, чтобы
+    он не пересоздавался при re-render.
+- `apps/web/src/hooks/useAudio.ts` — убедиться, что хук не вызывает
+  unnecessary state updates, которые пробрасываются в родителя.
+
+**Ожидаемый результат**: При нажатии кнопки звука слоги остаются на
+своих местах. Список пересобирается только при смене слова.
+
+---
+
+### 15. Увеличить время сессии и снизить таймаут повторного входа
+
+**Проблема**:
+1. Сессия (JWT access token) истекает слишком быстро — при длительном
+   отсутствии пользователь разлогинивается и вынужден входить заново.
+2. При повторном входе после короткого отсутствия (например, закрыл
+   вкладку на 5 минут) требуется повторная авторизация, хотя refresh
+   токен ещё валиден.
+3. Нет защиты от brute-force попыток входа — нужно блокировать доступ
+   только при >3 попытках входа за минуту.
+
+**Что исправить**:
+- `apps/server/src/modules/auth/auth.service.ts`:
+  - Увеличить TTL access token: с текущего значения (вероятно 15 мин)
+    до **1 час** (`JWT_ACCESS_EXPIRY = '1h'`).
+  - Увеличить TTL refresh token: до **30 дней** (`JWT_REFRESH_EXPIRY = '30d'`).
+  - Добавить Redis-based rate limiting на `POST /auth/login`:
+    ключ `login-attempts:<email>`, лимит 3 попытки за 60 секунд.
+    При превышении — `429 TOO_MANY_LOGIN_ATTEMPTS` с сообщением
+    «Слишком много попыток. Подождите 1 минуту».
+- `apps/server/src/config.ts` — env `JWT_ACCESS_EXPIRY` (default `'1h'`),
+  `JWT_REFRESH_EXPIRY` (default `'30d'`), `LOGIN_RATE_LIMIT_MAX` (default `3`),
+  `LOGIN_RATE_LIMIT_WINDOW_SEC` (default `60`).
+- `apps/web/src/api/client.ts` — при 401 автоматически пробовать refresh
+  (уже реализовано), но также добавить retry-логику: если refresh успешен,
+  повторить исходный запрос.
+- `apps/web/src/stores/authStore.ts` — при `onSessionExpired` не сразу
+  редиректить на `/login`, а сначала попробовать silent refresh.
+  Редирект только если refresh тоже не удался.
+- `apps/server/src/modules/auth/auth.routes.ts` — `POST /auth/login`
+  с rate-limit middleware (Redis-based, per-email).
+
+**Ожидаемый результат**: Пользователь не вылетает из аккаунта при
+часовом отсутствии. Refresh token работает 30 дней. Блокировка
+только при >3 попытках входа за минуту.
+
+---
+
+### 16. Вкладка «Письмо» — иероглифы в одну строку + фильтр поиска
+
+**Проблема**:
+1. Во вкладке «Письмо» (`HandwritingScreen` / `LibraryScreen` в режиме
+  письма) иероглифы в списке отображаются каждый с новой строки, хотя
+  должны идти в одну строку (как в реальном тексте).
+2. Отсутствует фильтр/поиск для быстрого нахождения нужного иероглифа.
+
+**Что исправить**:
+- `apps/web/src/screens/LibraryScreen.tsx` (или соответствующий компонент
+  списка иероглифов для письма):
+  - Изменить layout: заменить `flex-direction: column` на
+    `flex-direction: row` с `flex-wrap: wrap` для контейнера иероглифов.
+  - Каждый иероглиф — inline-элемент с фиксированным размером
+    (например, `48x48px` или `2em x 2em`), с margin между ними.
+  - Для слов из нескольких иероглифов — все иероглифы слова в одну
+    строку, слова разделены пробелом или переносом.
+- Добавить поле поиска (input) над списком:
+  - Поиск по иероглифу (ввод пользователем символа).
+  - Поиск по пиньиню (ввод латиницей).
+  - Поиск по переводу (ввод на русском).
+  - Debounce 300ms, фильтрация на клиенте (если список загружен).
+- `apps/web/src/styles/global.css` — стили `.handwriting-list`
+  (flex-row, wrap), `.handwriting-char` (inline-block, размер, hover).
+
+**Ожидаемый результат**: Иероглифы отображаются в строку (как в тексте),
+есть поиск по иероглифу / пиньиню / переводу.
+
+---
+
+### 17. Главная страница — сломанный список последних изученных иероглифов
+
+**Проблема**: На главной странице (`HomeScreen`) блок «Последние изученные
+иероглифы» показывает одни и те же иероглифы, а не реальные последние
+изученные слова.
+
+**Решение**: Исправить запрос к API или обработку данных — убедиться,
+что возвращаются именно последние изученные слова, отсортированные
+по `lastReviewDate DESC`, без дубликатов.
+
+**Что исправить**:
+- `apps/web/src/screens/HomeScreen.tsx` — проверить, какой запрос
+  используется для получения «последних изученных»:
+  - Если это `GET /words?sort=recent` — проверить, что сервер
+    сортирует по `UserWordProgress.lastReviewDate DESC` и ограничивает
+    `take: 10`.
+  - Если это локальный кэш RxDB — проверить, что запрос к `progress`
+    коллекции использует правильную сортировку и не кэширует устаревшие
+    данные.
+- `apps/server/src/modules/words/words.service.ts` — метод
+  `getRecentWords(userId, limit)`:
+  - `prisma.userWordProgress.findMany({ where: { userId, lastReviewDate: { not: null } },
+    orderBy: { lastReviewDate: 'desc' }, take: limit, include: { word: true } })`.
+  - Убедиться, что нет дубликатов (каждый `wordId` уникален в
+    `UserWordProgress` по `@@unique([userId, wordId])`).
+- `apps/web/src/queries/words.ts` — хук `useRecentWords(limit)` с
+  правильным invalidate (после каждой сессии).
+- Проверить, что `HomeScreen` вызывает `refetch` после завершения
+  сессии изучения.
+
+**Ожидаемый результат**: На главной странице отображаются реальные
+последние 10 изученных слов, обновлённые после каждой сессии.
+
+---
+
+### 18. Верстка и отступы во вкладке настроек
+
+**Проблема**: Элементы на экране настроек (`SettingsScreen`) имеют
+кривые отступы — карточки не выровнены правильно, разное расстояние
+между элементами, текст выходит за границы.
+
+**Что исправить**:
+- `apps/web/src/screens/SettingsScreen.tsx`:
+  - Унифицировать структуру карточек: каждая карточка — `<section>`
+    с одинаковым padding, margin-bottom, border-radius.
+  - Использовать CSS Grid или Flexbox с постоянными gap'ами.
+  - Проверить, что длинные тексты (описания карточек) корректно
+    переносятся (`word-wrap: break-word`).
+  - Выровнять toggle-переключатели, слайдеры, кнопки по правому
+    краю карточек.
+- `apps/web/src/styles/global.css` — стили `.settings-*`:
+  - `.settings-container` — `max-width: 600px`, `margin: 0 auto`,
+    `padding: 24px 16px`.
+  - `.settings-card` — `padding: 16px`, `margin-bottom: 16px`,
+    `border-radius: 12px`, `background: var(--tone-1)`.
+  - `.settings-card-header` — flex row, `justify-content: space-between`,
+    `align-items: center`.
+  - `.settings-card-body` — `margin-top: 12px`.
+
+**Ожидаемый результат**: Настройка экрана — аккуратные карточки с
+одинаковыми отступами, выровненные элементы, адаптивная верстка.
+
+---
+
+### 19. Расширить сайдбар и кнопки — слово «Настройки» залезает на обводку
+
+**Проблема**: В боковом меню (`Sidebar`) кнопки навигации слишком узкие,
+и текст «Настройки» (и, возможно, другие длинные названия) залезает
+на границу кнопки (border / outline).
+
+**Что исправить**:
+- `apps/web/src/components/Sidebar.tsx`:
+  - Увеличить минимальную ширину сайдбара (например, с `200px` до
+    `240px` или `260px`).
+  - Увеличить padding кнопок навигации (с `8px 12px` до `10px 16px`).
+  - Добавить `white-space: nowrap` для текста кнопок, чтобы не
+    было нежелательных переносов.
+- `apps/web/src/styles/global.css` — стили `.sidebar`:
+  - `.sidebar` — `width: 260px` (или `min-width: 240px`).
+  - `.sidebar .nav-button` — `padding: 10px 16px`, `gap: 12px`
+    (между иконкой и текстом).
+  - `.sidebar .nav-button span` — `white-space: nowrap`,
+    `overflow: hidden`, `text-overflow: ellipsis` (на случай
+    очень длинных названий).
+- Проверить `BottomNav` (мобильная навигация) — аналогичная проблема
+  может быть там.
+
+**Ожидаемый результат**: Текст «Настройки» (и другие пункты меню)
+полностью виден, не залезает на обводку, с достаточными отступами.
+
+---
+
+### 20. Выделить тренировочные режимы (не двигают прогресс)
+
+**Проблема**: Все режимы изучения сейчас одинаково влияют на прогресс
+(FSRS-рейтинг). Но некоторые режимы (кроме flash-card) предназначены
+для тренировки и запоминания, а не для оценки знания. Пользователь
+может случайно испортить свой прогресс в «игровых» режимах.
+
+**Решение**: Разделить режимы на две категории:
+- **Изучение** (влияет на прогресс): `flip-card` (flash-card).
+- **Тренировка** (НЕ влияет на прогресс): все остальные режимы
+  (`multiple-choice`, `reverse-choice`, `pinyin-input`,
+  `tone-recognition`, `syllable_constructor`, `cloze`,
+  `character_assembly`).
+
+Тренировочные режимы не отправляют FSRS-рейтинг на сервер. Они
+используются только для практики и запоминания.
+
+**Что реализовать**:
+- `packages/shared/src/schemas/session.ts` — добавить поле
+  `isTraining: boolean` в `PracticeType`-конфигурацию. Или
+  константу `TRAINING_PRACTICE_TYPES: PracticeType[]` в
+  `packages/shared/src/utils/practiceTypes.ts`.
+- `apps/web/src/components/practice/PracticeTypeSelector.tsx`:
+  - Визуально разделить режимы на две группы: «Изучение» и «Тренировка».
+  - Тренировочные режимы — с пометкой «Тренировка» (badge / подпись).
+  - Разделить визуально: секция «Изучение» (одна карточка — flash-card)
+    и секция «Тренировка» (остальные режимы).
+- `apps/web/src/hooks/useStudySession.ts`:
+  - При `isTraining = true` — НЕ вызывать `rateCard` (не отправлять
+    FSRS-рейтинг на сервер). Ответы записываются только локально
+    (для статистики сессии), но не влияют на `UserWordProgress`.
+  - Или: `rateCard` вызывается, но на сервере тренировочные ответы
+    обрабатываются без обновления FSRS-параметров.
+- `apps/server/src/modules/sessions/sessions.service.ts`:
+  - `recordAnswer` проверяет `session.practiceType` — если это
+    тренировочный тип, FSRS-пересчёт не выполняется (или выполняется,
+    но не сохраняется в `UserWordProgress`).
+  - Опционально: сохранять тренировочные ответы в отдельную таблицу
+    `TrainingAnswer` для статистики (сколько тренировок пройдено).
+- `apps/web/src/screens/StudyScreen.tsx` — в заголовке сессии показывать
+  «Тренировка» или «Изучение» в зависимости от режима.
+
+**Ожидаемый результат**: Только flash-card влияет на FSRS-прогресс.
+Остальные режимы — тренировочные, не влияют на прогресс, но дают
+статистику тренировок. Пользователь видит визуальное разделение.
+
+---
+
+## Рекомендуемая очерёдность выполнения
+
+### Приоритет 1 — Критичные баги (блокируют использование):
+1. **§15** — Время сессии и таймаут (пользователи вылетают из аккаунта).
+2. **§12** — Flash-card подглядывание (ломает основной режим изучения).
+3. **§17** — Список последних изученных (главная страница сломана).
+4. **§14** — «Собери пиньинь» пересборка (режим непредсказуем).
+
+### Приоритет 2 — Сервисные фичи (аутентификация):
+5. **§1** — Смена пароля.
+6. **§2** — Восстановление пароля.
+7. **§3** — Ограничение .ru.
+
+### Приоритет 3 — UX-баги (визуальные, не блокируют):
+8. **§9** — Кнопка «Продолжить» с обратной связью.
+9. **§10** — Отступы «Итоги».
+10. **§11** — Календарь активности.
+11. **§16** — «Письмо» — иероглифы в строку + поиск.
+12. **§18** — Верстка настроек.
+13. **§19** — Сайдбар и кнопки.
+
+### Приоритет 4 — Новые фичи:
+14. **§13** — Рандомная сортировка (простое изменение, большой эффект).
+15. **§20** — Тренировочные режимы.
+16. **§7** — «Собери слово из иероглифов».
+17. **§5** — Карта изучения.
+18. **§6** — Тестирование.
+19. **§8** — Чтение (самая объёмная фича).
+
+### Приоритет 5 — Мобильная автономность:
+20. **§4** — Максимальная автономность mobile (требует наибольшего
+    объёма работы, зависит от стабильности серверной части).
+
+---
+
+## Сводка изменений по пакетам
+
+| Пакет | Изменения |
+|---|---|
+| `packages/shared` | Новые схемы: ChangePassword, ForgotPassword, ResetPassword, TestSession, TestResult, ReadingText, DeckProgress, StudyMap, UserWordPriority. Обновления: PracticeType (+character_assembly), SessionFilters, RegisterSchema (.ru refine). |
+| `apps/server` | Новые модули: `tests`, `reading`, `email`. Обновления: `auth` (change-password, forgot/reset, rate-limit, .ru validation), `stats` (study-map), `sessions` (shuffle, training mode, priority words). Миграции: password_version, test_results, reading_texts, user_word_priority. |
+| `apps/web` | Новые экраны: `TestScreen`, `ReadingScreen`, `ReadingTextScreen`, `ForgotPasswordScreen`, `ResetPasswordScreen`. Новые компоненты: `StudyMapCard`, `CharacterAssemblyCard`, `TestQuestionCard`, `ReadingWord`, `WordTooltip`. Обновления: `StatsScreen`, `SettingsScreen`, `HomeScreen`, `Sidebar`, `Flashcard`, `SyllableConstructorCard`, `MultipleChoiceCard`, `ReverseChoiceCard`, `ToneRecognitionCard`. |
+| `apps/mobile` | Локальный FSRS, офлайн-сессии, кэш аудио, фоновая синхронизация, индикатор статуса. |
+| `packages/mobile-sdk` | `LocalSessionBuilder`, `AudioCache`, расширение `SyncEngine` для офлайн-режима. |

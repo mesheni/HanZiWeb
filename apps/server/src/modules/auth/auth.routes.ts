@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import jwt from 'jsonwebtoken';
 import {
+  ChangePasswordSchema,
   LoginSchema,
   OAuthExchangeSchema,
   OAuthProviderSchema,
@@ -86,6 +87,30 @@ export async function authRoutes(app: FastifyInstance) {
     reply.clearCookie('refreshToken', { path: '/api/auth' });
     return reply.send({ success: true });
   });
+
+  /**
+   * PUT /auth/change-password — смена пароля авторизованным
+   * пользователем (PLAN_Features_v0.3 §1).
+   *
+   * - 400 `PASSWORD_NOT_SET` — OAuth-only аккаунт.
+   * - 400 `WEAK_PASSWORD` — `newPassword` совпадает с текущим или
+   *   не прошёл валидацию (длина 8–128).
+   * - 401 `INVALID_PASSWORD` — `currentPassword` не совпал.
+   * - 401 `UNAUTHORIZED` / `TOKEN_EXPIRED` — нет валидного access-токена.
+   *
+   * После успешной смены инвалидируются все refresh-токены пользователя
+   * (`tokenVersion++`). Текущая сессия сохраняется до окончания
+   * access-токена; остальные устройства будут вынуждены перелогиниться.
+   */
+  app.put(
+    '/change-password',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const body = ChangePasswordSchema.parse(request.body);
+      await authService.changePassword(request.userId, body);
+      return reply.send({ success: true });
+    },
+  );
 
   // ════════════════════════════════════════════════════════════════
   // OAuth (Google / Apple / Yandex) — см. PLAN_Features_v0.2 §13
