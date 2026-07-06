@@ -110,7 +110,7 @@ Refs: PLAN_Features_v0.3 §1
 
 ---
 
-### 2. Восстановление пароля по электронной почте
+### 2. Восстановление пароля по электронной почте ✅ (2026-07-07)
 
 **Проблема**: Пользователь, забывший пароль, не имеет способа его восстановить.
 Единственный выход — регистрация нового аккаунта.
@@ -161,6 +161,165 @@ Refs: PLAN_Features_v0.3 §1
 
 **Ожидаемый результат**: Пользователь получает письмо со ссылкой, переходит,
 задаёт новый пароль. Старые сессии инвалидируются. Rate-limit защищает от brute-force.
+
+**Реализовано**:
+- `packages/shared/src/schemas/auth.ts` — `ForgotPasswordSchema` (`email`),
+  `ResetPasswordSchema` (`token`, `newPassword` min(8) max(128)),
+  `ForgotPasswordResponseSchema` и `ResetPasswordResponseSchema`
+  (всегда `{ success: true }` — не раскрываем существование email).
+- `apps/server/prisma/schema.prisma` — новая колонка
+  `User.passwordVersion Int @default(0)`, миграция
+  `20260707000000_add_password_version`. Используется как claim `pv`
+  в access-токене: при смене/сбросе пароля старые access-токены
+  становятся невалидны немедленно, не дожидаясь 15-минутного TTL.
+- `apps/server/src/lib/email.ts` — новый модуль: `nodemailer`-транспорт
+  (создаётся лениво из `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/
+  `SMTP_SECURE`/`SMTP_FROM`), функция `sendPasswordResetEmail(to, link)`,
+  чистый helper `buildPasswordResetEmail(link, ttlMinutes)` (для тестов
+  и логирования). Если SMTP не настроен — `EmailNotConfiguredError`
+  (status 503), роут маппит это в `503 EMAIL_NOT_CONFIGURED`.
+- `apps/server/src/config.ts` — секция «Email» с `SMTP_HOST` (optional),
+  `SMTP_PORT` (coerced positive int), `SMTP_USER`/`SMTP_PASS` (optional),
+  `SMTP_SECURE` (coerced boolean, default false), `SMTP_FROM`
+  (default `HanZi <no-reply@hanzi.app>`).
+- `apps/server/src/modules/auth/auth.service.ts`:
+  - `generateAccessToken(userId, email, pv)` — теперь подписывает
+    payload `{ userId, email, pv }`. `pv` — снимок `User.passwordVersion`
+    на момент выдачи токена. `registerUser`/`loginUser`/
+    `refreshTokens`/`oauth.service.issueTokensForUser` пробрасывают
+    актуальное значение.
+  - `generatePasswordResetToken()` — 32 байта → 64 hex-символа,
+    URL-safe.
+  - `requestPasswordReset({ email })` — загрузка `User` по email
+    (если не найден — тихий возврат), генерация токена, `setex`
+    в Redis с ключом `pwreset:<token>` → `userId` (TTL 15 минут),
+    отправка письма со ссылкой `${WEB_PUBLIC_URL}/reset-password?token=…`.
+  - `resetPassword({ token, newPassword })` — lookup токена в Redis
+    (если нет/истёк → `400 INVALID_TOKEN`), `bcrypt.hash(12)`,
+    `prisma.user.update` с инкрементом и `tokenVersion`, и
+    `passwordVersion` (инвалидирует ВСЕ существующие токены),
+    `redis.del` (одноразовый).
+  - `changePassword` — теперь тоже инкрементит `passwordVersion`
+    (помимо `tokenVersion`), чтобы access-токены текущей сессии
+    тоже перестали работать после смены пароля.
+- `apps/server/src/plugins/auth.ts` — middleware `authenticate` после
+  валидации JWT делает `prisma.user.findUnique({ select: { passwordVersion }})`
+  и сравнивает с claim `pv` из токена. Если `pv` отсутствует (токен
+  выпущен до миграции) — считается `pv=0` (совпадает с DB default).
+  При несовпадении — `401 TOKEN_EXPIRED` с понятным сообщением
+  «Password was changed — please sign in again».
+- `apps/server/src/modules/auth/auth.routes.ts`:
+  - `POST /auth/forgot-password` — публичный, **per-route rate-limit
+    3 запроса / 15 минут / IP** (через `config.rateLimit` —
+    перекрывает дефолтный 20/мин для auth-scope), парсинг
+    `ForgotPasswordSchema`, вызов `authService.requestPasswordReset`,
+    всегда возвращает `{ success: true }`.
+  - `POST /auth/reset-password` — публичный, **per-route rate-limit
+    5 запросов / 15 минут / IP**, парсинг `ResetPasswordSchema`,
+    вызов `authService.resetPassword`, ответ `{ success: true }`.
+- `apps/web/src/screens/ForgotPasswordScreen.tsx` — новый экран:
+  форма email, на успех — экран «Проверьте почту» с общим сообщением
+  «Если аккаунт существует, письмо отправлено» (не раскрываем наличие
+  email). Спец-обработка ошибок: 429 → «Повторите через 15 минут»,
+  503 → «Сервис временно недоступен», 500 → «Не удалось отправить».
+- `apps/web/src/screens/ResetPasswordScreen.tsx` — новый экран: читает
+  `token` из `?token=…`, форма нового пароля (с подтверждением и
+  индикатором сложности 0–4). Если токена в URL нет — карточка
+  «Ссылка неполная» с CTA «Запросить новую». На успех — «Пароль изменён»
+  + редирект на `/login` через 1.5с. Спец-обработка: 400 INVALID_TOKEN,
+  429, 400 VALIDATION_ERROR.
+- `apps/web/src/App.tsx` — добавлены маршруты `/forgot-password` и
+  `/reset-password`, оба обёрнуты в `<GuestGuard>`.
+- `apps/web/src/screens/LoginScreen.tsx` — добавлена ссылка
+  «Забыли пароль?» → `/forgot-password` под основной формой.
+- `apps/web/src/queries/auth.ts` — новые хуки `useForgotPassword()`
+  и `useResetPassword()` (`react-query useMutation`).
+- `apps/server/.env.example` — секция «Email» с SMTP-переменными
+  и комментарием про MailHog/MailPit для локальной разработки.
+- `apps/server/vitest.setup.ts` — добавлен `SMTP_FROM` дефолт,
+  чтобы `loadConfig()` не падал в тестах без SMTP.
+- `packages/shared/api-spec.md` — задокументированы оба эндпоинта
+  (rate-limits, request/response, все коды ошибок, защита от
+  enumeration-атак, поведение одноразового токена).
+
+**Проверка**:
+- `pnpm --filter @hanzi/shared typecheck` — OK
+- `pnpm --filter @hanzi/server typecheck` — OK (после `db:generate`)
+- `pnpm --filter @hanzi/web typecheck` — OK
+- `pnpm --filter @hanzi/mobile typecheck` — OK
+- `pnpm --filter @hanzi/mobile-sdk typecheck` — OK
+- `pnpm lint` (root) — 7/7 задач `tsc --noEmit` ✅
+- `pnpm --filter @hanzi/shared build` — OK
+- `pnpm --filter @hanzi/server build` — OK
+- `pnpm --filter @hanzi/web build` — OK (vite + PWA sw, 9587 precache entries)
+- `pnpm --filter @hanzi/server exec vitest run` — 216/216 тестов
+  пройдены (208 ранее существовавших + 8 новых в `email.test.ts`:
+  `generatePasswordResetToken` (2), `buildPasswordResetEmail` (3),
+  `generateAccessToken` pv-claim (2), `generateRefreshToken` (1)).
+
+**Запись для коммита**:
+
+```
+feat(auth): password recovery via email link (PLAN_Features_v0.3 §2)
+
+- shared: add ForgotPasswordSchema, ResetPasswordSchema and
+  ForgotPasswordResponseSchema / ResetPasswordResponseSchema in
+  @hanzi/shared. Responses are always { success: true } to avoid
+  email-enumeration leaks.
+- prisma: add User.passwordVersion Int @default(0) via migration
+  20260707000000_add_password_version. Snapshot is signed into the
+  access token as the `pv` claim and checked on every authenticate()
+  call, so old access tokens are invalidated the moment a password
+  is changed or reset — not after the 15-minute TTL.
+- server/lib: new lib/email.ts wraps nodemailer (lazy transport
+  from SMTP_HOST/PORT/USER/PASS/SECURE/FROM). Exports
+  sendPasswordResetEmail(to, link) and a pure buildPasswordResetEmail
+  helper for unit tests. EmailNotConfiguredError -> 503.
+- server/service: auth.service gains requestPasswordReset() and
+  resetPassword(). Tokens are 32-byte hex, stored in Redis under
+  `pwreset:<token>` (TTL 15m), single-use. changePassword now also
+  increments passwordVersion. Access-token generator carries the
+  new `pv` claim everywhere (register, login, refresh, OAuth).
+- server/plugin: plugins/auth.ts authenticate() now loads
+  User.passwordVersion and rejects tokens whose `pv` no longer
+  matches (401 TOKEN_EXPIRED, "Password was changed — please sign
+  in again"). Tokens issued before this change are treated as
+  pv=0 (DB default) for backward compatibility.
+- server/routes:
+    POST /api/auth/forgot-password  (public, 3 req / 15m / IP,
+      ForgotPasswordSchema, always { success: true })
+    POST /api/auth/reset-password   (public, 5 req / 15m / IP,
+      ResetPasswordSchema, INVALID_TOKEN on bad/expired token)
+  Per-route rate limits are set via config.rateLimit and override
+  the 20/min default of the /api/auth scope.
+- web/screens: new ForgotPasswordScreen.tsx and
+  ResetPasswordScreen.tsx (reads `?token=…` from URL, password
+  strength meter, Russian copy, specific error handling for
+  RATE_LIMIT_EXCEEDED / EMAIL_NOT_CONFIGURED / EMAIL_SEND_FAILED /
+  INVALID_TOKEN). LoginScreen gains a "Забыли пароль?" link.
+- web/app: routes /forgot-password and /reset-password added
+  inside <GuestGuard>.
+- web/queries: useForgotPassword() and useResetPassword() in
+  queries/auth.ts (react-query useMutation).
+- server/config: SMTP_HOST/PORT/USER/PASS/SECURE/FROM added with
+  safe defaults. .env.example documents the section (including a
+  MailHog/MailPit recipe for local dev). vitest.setup.ts gets a
+  SMTP_FROM default so loadConfig() doesn't fail in tests.
+- docs: api-spec.md documents both endpoints, their rate-limits
+  and every error code (37 total now).
+
+Security notes:
+- forgot-password is silent on unknown email (no enumeration).
+- Both endpoints are public but per-route rate-limited (3/15m and
+  5/15m per IP) on top of the global 20/min for /api/auth.
+- Reset token is single-use, 32 bytes, 15-minute TTL.
+- Successful reset invalidates ALL existing tokens: refresh
+  (tokenVersion++) and access (passwordVersion++ / pv mismatch).
+- SMTP misconfig returns 503 (not 500) so clients can show a
+  sensible "service temporarily unavailable" message.
+
+Refs: PLAN_Features_v0.3 §2
+```
 
 ---
 

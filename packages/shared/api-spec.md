@@ -97,6 +97,68 @@ OAuth-only пользователи (`passwordHash === null`) получают
 { "success": true }
 ```
 
+### POST /api/auth/forgot-password
+
+Запрос ссылки на сброс пароля (PLAN_Features_v0.3 §2).
+Сервер генерирует одноразовый токен (`crypto.randomBytes(32).toString('hex')`),
+сохраняет его в Redis по ключу `pwreset:<token>` → `userId` (TTL 15 минут)
+и отправляет письмо со ссылкой
+`${WEB_PUBLIC_URL}/reset-password?token=…` через SMTP-транспорт
+(`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_SECURE`/`SMTP_FROM`).
+
+Защита от enumeration-атак: ответ **всегда** `{ success: true }`, даже
+если такого email нет в системе.
+
+| | |
+|---|---|
+| **Auth** | Нет |
+| **Rate-limit** | 3 запроса / 15 минут / IP |
+| **Request** | `ForgotPasswordSchema` (`{ email: string email() }`) |
+| **Response 200** | `{ success: true }` |
+| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR" } }` — невалидный email |
+| **Response 429** | `{ success: false, error: { code: "RATE_LIMIT_EXCEEDED" } }` |
+| **Response 503** | `{ success: false, error: { code: "EMAIL_NOT_CONFIGURED" } }` — SMTP не настроен |
+| **Response 500** | `{ success: false, error: { code: "EMAIL_SEND_FAILED" } }` — SMTP упал |
+
+```json
+// Request
+{ "email": "user@example.com" }
+
+// Response 200 (всегда одинаковый)
+{ "success": true }
+```
+
+### POST /api/auth/reset-password
+
+Подтверждение сброса пароля по токену из письма (PLAN_Features_v0.3 §2).
+Сервер забирает `userId` из Redis по `pwreset:<token>`, проверяет
+наличие, хеширует новый пароль (`bcrypt` cost 12) и обновляет запись
+`User`. Одновременно инкрементит `User.tokenVersion` (refresh-токены
+на других устройствах становятся невалидны) и `User.passwordVersion`
+(claim `pv` в access-токене перестаёт совпадать → middleware
+`authenticate` отвечает 401 — старые access-токены тоже сразу
+становятся невалидны, не дожидаясь истечения 15-минутного срока).
+Токен — одноразовый: сразу удаляется из Redis.
+
+| | |
+|---|---|
+| **Auth** | Нет (одноразовый токен) |
+| **Rate-limit** | 5 запросов / 15 минут / IP |
+| **Request** | `ResetPasswordSchema` (`{ token: string, newPassword: string min(8) max(128) }`) |
+| **Response 200** | `{ success: true }` |
+| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR" } }` — невалидный пароль |
+| **Response 400** | `{ success: false, error: { code: "INVALID_TOKEN" } }` — токен не найден или истёк (15 минут) |
+| **Response 404** | `{ success: false, error: { code: "USER_NOT_FOUND" } }` — пользователь был удалён между запросом и сбросом |
+| **Response 429** | `{ success: false, error: { code: "RATE_LIMIT_EXCEEDED" } }` |
+
+```json
+// Request
+{ "token": "a3f1...64hex", "newPassword": "newSecret456" }
+
+// Response 200
+{ "success": true }
+```
+
 ---
 
 ## Социальный вход (OAuth, PLAN_Features_v0.2 §13)

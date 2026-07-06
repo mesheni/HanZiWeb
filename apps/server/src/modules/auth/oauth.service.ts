@@ -259,7 +259,14 @@ export async function issueTokensForUser(userId: string): Promise<{
 }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, xp: true, currentStreak: true, tokenVersion: true },
+    select: {
+      id: true,
+      email: true,
+      xp: true,
+      currentStreak: true,
+      tokenVersion: true,
+      passwordVersion: true,
+    },
   });
   if (!user) {
     throw Object.assign(new Error('User not found'), { statusCode: 404, code: 'USER_NOT_FOUND' });
@@ -268,7 +275,7 @@ export async function issueTokensForUser(userId: string): Promise<{
     where: { id: userId },
     data: { lastActiveDate: new Date() },
   });
-  const accessToken = generateAccessToken(user.id, user.email);
+  const accessToken = generateAccessToken(user.id, user.email, user.passwordVersion);
   const refreshToken = generateRefreshToken(user.id, user.tokenVersion);
   return {
     user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },

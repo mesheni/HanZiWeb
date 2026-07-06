@@ -9,6 +9,8 @@ import LibraryScreen from './screens/LibraryScreen';
 import StatsScreen from './screens/StatsScreen';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import ResetPasswordScreen from './screens/ResetPasswordScreen';
 import OAuthCallbackScreen from './screens/OAuthCallbackScreen';
 import HandwritingScreen from './screens/HandwritingScreen';
 import DonationScreen from './screens/DonationScreen';
@@ -44,6 +46,22 @@ export default function App() {
           element={
             <GuestGuard>
               <RegisterScreen />
+            </GuestGuard>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <GuestGuard>
+              <ForgotPasswordScreen />
+            </GuestGuard>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <GuestGuard>
+              <ResetPasswordScreen />
             </GuestGuard>
           }
         />

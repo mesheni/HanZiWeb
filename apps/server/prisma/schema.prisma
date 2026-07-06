@@ -23,6 +23,11 @@ model User {
   xp                    Int       @default(0)
   currentStreak         Int       @default(0)
   tokenVersion          Int       @default(0)
+  /// Инкрементируется при каждой смене пароля (через change-password
+  /// или reset-password). Используется в access-токене как claim `pv`,
+  /// чтобы старые access-токены становились невалидны сразу после сброса.
+  /// См. PLAN_Features_v0.3 §2.
+  passwordVersion       Int       @default(0)
   lastActiveDate        DateTime?
   notificationEnabled   Boolean   @default(false)
   notificationTime      String    @default("morning")

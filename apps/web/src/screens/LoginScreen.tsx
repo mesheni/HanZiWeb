@@ -80,6 +80,11 @@ export default function LoginScreen() {
         <SocialLoginButtons />
 
         <p className="text-center text-xs text-text-muted mt-4">
+          <Link to="/forgot-password" className="text-accent hover:underline">
+            Забыли пароль?
+          </Link>
+        </p>
+        <p className="text-center text-xs text-text-muted mt-2">
           Нет аккаунта?{' '}
           <Link to="/register" className="text-accent hover:underline">
             Зарегистрироваться

@@ -2,10 +2,12 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import jwt from 'jsonwebtoken';
 import {
   ChangePasswordSchema,
+  ForgotPasswordSchema,
   LoginSchema,
   OAuthExchangeSchema,
   OAuthProviderSchema,
   RegisterSchema,
+  ResetPasswordSchema,
 } from '@hanzi/shared';
 import * as authService from './auth.service.js';
 import * as oauthService from './oauth.service.js';
@@ -108,6 +110,58 @@ export async function authRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const body = ChangePasswordSchema.parse(request.body);
       await authService.changePassword(request.userId, body);
+      return reply.send({ success: true });
+    },
+  );
+
+  // ════════════════════════════════════════════════════════════════
+  // Password recovery (PLAN_Features_v0.3 §2)
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /auth/forgot-password — запрос ссылки на сброс пароля.
+   *
+   * Публичный эндпоинт с собственным лимитом 3 запроса / 15 минут / IP —
+   * защита от enumeration-атак (иначе злоумышленник мог бы узнать,
+   * какие email зарегистрированы, по разнице ответов).
+   *
+   * Ответ всегда одинаковый: `{ success: true }` (даже если такого
+   * email нет). Реальное состояние — 503 `EMAIL_NOT_CONFIGURED` (SMTP
+   * не настроен) и 500 `EMAIL_SEND_FAILED` (SMTP упал).
+   */
+  app.post(
+    '/forgot-password',
+    {
+      config: {
+        rateLimit: { max: 3, timeWindow: '15 minutes' },
+      },
+    },
+    async (request, reply) => {
+      const body = ForgotPasswordSchema.parse(request.body);
+      await authService.requestPasswordReset(body);
+      return reply.send({ success: true });
+    },
+  );
+
+  /**
+   * POST /auth/reset-password — подтверждение сброса по токену из письма.
+   *
+   * Публичный эндпоинт с лимитом 5 запросов / 15 минут / IP — защита
+   * от брутфорса токена.
+   *
+   * - 400 `INVALID_TOKEN` — токен не найден или истёк (15 минут).
+   * - 400 `VALIDATION_ERROR` — невалидный `newPassword` (длина 8–128).
+   */
+  app.post(
+    '/reset-password',
+    {
+      config: {
+        rateLimit: { max: 5, timeWindow: '15 minutes' },
+      },
+    },
+    async (request, reply) => {
+      const body = ResetPasswordSchema.parse(request.body);
+      await authService.resetPassword(body);
       return reply.send({ success: true });
     },
   );

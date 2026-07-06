@@ -46,6 +46,19 @@ const envSchema = z.object({
   POSTHOG_API_KEY: z.string().optional(),
   // Host PostHog. По умолчанию — облако PostHog (eu/host depending on region).
   POSTHOG_HOST: z.string().default('https://eu.i.posthog.com'),
+
+  // --- Email (PLAN_Features_v0.3 §2: password reset) ---
+  // Если SMTP_* не заданы — /auth/forgot-password будет отвечать 503
+  // (EMAIL_NOT_CONFIGURED), чтобы dev-окружение не пыталось отправлять
+  // письма на несуществующий сервер.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  // Использовать TLS (true для 465, false для 587+STARTTLS).
+  SMTP_SECURE: z.coerce.boolean().default(false),
+  // Адрес отправителя (From:). Должен быть валидным для SMTP-сервера.
+  SMTP_FROM: z.string().default('HanZi <no-reply@hanzi.app>'),
 });
 
 export type Config = z.infer<typeof envSchema>;

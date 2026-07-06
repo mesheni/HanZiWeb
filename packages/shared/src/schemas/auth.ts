@@ -59,3 +59,44 @@ export const ChangePasswordResponseSchema = z.object({
 });
 
 export type ChangePasswordResponse = z.infer<typeof ChangePasswordResponseSchema>;
+
+/**
+ * Запрос сброса пароля (PLAN_Features_v0.3 §2).
+ *
+ * Сервер всегда отвечает `ForgotPasswordResponseSchema` (`{ success: true }`)
+ * независимо от того, зарегистрирован ли такой email — иначе можно
+ * использовать эндпоинт для enumeration-атак (узнать, какие email
+ * зарегистрированы в системе).
+ */
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+export type ForgotPassword = z.infer<typeof ForgotPasswordSchema>;
+
+/**
+ * Подтверждение сброса пароля (PLAN_Features_v0.3 §2).
+ *
+ * На сервер отправляется одноразовый токен из ссылки в письме
+ * и новый пароль. Те же требования к длине, что и при регистрации.
+ */
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1).max(256),
+  newPassword: z.string().min(8).max(128),
+});
+
+export type ResetPassword = z.infer<typeof ResetPasswordSchema>;
+
+/** Ответ на запрос сброса (всегда одинаковый). */
+export const ForgotPasswordResponseSchema = z.object({
+  success: z.literal(true),
+});
+
+export type ForgotPasswordResponse = z.infer<typeof ForgotPasswordResponseSchema>;
+
+/** Ответ на подтверждение сброса. */
+export const ResetPasswordResponseSchema = z.object({
+  success: z.literal(true),
+});
+
+export type ResetPasswordResponse = z.infer<typeof ResetPasswordResponseSchema>;

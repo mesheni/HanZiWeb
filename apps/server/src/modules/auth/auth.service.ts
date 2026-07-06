@@ -1,14 +1,30 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { loadConfig } from '../../config.js';
 import { prisma } from '../../lib/prisma.js';
-import type { Register, Login, ChangePassword } from '@hanzi/shared';
+import { getRedis } from '../../lib/redis.js';
+import type {
+  Register,
+  Login,
+  ChangePassword,
+  ForgotPassword,
+  ResetPassword,
+} from '@hanzi/shared';
 
 const SALT_ROUNDS = 12;
+
+/** TTL токена восстановления пароля (15 минут). */
+const PASSWORD_RESET_TTL_SEC = 15 * 60;
+
+/** Префикс ключа Redis для токенов сброса пароля. */
+const PASSWORD_RESET_PREFIX = 'pwreset:';
 
 interface AccessTokenPayload {
   userId: string;
   email: string;
+  /** Снимок `User.passwordVersion` на момент выдачи токена. */
+  pv: number;
 }
 
 interface RefreshTokenPayload {
@@ -17,9 +33,13 @@ interface RefreshTokenPayload {
 }
 
 /** Генерирует короткоживущий JWT (15 минут) для авторизации. */
-export function generateAccessToken(userId: string, email: string): string {
+export function generateAccessToken(userId: string, email: string, pv: number): string {
   const config = loadConfig();
-  return jwt.sign({ userId, email } satisfies AccessTokenPayload, config.JWT_ACCESS_SECRET, { expiresIn: '15m' });
+  return jwt.sign(
+    { userId, email, pv } satisfies AccessTokenPayload,
+    config.JWT_ACCESS_SECRET,
+    { expiresIn: '15m' },
+  );
 }
 
 /** Генерирует долгоживущий refresh-токен (30 дней). */
@@ -44,7 +64,7 @@ export async function registerUser(input: Register) {
     },
   });
 
-  const accessToken = generateAccessToken(user.id, user.email);
+  const accessToken = generateAccessToken(user.id, user.email, user.passwordVersion);
   const refreshToken = generateRefreshToken(user.id, 0);
 
   return {
@@ -76,7 +96,7 @@ export async function loginUser(input: Login) {
   // Обновляем lastActiveDate
   await prisma.user.update({ where: { id: user.id }, data: { lastActiveDate: new Date() } });
 
-  const accessToken = generateAccessToken(user.id, user.email);
+  const accessToken = generateAccessToken(user.id, user.email, user.passwordVersion);
   const refreshToken = generateRefreshToken(user.id, user.tokenVersion);
 
   return {
@@ -110,7 +130,7 @@ export async function refreshTokens(token: string) {
     data: { tokenVersion: { increment: 1 } },
   });
 
-  const accessToken = generateAccessToken(user.id, user.email);
+  const accessToken = generateAccessToken(user.id, user.email, user.passwordVersion);
   const refreshToken = generateRefreshToken(user.id, updated.tokenVersion);
 
   return {
@@ -133,9 +153,10 @@ export async function logoutUser(userId: string) {
  * Проверяет `currentPassword` через `bcrypt.compare`, валидирует
  * `newPassword` по тем же правилам, что и при регистрации (длина 8–128),
  * хеширует новый пароль и обновляет запись `User`. Дополнительно
- * инкрементит `tokenVersion` — это инвалидирует все ранее выданные
- * refresh-токены, так что открытые сессии на других устройствах
- * будут вынуждены перелогиниться.
+ * инкрементит `tokenVersion` (refresh-токены на других устройствах
+ * становятся невалидны) и `passwordVersion` (claim `pv` в текущем
+ * access-токене становится ниже актуального → следующий запрос
+ * вернёт 401 и клиент будет вынужден перелогиниться).
  *
  * @throws Error с `statusCode` и `code`:
  * - `404 USER_NOT_FOUND` — пользователь не найден.
@@ -181,15 +202,134 @@ export async function changePassword(
 
   const newPasswordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
 
-  // Инкремент tokenVersion инвалидирует все существующие refresh-токены —
-  // это тот же приём, что и в `logoutUser`. После смены пароля все
-  // активные сессии (кроме текущей, у которой access-токен ещё жив)
-  // потребуют повторного входа.
+  // Инкремент tokenVersion инвалидирует все существующие refresh-токены,
+  // инкремент passwordVersion — все access-токены, у которых claim `pv`
+  // меньше нового значения.
   await prisma.user.update({
     where: { id: user.id },
     data: {
       passwordHash: newPasswordHash,
       tokenVersion: { increment: 1 },
+      passwordVersion: { increment: 1 },
     },
   });
+}
+
+/**
+ * Генерирует криптостойкий одноразовый токен восстановления пароля.
+ * 32 байта → 64 hex-символа, URL-safe.
+ */
+export function generatePasswordResetToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Запрос на сброс пароля (PLAN_Features_v0.3 §2, шаг 1).
+ *
+ * Поведение:
+ * 1. Загружает `User` по email.
+ *    - Если такого email нет — тихий возврат (`success: true` в роуте),
+ *      без утечки информации.
+ * 2. Если email зарегистрирован — генерирует токен, кладёт в Redis
+ *    с ключом `pwreset:<token>` → `userId` на 15 минут.
+ * 3. Отправляет письмо со ссылкой `${WEB_PUBLIC_URL}/reset-password?token=…`.
+ *
+ * ВАЖНО: токен сохраняется в Redis ДО отправки письма, чтобы:
+ * - при ошибке отправки пользователь мог повторно запросить сброс;
+ * - письмо не уходило, если Redis недоступен (иначе у пользователя
+ *   будет «битая» ссылка).
+ *
+ * @throws EMAIL_SEND_FAILED — если SMTP не настроен или упала отправка.
+ */
+export async function requestPasswordReset(input: ForgotPassword): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { email: input.email },
+    select: { id: true, email: true },
+  });
+  if (!user) {
+    // Тихий возврат — не раскрываем существование email.
+    return;
+  }
+
+  const token = generatePasswordResetToken();
+  const redis = getRedis();
+  await redis.setex(`${PASSWORD_RESET_PREFIX}${token}`, PASSWORD_RESET_TTL_SEC, user.id);
+
+  // Отправка письма. Если SMTP не настроен — бросаем EmailNotConfiguredError,
+  // роут вернёт 503, но токен останется валидным (пользователь сможет
+  // запросить сброс повторно после настройки).
+  const { sendPasswordResetEmail, EmailNotConfiguredError } = await import(
+    '../../lib/email.js'
+  );
+  const { getWebPublicUrl } = await import('../../config.js');
+  const baseUrl = getWebPublicUrl();
+  const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+  try {
+    await sendPasswordResetEmail(user.email, resetLink);
+  } catch (err) {
+    if (err instanceof EmailNotConfiguredError) {
+      throw Object.assign(err, { code: 'EMAIL_NOT_CONFIGURED' });
+    }
+    // Любая другая ошибка отправки — логируем и пробрасываем
+    // как 500, чтобы в логах остался явный след.
+    throw Object.assign(new Error('Failed to send password reset email'), {
+      statusCode: 500,
+      code: 'EMAIL_SEND_FAILED',
+      cause: err,
+    });
+  }
+}
+
+/**
+ * Подтверждение сброса пароля (PLAN_Features_v0.3 §2, шаг 2).
+ *
+ * 1. Забирает `userId` из Redis по ключу `pwreset:<token>`. Если токен
+ *    не найден / истёк → `400 INVALID_TOKEN`.
+ * 2. Хеширует новый пароль, обновляет `User.passwordHash`.
+ * 3. Инкрементит `tokenVersion` (refresh-токены на других устройствах
+ *    становятся невалидны) и `passwordVersion` (claim `pv` в access-токене
+ *    перестаёт совпадать → middleware вернёт 401).
+ * 4. Удаляет токен из Redis, чтобы его нельзя было использовать повторно.
+ *
+ * @throws Error с `statusCode` и `code`:
+ * - `400 INVALID_TOKEN` — токен не найден / истёк.
+ * - `404 USER_NOT_FOUND` — пользователь был удалён между запросом и сбросом.
+ */
+export async function resetPassword(input: ResetPassword): Promise<void> {
+  const redis = getRedis();
+  const key = `${PASSWORD_RESET_PREFIX}${input.token}`;
+  const userId = await redis.get(key);
+  if (!userId) {
+    throw Object.assign(new Error('Invalid or expired reset token'), {
+      statusCode: 400,
+      code: 'INVALID_TOKEN',
+    });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!user) {
+    // Зачистим «висящий» токен и сообщим — не частая ситуация,
+    // но если пользователь удалён между запросом и подтверждением.
+    await redis.del(key);
+    throw Object.assign(new Error('User not found'), {
+      statusCode: 404,
+      code: 'USER_NOT_FOUND',
+    });
+  }
+
+  const newPasswordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: newPasswordHash,
+      tokenVersion: { increment: 1 },
+      passwordVersion: { increment: 1 },
+    },
+  });
+  // Токен — одноразовый.
+  await redis.del(key);
 }
