@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Filter, Plus, KeyRound, Pencil, Play } from 'lucide-react';
 import { useInfiniteWords } from '../queries/words';
 import { useDecks, useDeck } from '../queries/decks';
@@ -25,6 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function LibraryScreen() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const userId = useAuthStore((s) => s.user?.id);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -41,6 +42,37 @@ export default function LibraryScreen() {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
   }, [search]);
+
+  // Сеттер фильтра колоды: обновляет и локальный state, и URL —
+  // чтобы `?deckId=<uuid>` можно было шарить в закладки и чтобы
+  // навигация из «Карты изучения» (StatsScreen) сразу подхватывалась.
+  const updateActiveDeckId = useCallback(
+    (next: string | null) => {
+      setActiveDeckId(next);
+      setSearchParams(
+        (prev) => {
+          if (next) {
+            prev.set('deckId', next);
+          } else {
+            prev.delete('deckId');
+          }
+          return prev;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // Подхватываем `?deckId=<uuid>` из URL при первом монтировании
+  // (например, переход из карточки в StatsScreen).
+  useEffect(() => {
+    const fromUrl = searchParams.get('deckId');
+    if (fromUrl && fromUrl !== activeDeckId) {
+      setActiveDeckId(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const statusFilter = statusChip !== 'all' ? statusChip as 'new' | 'learning' | 'review' | 'graduated' : undefined;
   const filters = {
@@ -140,11 +172,11 @@ export default function LibraryScreen() {
                   borderColor: isActive ? 'var(--border-accent)' : 'var(--border-default)',
                   background: isActive ? 'var(--accent-bg-lite)' : 'var(--bg-card)',
                 }}
-                onClick={() => setActiveDeckId(isActive ? null : deck.id)}
+                onClick={() => updateActiveDeckId(isActive ? null : deck.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    setActiveDeckId(isActive ? null : deck.id);
+                    updateActiveDeckId(isActive ? null : deck.id);
                   }
                 }}
                 role="button"
@@ -274,7 +306,7 @@ export default function LibraryScreen() {
               {decks.find((d) => d.id === activeDeckId)?.name ?? '...'}
               <button
                 type="button"
-                onClick={() => setActiveDeckId(null)}
+                onClick={() => updateActiveDeckId(null)}
                 style={styles.activeDeckClear}
                 aria-label="Сбросить фильтр колоды"
               >

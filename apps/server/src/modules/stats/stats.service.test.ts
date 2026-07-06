@@ -3,6 +3,7 @@ import {
   RATING_XP,
   PROGRESS_CSV_HEADER,
   aggregateWeeklyXp,
+  computeDeckProgressPercentage,
   computeRank,
   escapeCsvField,
   getCurrentWeekWindow,
@@ -11,6 +12,7 @@ import {
   parseProgressCsv,
   toProgressCsv,
 } from './stats.service.js';
+import { getDeckProgressColor } from '@hanzi/shared';
 import type { ProgressRecord } from '@hanzi/shared';
 
 describe('RATING_XP', () => {
@@ -289,5 +291,78 @@ describe('parseProgressCsv', () => {
 
   it('возвращает пустой массив для пустой строки', () => {
     expect(parseProgressCsv('')).toEqual([]);
+  });
+});
+
+// ─── Карта изучения (PLAN_Features_v0.3 §5) ──────────────────────
+
+describe('computeDeckProgressPercentage', () => {
+  it('возвращает 0 для пустой колоды (нет слов)', () => {
+    expect(computeDeckProgressPercentage(0, 0)).toBe(0);
+    expect(computeDeckProgressPercentage(0, 5)).toBe(0);
+  });
+
+  it('возвращает 0 если ни одно слово не изучено', () => {
+    expect(computeDeckProgressPercentage(50, 0)).toBe(0);
+  });
+
+  it('возвращает 100 если все слова изучены', () => {
+    expect(computeDeckProgressPercentage(20, 20)).toBe(100);
+  });
+
+  it('округляет процент до целого', () => {
+    // 1/3 ≈ 33.33 → 33
+    expect(computeDeckProgressPercentage(3, 1)).toBe(33);
+    // 2/3 ≈ 66.66 → 67
+    expect(computeDeckProgressPercentage(3, 2)).toBe(67);
+  });
+
+  it('обрабатывает промежуточные значения', () => {
+    expect(computeDeckProgressPercentage(100, 25)).toBe(25);
+    expect(computeDeckProgressPercentage(100, 50)).toBe(50);
+    expect(computeDeckProgressPercentage(100, 75)).toBe(75);
+  });
+
+  it('ограничивает learnedWords до totalWords (защита от рассинхрона)', () => {
+    // Если почему-то learned > total, не должен выдавать > 100.
+    expect(computeDeckProgressPercentage(10, 15)).toBe(100);
+  });
+
+  it('отрицательные значения дают 0', () => {
+    expect(computeDeckProgressPercentage(10, -3)).toBe(0);
+  });
+});
+
+describe('getDeckProgressColor', () => {
+  it('0% → low', () => {
+    expect(getDeckProgressColor(0)).toBe('low');
+  });
+
+  it('ровно граница 24% → ещё low', () => {
+    expect(getDeckProgressColor(24)).toBe('low');
+  });
+
+  it('25% → medium', () => {
+    expect(getDeckProgressColor(25)).toBe('medium');
+  });
+
+  it('49% → medium', () => {
+    expect(getDeckProgressColor(49)).toBe('medium');
+  });
+
+  it('50% → high', () => {
+    expect(getDeckProgressColor(50)).toBe('high');
+  });
+
+  it('74% → high', () => {
+    expect(getDeckProgressColor(74)).toBe('high');
+  });
+
+  it('75% → complete', () => {
+    expect(getDeckProgressColor(75)).toBe('complete');
+  });
+
+  it('100% → complete', () => {
+    expect(getDeckProgressColor(100)).toBe('complete');
   });
 });

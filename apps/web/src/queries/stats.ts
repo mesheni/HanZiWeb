@@ -4,6 +4,7 @@ import {
   type ProgressExport,
   type ProgressImportMode,
   type ProgressImportResponse,
+  type StudyMapResponse,
 } from '@hanzi/shared';
 import { apiGet, apiGetBlob, apiPost, apiPut, downloadBlob } from '../api/client';
 
@@ -143,6 +144,24 @@ export function useLeaderboard(period: LeaderboardPeriod) {
     queryKey: ['stats', 'leaderboard', period],
     queryFn: () => apiGet<LeaderboardResponse>(`/stats/leaderboard?period=${period}`),
     staleTime: 60_000, // 1 мин — топ редко меняется, но свежесть важна.
+  });
+}
+
+// ─── Карта изучения (PLAN_Features_v0.3 §5) ──────────────────────
+
+/**
+ * Хук для карты изучения (`GET /stats/study-map`).
+ * Возвращает `StudyMapResponse` с прогрессом по каждой колоде
+ * (totalWords / learnedWords / percentage / color) и агрегатами.
+ * См. PLAN_Features_v0.3 §5.
+ */
+export function useStudyMap() {
+  return useQuery({
+    queryKey: ['stats', 'study-map'],
+    queryFn: () => apiGet<StudyMapResponse>('/stats/study-map'),
+    // 1 мин — карта пересчитывается на каждый ответ, но UI редко
+    // смотрит на неё чаще раза в минуту.
+    staleTime: 60_000,
   });
 }
 

@@ -2,12 +2,16 @@ import { prisma } from '../../lib/prisma.js';
 import {
   DAILY_GOAL_DEFAULT,
   PROGRESS_EXPORT_VERSION,
+  getDeckProgressColor,
+  type DeckProgress,
+  type DeckProgressColor,
   type LeaderboardEntry,
   type LeaderboardResponse,
   type ProgressExport,
   type ProgressImportMode,
   type ProgressImportResponse,
   type ProgressRecord,
+  type StudyMapResponse,
 } from '@hanzi/shared';
 
 /** Карта «rating → XP». Должна совпадать с sessions.service.recordAnswer. */
@@ -364,6 +368,117 @@ export async function getActivityData(userId: string, year: number, month?: numb
     date,
     count,
   }));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Карта изучения (PLAN_Features_v0.3 §5)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Чистая функция: считает процент «изученности» по одной колоде.
+ * Возвращает 0 для пустой колоды (totalWords = 0) — делить на 0 нельзя,
+ * а пустая колода визуально ничтожна. `learnedWords` ограничивается
+ * `totalWords` на случай рассинхрона данных.
+ */
+export function computeDeckProgressPercentage(
+  totalWords: number,
+  learnedWords: number,
+): number {
+  if (totalWords <= 0) return 0;
+  const safe = Math.max(0, Math.min(learnedWords, totalWords));
+  return Math.round((safe / totalWords) * 100);
+}
+
+/**
+ * Возвращает «карту изучения» — прогресс пользователя по каждой колоде
+ * (системные HSK + кастомные), отсортированный: сначала системные
+ * (HSK 1..6), потом кастомные по имени; внутри групп — по убыванию
+ * процента изученности (самые изученные сверху).
+ *
+ * Для каждой колоды:
+ *   totalWords   = число DeckWord в колоде
+ *   learnedWords = число UserWordProgress этого пользователя со
+ *                  state = 'graduated' (см. примечание в stats.ts
+ *                  — это согласовано с «освоенными» в общей статистике)
+ *   percentage   = round(learned / total * 100), 0 если total = 0
+ *   color        = low / medium / high / complete (пороги 25/50/75)
+ *
+ * Агрегированные поля:
+ *   totalWords       = сумма totalWords по всем колодам
+ *   totalLearned     = сумма learnedWords
+ *   overallPercentage = round(totalLearned / totalWords * 100), 0
+ *                       если totalWords = 0
+ */
+export async function getStudyMap(userId: string): Promise<StudyMapResponse> {
+  // 1. Все колоды (системные + кастомные).
+  //    Сортировка: сначала системные (HSK), потом по имени.
+  const decks = await prisma.deck.findMany({
+    select: {
+      id: true,
+      name: true,
+      isSystemDeck: true,
+      _count: { select: { words: true } },
+    },
+    orderBy: [{ isSystemDeck: 'desc' }, { name: 'asc' }],
+  });
+
+  if (decks.length === 0) {
+    return { decks: [], totalWords: 0, totalLearned: 0, overallPercentage: 0 };
+  }
+
+  // 2. Подсчёт `graduated` для всех колод одним запросом.
+  //    Берём все DeckWord колод пользователя и джойним с прогрессом
+  //    по (userId, wordId) со state = 'graduated'. Группируем по deckId.
+  const deckIds = decks.map((d) => d.id);
+  const graduatedRows = await prisma.deckWord.findMany({
+    where: {
+      deckId: { in: deckIds },
+      word: {
+        progress: {
+          some: { userId, state: 'graduated' },
+        },
+      },
+    },
+    select: { deckId: true },
+  });
+  const graduatedByDeck = new Map<string, number>();
+  for (const row of graduatedRows) {
+    graduatedByDeck.set(row.deckId, (graduatedByDeck.get(row.deckId) ?? 0) + 1);
+  }
+
+  // 3. Сборка DeckProgress[] + сортировка внутри групп.
+  const progressList: DeckProgress[] = decks.map((d) => {
+    const totalWords = d._count.words;
+    const learnedWords = graduatedByDeck.get(d.id) ?? 0;
+    const percentage = computeDeckProgressPercentage(totalWords, learnedWords);
+    const color: DeckProgressColor = getDeckProgressColor(percentage);
+    return {
+      deckId: d.id,
+      deckName: d.name,
+      isSystemDeck: d.isSystemDeck,
+      totalWords,
+      learnedWords,
+      percentage,
+      color,
+    };
+  });
+
+  // Внутри групп (system / custom) — по убыванию процента,
+  // затем по имени для стабильности.
+  progressList.sort((a, b) => {
+    if (a.isSystemDeck !== b.isSystemDeck) {
+      return a.isSystemDeck ? -1 : 1;
+    }
+    if (a.percentage !== b.percentage) return b.percentage - a.percentage;
+    return a.deckName.localeCompare(b.deckName);
+  });
+
+  // 4. Агрегаты.
+  const totalWords = progressList.reduce((s, d) => s + d.totalWords, 0);
+  const totalLearned = progressList.reduce((s, d) => s + d.learnedWords, 0);
+  const overallPercentage = computeDeckProgressPercentage(totalWords, totalLearned);
+
+  return { decks: progressList, totalWords, totalLearned, overallPercentage };
 }
 
 /**

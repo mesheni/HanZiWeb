@@ -519,7 +519,7 @@ Refs: PLAN_Features_v0.3 §3
 
 ## Фичи
 
-### 5. Карта изучения во вкладке «Итоги»
+### 5. Карта изучения во вкладке «Итоги» ✅ (2026-07-07)
 
 **Проблема**: Вкладка «Итоги» (`StatsScreen`) показывает общую статистику,
 но не даёт наглядного представления о прогрессе по каждой колоде.
@@ -557,6 +557,120 @@ Refs: PLAN_Features_v0.3 §3
 
 **Ожидаемый результат**: Пользователь видит наглядную карту прогресса
 по всем основным колодам с процентами и цветовой индикацией.
+
+**Реализовано**:
+- `packages/shared/src/schemas/stats.ts` — новый файл. `DeckProgressColorSchema`
+  (low | medium | high | complete), `DeckProgressSchema` (deckId, deckName,
+  isSystemDeck, totalWords, learnedWords, percentage, color),
+  `StudyMapResponseSchema` (decks[], totalWords, totalLearned,
+  overallPercentage) + чистая функция `getDeckProgressColor(percentage)` с
+  границами 25/50/75. Зарегистрирован в `packages/shared/src/index.ts`.
+- `apps/server/src/modules/stats/stats.service.ts` — добавлены
+  `computeDeckProgressPercentage(totalWords, learnedWords)` (защита от
+  деления на ноль и learned > total) и `getStudyMap(userId)`. Сервис
+  берёт все колоды (`isSystemDeck desc, name asc`), одним запросом
+  считает `graduated` по всем `DeckWord` колод, собирает `DeckProgress[]`,
+  сортирует внутри групп (системные / кастомные) по убыванию процента,
+  возвращает `StudyMapResponse` с агрегатами. Учитываются только колоды
+  с `state = 'graduated'` (mastered в текущей модели SRS нет, что
+  согласовано с `getOverview.learnedWords`).
+- `apps/server/src/modules/stats/stats.routes.ts` — `GET /stats/study-map`
+  с `preHandler: [app.authenticate]`, ответ `{ success: true, data: StudyMapResponse }`.
+- `apps/server/src/modules/stats/stats.service.test.ts` — 14 новых
+  юнит-тестов: 7 на `computeDeckProgressPercentage` (пустая колода, 0%,
+  100%, округление, промежуточные значения, защита от learned > total,
+  отрицательные значения) и 7 на `getDeckProgressColor` (границы 0/24/25,
+  49/50, 74/75, 100).
+- `apps/web/src/queries/stats.ts` — добавлен `useStudyMap()` (react-query
+  `useQuery`, key `['stats', 'study-map']`, `staleTime: 60_000`,
+  `apiGet<StudyMapResponse>('/stats/study-map')`).
+- `apps/web/src/components/StudyMapCard.tsx` — новый компонент.
+  Карточка колоды: название, прогресс-бар (с цветовой индикацией по
+  `deck.color`), числа `learned / total`, процент, бейдж `Sparkles`
+  для `complete` и `Lock` для пустых колод. Клик/Enter/Space вызывает
+  `onClick(deckId)`; пустые колоды некликабельны. ARIA-атрибуты:
+  `role="button"` + `aria-label` с прогрессом.
+- `apps/web/src/screens/StatsScreen.tsx` — новая секция «Карта изучения»
+  между «Активность» и «Таблица лидеров»: спиннер при загрузке,
+  понятное сообщение при ошибке, плейсхолдер при пустом списке,
+  сетка карточек иначе. Сверху — общий счётчик
+  `totalLearned / totalWords · overallPercentage%` (если есть слова).
+  Клик по карточке → `navigate('/library?deckId=<uuid>')`.
+- `apps/web/src/screens/LibraryScreen.tsx` — добавлен
+  `useSearchParams`-обёрнутый сеттер `updateActiveDeckId(next)`,
+  который обновляет и state, и URL (`?deckId=<uuid>` с `replace: true`).
+  При первом монтировании подхватывает `deckId` из URL — это и есть
+  мост между «Картой изучения» и фильтром колоды в библиотеке.
+  Старые ручные `setActiveDeckId(...)` заменены на `updateActiveDeckId`.
+- `apps/web/src/styles/global.css` — стили `.study-map-grid`
+  (`auto-fill minmax(180px, 1fr)`, на мобильных — 2 колонки),
+  `.study-map-card` (фон, бордер, hover, focus-visible, transition),
+  `.study-map-card-{low,medium,high,complete}` (цвет прогресс-бара,
+  подсветка бордера, цвет процента), `.study-map-card-bar` (фон + fill
+  c `transition: width 0.3s`), `.study-map-card-{name,counts,pct,meta,head,badge}`,
+  `.study-map-card-empty` (opacity + cursor: default без эффектов),
+  `.study-map-overall`. Переиспользуются существующие токены
+  `var(--tone-1..4)`, `var(--accent)`, `var(--bg-*)` — без новых тем.
+- `packages/shared/api-spec.md` — задокументирован `GET /api/stats/study-map`:
+  таблица параметров, схема `StudyMapResponse`, пример JSON с HSK и
+  кастомной колодой, описание цветовых уровней, добавлена строка
+  `21a GET /api/stats/study-map` в сводную таблицу, обновлён счётчик
+  «36 эндпоинтов».
+
+**Проверка**:
+- `pnpm --filter @hanzi/shared typecheck` — OK
+- `pnpm --filter @hanzi/server typecheck` — OK
+- `pnpm --filter @hanzi/web typecheck` — OK
+- `pnpm typecheck` (root, turbo) — 7/7 OK
+- `pnpm lint` (root, turbo) — 7/7 OK (`tsc --noEmit` на каждом workspace)
+- `pnpm --filter @hanzi/shared build` — OK
+- `pnpm --filter @hanzi/server build` — OK
+- `pnpm --filter @hanzi/web build` — OK (vite + PWA sw, без новых warnings)
+- `pnpm --filter @hanzi/server exec vitest run` — 242/242 теста
+  пройдены (228 ранее + 14 новых для `computeDeckProgressPercentage`
+  и `getDeckProgressColor`)
+
+**Запись для коммита**:
+
+```
+feat(stats): study map section in StatsScreen (PLAN_Features_v0.3 §5)
+
+- shared: add DeckProgressSchema (deckId, deckName, isSystemDeck,
+  totalWords, learnedWords, percentage 0..100, color) and
+  StudyMapResponseSchema (decks[], totalWords, totalLearned,
+  overallPercentage) in new packages/shared/src/schemas/stats.ts.
+  Pure helper getDeckProgressColor(p) maps percentage to
+  low (<25) | medium (≥25) | high (≥50) | complete (≥75).
+- server: add getStudyMap(userId) to stats.service — fetches all
+  decks (system desc, name asc), counts 'graduated' DeckWord
+  rows in a single query, builds DeckProgress[] with safe
+  computeDeckProgressPercentage (handles totalWords=0 and
+  learned>total), sorts within system/custom groups by
+  descending percentage, returns aggregate totals.
+  Routes:
+    GET /api/stats/study-map  (JWT, StudyMapResponse)
+- server: 14 new vitest specs covering computeDeckProgressPercentage
+  (empty deck, 0%/100%, rounding, overshoot guard) and
+  getDeckProgressColor boundaries (0/24/25, 49/50, 74/75, 100).
+- web: useStudyMap() in queries/stats.ts (staleTime 60_000) +
+  new components/StudyMapCard.tsx (name, progress bar with
+  color tier, learned/total + percentage, complete/empty
+  badges, keyboard a11y). StatsScreen gains a new section
+  between Activity and Leaderboard: total header, grid of
+  cards, loading/error/empty states. Click navigates to
+  /library?deckId=<uuid>. LibraryScreen now reads/writes
+  the deckId URL param via useSearchParams so the filter
+  survives reload and is shareable.
+- web: global.css — .study-map-* classes (grid, card, bar,
+  color tiers low/medium/high/complete) reusing existing
+  tone-1..4 and accent tokens. Mobile breakpoint collapses
+  to 2 columns.
+- docs: api-spec.md documents GET /api/stats/study-map with
+  payload example, color-tier legend, and updates the
+  endpoint summary to 36 total.
+
+Refs: PLAN_Features_v0.3 §5
+```
 
 ---
 

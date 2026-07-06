@@ -57,6 +57,22 @@ export async function statsRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * GET /stats/study-map
+   * Карта изучения — прогресс по каждой колоде (PLAN_Features_v0.3 §5).
+   * Возвращает `StudyMapResponseSchema`:
+   * `{ decks: DeckProgress[], totalWords, totalLearned, overallPercentage }`.
+   * Каждая `DeckProgress` содержит `deckId`, `deckName`, `totalWords`,
+   * `learnedWords` (state = graduated), `percentage` (0..100) и
+   * `color` (low | medium | high | complete). Колоды отсортированы:
+   * сначала системные (HSK), потом кастомные; внутри групп — по
+   * убыванию процента.
+   */
+  app.get('/study-map', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const data = await statsService.getStudyMap(request.userId);
+    return reply.send({ success: true, data });
+  });
+
   /** POST /stats/reset-progress — полный сброс прогресса */
   app.post('/reset-progress', { preHandler: [app.authenticate] }, async (request, reply) => {
     const result = await statsService.resetProgress(request.userId);

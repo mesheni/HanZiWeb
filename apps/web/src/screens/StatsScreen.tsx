@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,11 +10,20 @@ import {
   GraduationCap,
   Loader2,
   Lock,
+  Map as MapIcon,
   Sparkles,
   Trophy,
 } from 'lucide-react';
-import { useActivity, useLeaderboard, useOverview, type LeaderboardEntry, type LeaderboardPeriod } from '../queries/stats';
+import {
+  useActivity,
+  useLeaderboard,
+  useOverview,
+  useStudyMap,
+  type LeaderboardEntry,
+  type LeaderboardPeriod,
+} from '../queries/stats';
 import { useAchievements } from '../queries/achievements';
+import StudyMapCard from '../components/StudyMapCard';
 import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
 
 const ACHIEVEMENT_ICONS: Record<
@@ -312,10 +322,12 @@ export default function StatsScreen() {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [period, setPeriod] = useState<LeaderboardPeriod>('week');
+  const navigate = useNavigate();
 
   const { data: overview } = useOverview();
   const { data: activityData } = useActivity(year);
   const { data: leaderboard, isLoading: lbLoading, isError: lbError } = useLeaderboard(period);
+  const { data: studyMap, isLoading: smLoading, isError: smError } = useStudyMap();
 
   const activityMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -331,6 +343,10 @@ export default function StatsScreen() {
   const streak = overview?.currentStreak ?? 0;
   const graduated = overview?.byState?.graduated ?? 0;
   const xp = overview?.xp ?? 0;
+
+  const handleDeckClick = (deckId: string) => {
+    navigate(`/library?deckId=${encodeURIComponent(deckId)}`);
+  };
 
   return (
     <div style={styles.screen}>
@@ -378,6 +394,40 @@ export default function StatsScreen() {
           </div>
         </div>
         <ActivityCalendar activityMap={activityMap} year={year} />
+      </div>
+
+      {/* Study Map (PLAN_Features_v0.3 §5) */}
+      <div style={styles.calSection}>
+        <div style={styles.calHeader}>
+          <span className="section-label" style={{ margin: 0 }}>Карта изучения</span>
+          {studyMap && studyMap.totalWords > 0 && (
+            <span className="study-map-overall">
+              {studyMap.totalLearned} / {studyMap.totalWords} · {studyMap.overallPercentage}%
+            </span>
+          )}
+        </div>
+        {smLoading ? (
+          <div className="lb-loading">
+            <Loader2 size={16} className="spinner-inline" />
+          </div>
+        ) : smError ? (
+          <div className="lb-empty">Не удалось загрузить карту изучения.</div>
+        ) : !studyMap || studyMap.decks.length === 0 ? (
+          <div className="lb-empty">
+            <MapIcon size={14} />
+            <span>Пока нет колод. Создайте свою или подпишитесь по коду.</span>
+          </div>
+        ) : (
+          <div className="study-map-grid">
+            {studyMap.decks.map((deck) => (
+              <StudyMapCard
+                key={deck.deckId}
+                deck={deck}
+                onClick={handleDeckClick}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Leaderboard */}
