@@ -46,6 +46,8 @@ model User {
   achievements  UserAchievement[]
   accounts      UserAccount[]
   testResults   TestResult[]
+  wordPriorities   UserWordPriority[]
+  readingProgress  UserReadingProgress[]
 
   /// Индекс для быстрого leaderboard (топ по XP за всё время).
   @@index([xp(sort: Desc)])
@@ -116,12 +118,14 @@ model Word {
   mnemonic    String?
   createdAt   DateTime @default(now())
 
-  examples      Example[]
-  deckWords     DeckWord[]
-  progress      UserWordProgress[]
-  answers       SessionAnswer[]
-  clozeProgress ClozeProgress[]
-  tags          WordTag[]
+  examples       Example[]
+  deckWords      DeckWord[]
+  progress       UserWordProgress[]
+  answers        SessionAnswer[]
+  clozeProgress  ClozeProgress[]
+  tags           WordTag[]
+  textTokens     ReadingTextWord[]
+  userPriorities UserWordPriority[]
 }
 
 /// Тег для слова (для фильтрации сессий: «только забываемые», «с мнемоникой», …).
@@ -261,6 +265,67 @@ model ClozeProgress {
   lastCorrect  Boolean?
 
   @@unique([userId, exampleId])
+  @@index([userId])
+}
+
+/// Интерактивный текст для вкладки «Чтение» (PLAN_Features_v0.3 §8).
+/// `content` — абзацы, объединённые двойным переводом строки (\n\n).
+/// Токенизация хранится в `ReadingTextWord` (предвычисляется при seed).
+model ReadingText {
+  id           String   @id @default(uuid())
+  title        String
+  content      String
+  hskLevel     Int
+  author       String?
+  source       String?
+  wordCount    Int
+  createdAt    DateTime @default(now())
+
+  words        ReadingTextWord[]
+  userProgress UserReadingProgress[]
+}
+
+/// Связь токена (слова) с текстом. Хранит только успешно сопоставленные
+/// со словарём токены. `position` — символьный offset в `ReadingText.content`;
+/// `length` — длина токена в символах.
+model ReadingTextWord {
+  id       String  @id @default(uuid())
+  textId   String
+  text     ReadingText @relation(fields: [textId], references: [id], onDelete: Cascade)
+  wordId   String
+  word     Word    @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  position Int
+  length   Int
+
+  @@index([textId, position])
+  @@index([wordId])
+}
+
+/// Приоритетное слово пользователя — добавляется из вкладки «Чтение»
+/// (звезда в tooltip) и вставляется в начало следующей сессии.
+model UserWordPriority {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wordId    String
+  word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  priority  Int      @default(1)
+  addedAt   DateTime @default(now())
+
+  @@unique([userId, wordId])
+  @@index([userId])
+}
+
+/// Прогресс чтения пользователя (отметка «прочитано»).
+model UserReadingProgress {
+  id     String   @id @default(uuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  textId String
+  text   ReadingText @relation(fields: [textId], references: [id], onDelete: Cascade)
+  readAt DateTime @default(now())
+
+  @@unique([userId, textId])
   @@index([userId])
 }
 
