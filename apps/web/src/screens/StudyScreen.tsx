@@ -174,6 +174,17 @@ export default function StudyScreen() {
     return getCharacterDistractors(currentCard.word, combinedPool, 6);
   }, [currentCard, combinedPool]);
 
+  // Мемоизированный poolPinyin для `syllable-constructor`. Без useMemo
+  // `combinedPool.map(...)` создаёт новый массив на каждом re-render
+  // StudyScreen (в т.ч. при обновлении состояния `useAudio` после
+  // нажатия кнопки озвучки), что приводит к пересборке пула слогов
+  // в SyllableConstructorCard и их перемешиванию — баг «Собери пиньинь»
+  // (PLAN_Features_v0.3 §14).
+  const syllablePoolPinyin = useMemo(
+    () => combinedPool.map((w) => w.pinyin),
+    [combinedPool],
+  );
+
   // Примеры для текущего слова — нужны cloze-карточке.
   // Берём встроенные примеры из слова, а если их нет — подгружаем
   // /words/:id/examples (там могут быть доп. Tatoeba-примеры).
@@ -699,7 +710,7 @@ export default function StudyScreen() {
         {storePracticeType === 'syllable-constructor' && (
           <SyllableConstructorCard
             word={currentCard.word}
-            poolPinyin={combinedPool.map((w) => w.pinyin)}
+            poolPinyin={syllablePoolPinyin}
             onAnswer={handleBinaryAnswer}
             onPlayAudio={() => audio.play()}
             audioAvailable={audio.isAvailable}

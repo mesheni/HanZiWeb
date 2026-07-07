@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { buildSyllablePool } from '../../utils/distractors';
@@ -36,10 +36,20 @@ export default function SyllableConstructorCard({
   const [submitted, setSubmitted] = useState(false);
   const [dragOver, setDragOver] = useState<'pool' | 'answer' | null>(null);
 
+  // Ref отслеживает, для какого слова уже собран пул. Родитель может
+  // передавать новую ссылку `poolPinyin` при несвязанных re-render'ах
+  // (например, при обновлении `isPlaying`/`isAvailable` в `useAudio` после
+  // нажатия кнопки озвучки), и без этой защиты useEffect перезапускал бы
+  // `buildSyllablePool` и заново перемешивал слоги прямо во время сборки
+  // пользователем — баг «Собери пиньинь» (PLAN_Features_v0.3 §14).
+  const lastBuiltKeyRef = useRef<string>('');
+
   // Инициализация пула слогов при смене слова.
   useEffect(() => {
-    const newPool = buildSyllablePool(word.pinyin, poolPinyin, 3);
-    setPool(newPool);
+    const key = `${word.id}::${word.pinyin}`;
+    if (lastBuiltKeyRef.current === key) return;
+    lastBuiltKeyRef.current = key;
+    setPool(buildSyllablePool(word.pinyin, poolPinyin, 3));
     setAnswer([]);
     setSubmitted(false);
   }, [word.id, word.pinyin, poolPinyin]);
