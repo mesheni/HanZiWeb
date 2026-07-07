@@ -2,8 +2,9 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download } from 'lucide-react';
+import type { WordListItem } from '@hanzi/shared';
 import { useDashboard } from '../queries/stats';
-import { useWords } from '../queries/words';
+import { useRecentWords } from '../queries/words';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { getDb } from '../db/database';
 import Badge from '../components/ui/Badge';
@@ -42,8 +43,13 @@ export default function HomeScreen() {
   const navigate = useNavigate();
   const isOnline = useOnlineStatus();
   const { data: dashboard, isLoading } = useDashboard();
-  const { data: recentData } = useWords({ limit: 5 });
-  const recentWords = recentData?.data ?? [];
+  // PLAN_Features_v0.3 §17: «Последние слова» — это реальные последние
+  // изученные иероглифы (`lastReviewDate DESC`), а не первые N строк
+  // словаря. После каждого ответа `useRecordAnswer` инвалидирует
+  // `['words', 'recent']`, поэтому при возврате на главную данные
+  // подтянутся автоматически.
+  const { data: recentWordsData } = useRecentWords(5);
+  const recentWords: WordListItem[] = recentWordsData ?? [];
   const [dlState, setDlState] = useState<'idle' | 'loading' | 'done'>('idle');
 
   const handleDownloadOffline = async () => {
@@ -220,7 +226,7 @@ export default function HomeScreen() {
         <>
           <div className="section-label">Последние слова</div>
           <div style={styles.wordRows}>
-            {recentWords.map((w: any) => (
+            {recentWords.map((w) => (
               <div key={w.id} style={styles.wordRow}>
                 <div style={styles.wrChar}>{w.character}</div>
                 <div style={{ flex: 1 }}>

@@ -76,3 +76,16 @@ export const WordFiltersSchema = z.object({
 });
 
 export type WordFilters = z.infer<typeof WordFiltersSchema>;
+
+/**
+ * Query для `GET /words/recent` — последние N изученных слов
+ * текущего пользователя, отсортированных по `lastReviewDate DESC`.
+ *
+ * `limit` ограничен 50 — больше для главной не нужно, и пользователь
+ * с гигантской историей не вытащит одним запросом всю таблицу.
+ */
+export const RecentWordsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+export type RecentWordsQuery = z.infer<typeof RecentWordsQuerySchema>;

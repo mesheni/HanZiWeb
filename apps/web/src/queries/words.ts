@@ -101,3 +101,41 @@ export function useWord(id: string | null) {
     enabled: !!id,
   });
 }
+
+/**
+ * Хук для получения последних N изученных слов текущего пользователя
+ * (PLAN_Features_v0.3 §17). Возвращает плоский массив `WordListItem[]`,
+ * отсортированный по `lastReviewDate DESC`.
+ *
+ * Параллельно зеркалит слова в локальный RxDB, чтобы офлайн-список
+ * «Последние слова» мог работать без сети. Сами по себе `lastReviewDate`
+ * обновляются через `useRecordAnswer → invalidateQueries(['words'])`
+ * (prefix-match в react-query v5), но для надёжности ключ вынесен в
+ * отдельный sub-prefix `['words', 'recent', limit]`, и в `sessions.ts`
+ * инвалидация этого префикса вызывается явно.
+ */
+export function useRecentWords(limit = 10) {
+  return useQuery({
+    queryKey: ['words', 'recent', limit],
+    queryFn: async () => {
+      const result = await apiGet<WordListItem[]>(`/words/recent?limit=${limit}`);
+      const db = getDb();
+      if (db) {
+        for (const w of result) {
+          await db.words.upsert({
+            id: w.id,
+            character: w.character,
+            pinyin: w.pinyin,
+            translation: w.translation,
+            hskLevel: w.hskLevel,
+            audioUrl: null,
+            mnemonic: null,
+            createdAt: new Date().toISOString(),
+            examples: [],
+          });
+        }
+      }
+      return result;
+    },
+  });
+}

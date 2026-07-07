@@ -3,7 +3,9 @@ import {
   CreateWordSchema,
   UpdateWordSchema,
   WordFiltersSchema,
+  RecentWordsQuerySchema,
   type WordFilters,
+  type RecentWordsQuery,
 } from '@hanzi/shared';
 import * as wordsService from './words.service.js';
 
@@ -15,6 +17,21 @@ export async function wordsRoutes(app: FastifyInstance) {
     const result = await wordsService.listWords(filters, request.userId || undefined);
     return reply.send({ success: true, data: result.data, pagination: result.pagination });
   });
+
+  /**
+   * GET /words/recent — последние изученные слова текущего пользователя,
+   * отсортированные по `lastReviewDate DESC` (PLAN_Features_v0.3 §17).
+   * Должен быть смонтирован ДО `/:id`, иначе Fastify поймает «recent» как id.
+   */
+  app.get<{ Querystring: RecentWordsQuery }>(
+    '/recent',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const query = RecentWordsQuerySchema.parse(request.query);
+      const words = await wordsService.getRecentWords(request.userId, query);
+      return reply.send({ success: true, data: words });
+    },
+  );
 
   /** GET /words/:id — одно слово (опционально включает userProgress) */
   app.get<{ Params: { id: string } }>('/:id', { preHandler: [app.authenticateOptional] }, async (request, reply) => {

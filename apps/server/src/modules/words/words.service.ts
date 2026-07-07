@@ -1,5 +1,12 @@
 import { prisma } from '../../lib/prisma.js';
-import type { CreateWord, UpdateWord, WordFilters, Pagination } from '@hanzi/shared';
+import type {
+  CreateWord,
+  UpdateWord,
+  WordFilters,
+  WordListItem,
+  RecentWordsQuery,
+  Pagination,
+} from '@hanzi/shared';
 import type { Prisma } from '@prisma/client';
 
 /** Какие relations подгружаются по умолчанию при запросах Word. */
@@ -83,6 +90,52 @@ export async function listWords(filters: WordFilters, userId?: string) {
   };
 
   return { data: wordsWithStatus, pagination };
+}
+
+/**
+ * Возвращает последние `limit` изученных слов пользователя, отсортированных
+ * по `lastReviewDate DESC`. Дубликатов нет — `UserWordProgress` имеет
+ * `@@unique([userId, wordId])`, так что каждое слово встречается ровно
+ * один раз (PLAN_Features_v0.3 §17).
+ *
+ * Слова, у которых `lastReviewDate` ещё `null` (только что добавленные
+ * в прогресс, но ни разу не отвеченные), отфильтровываются — иначе
+ * на главной всплывали бы «новые» карточки, которые пользователь
+ * ещё не видел.
+ */
+export async function getRecentWords(
+  userId: string,
+  query: RecentWordsQuery,
+): Promise<WordListItem[]> {
+  const progress = await prisma.userWordProgress.findMany({
+    where: {
+      userId,
+      lastReviewDate: { not: null },
+    },
+    orderBy: { lastReviewDate: 'desc' },
+    take: query.limit,
+    select: {
+      state: true,
+      word: {
+        select: {
+          id: true,
+          character: true,
+          pinyin: true,
+          translation: true,
+          hskLevel: true,
+        },
+      },
+    },
+  });
+
+  return progress.map((p) => ({
+    id: p.word.id,
+    character: p.word.character,
+    pinyin: p.word.pinyin,
+    translation: p.word.translation,
+    hskLevel: p.word.hskLevel,
+    status: p.state,
+  }));
 }
 
 export async function getWord(id: string, userId?: string) {

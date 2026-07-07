@@ -50,6 +50,13 @@ export function useRecordAnswer() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['stats'] });
       queryClient.invalidateQueries({ queryKey: ['words'] });
+      // PLAN_Features_v0.3 §17: главная страница показывает последние
+      // изученные слова из `['words', 'recent', limit]`. Широкий
+      // `['words']` уже покрывает это через prefix-matching, но явный
+      // sub-prefix делает инвалидацию читаемой и устойчивой, если в
+      // будущем кто-то добавит query с ключом `['words', ...]`, не
+      // относящийся к «недавним» (например, поиск).
+      queryClient.invalidateQueries({ queryKey: ['words', 'recent'] });
       if (data.unlockedAchievements.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['achievements'] });
       }
