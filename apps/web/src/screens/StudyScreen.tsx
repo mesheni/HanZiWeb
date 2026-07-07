@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { X, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { Check, X, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { cn } from '../utils/cn';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
 import { useDistractorPool, getCharacterDistractors } from '../hooks/useDistractorPool';
@@ -110,8 +111,18 @@ export default function StudyScreen() {
   // Запускаем сессию только после явного "Начать" — иначе показываем
   // экран выбора практики. Хук не делает побочных эффектов, пока
   // enabled = false, поэтому на экране выбора мы не дёргаем /sessions/start.
-  const { isLoading, isError, isSessionComplete, rateCard, retrySession, startNow } =
-    useStudySession({
+  const {
+    isLoading,
+    isError,
+    isSessionComplete,
+    rateCard,
+    retrySession,
+    startNow,
+    showFeedback,
+    lastAnswerCorrect,
+    submitAnswer,
+    continueSession,
+  } = useStudySession({
       mode,
       practiceType: activePracticeType,
       filters: activeFilters,
@@ -523,6 +534,17 @@ export default function StudyScreen() {
     rateCard(correct ? 3 : 1);
   };
 
+  const isChoiceMode =
+    storePracticeType === 'multiple-choice' ||
+    storePracticeType === 'reverse-choice' ||
+    storePracticeType === 'tone-recognition';
+
+  // Для choice-based режимов ответ сохраняется в feedback и не
+  // вызывает rateCard до нажатия "Продолжить".
+  const handleChoiceAnswer = (correct: boolean) => {
+    submitAnswer(correct);
+  };
+
   return (
     <div
       style={{
@@ -642,7 +664,7 @@ export default function StudyScreen() {
           <MultipleChoiceCard
             word={currentCard.word}
             pool={combinedPool}
-            onAnswer={handleBinaryAnswer}
+            onAnswer={handleChoiceAnswer}
             onPlayAudio={() => audio.play()}
             audioAvailable={audio.isAvailable}
           />
@@ -652,7 +674,7 @@ export default function StudyScreen() {
           <ReverseChoiceCard
             word={currentCard.word}
             pool={combinedPool}
-            onAnswer={handleBinaryAnswer}
+            onAnswer={handleChoiceAnswer}
             onPlayAudio={() => audio.play()}
             audioAvailable={audio.isAvailable}
           />
@@ -668,7 +690,7 @@ export default function StudyScreen() {
         )}
 
         {storePracticeType === 'tone-recognition' && (
-          <ToneRecognitionCard word={currentCard.word} onAnswer={handleBinaryAnswer} />
+          <ToneRecognitionCard word={currentCard.word} onAnswer={handleChoiceAnswer} />
         )}
 
         {storePracticeType === 'syllable-constructor' && (
@@ -695,6 +717,46 @@ export default function StudyScreen() {
           <ClozeCard word={currentCard.word} examples={allExamples} onAnswer={handleBinaryAnswer} />
         )}
       </div>
+
+      {/* Feedback panel для choice-based режимов: показываем результат и ждём "Продолжить". */}
+      {isChoiceMode && showFeedback && (
+        <div style={{ padding: '10px 22px 20px', flexShrink: 0 }}>
+          <div className="feedback-panel">
+            <div
+              className={cn(
+                'feedback-banner',
+                lastAnswerCorrect ? 'feedback-correct' : 'feedback-wrong',
+              )}
+            >
+              {lastAnswerCorrect ? <Check size={16} /> : <X size={16} />}
+              {lastAnswerCorrect ? 'Верно' : 'Неверно'}
+            </div>
+            <div className="feedback-word">
+              <div className="feedback-character">{currentCard.word.character}</div>
+              <div className="feedback-pinyin">{currentCard.word.pinyin}</div>
+              <div className="feedback-translation">{currentCard.word.translation}</div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="feedback-audio-btn"
+                onClick={() => audio.play()}
+                disabled={!audio.isAvailable}
+                aria-label="Прослушать слово"
+              >
+                <Volume2 size={15} />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="feedback-continue"
+              onClick={continueSession}
+            >
+              Продолжить
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Footer — для flip-card рейтинг-кнопки, иначе ничего (компонент сам решает). */}
       {!isBinaryMode && (

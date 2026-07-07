@@ -42,7 +42,7 @@ export default function ReverseChoiceCard({
       [option.id]: isCorrect ? 'correct' : 'wrong',
       [word.id]: 'correct',
     });
-    window.setTimeout(() => onAnswer(isCorrect), 480);
+    onAnswer(isCorrect);
   };
 
   return (

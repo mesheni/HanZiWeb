@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStartSession, useRecordAnswer } from '../queries/sessions';
 import { useStudyStore } from '../stores/studyStore';
 import { useToast } from '../stores/toastStore';
@@ -58,6 +58,14 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
 
   const generationRef = useRef(0);
 
+  // Состояние обратной связи для choice-based режимов:
+  // после выбора ответа не переходим к след. карточке, а ждём
+  // нажатия "Продолжить".
+  const [feedback, setFeedback] = useState<{
+    correct: boolean;
+    rating: SrsRating;
+  } | null>(null);
+
   // Обновляем таймстамп показа при смене карточки. Используется
   // для расчёта `responseTimeMs` в `answer_rated`.
   useEffect(() => {
@@ -70,6 +78,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     (session: { id: string; cards: unknown[] }) => {
       if (gen !== generationRef.current) return;
       startSession(session.cards as never, session.id, { mode, practiceType });
+      setFeedback(null);
       // Аналитика: пользователь начал сессию.
       trackSessionStarted({
         sessionId: session.id,
@@ -258,6 +267,18 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
   const isSessionComplete =
     cardsCount > 0 && currentIndex >= cardsCount;
 
+  const submitAnswer = (correct: boolean) => {
+    if (feedback !== null) return;
+    setFeedback({ correct, rating: correct ? 3 : 1 });
+  };
+
+  const continueSession = () => {
+    if (!feedback) return;
+    const { rating } = feedback;
+    setFeedback(null);
+    rateCard(rating);
+  };
+
   return {
     isLoading: startMutation.isPending || (enabled && startMutation.isIdle && !cardsCount),
     isError: startMutation.isError,
@@ -265,5 +286,9 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     rateCard,
     retrySession,
     startNow,
+    showFeedback: feedback !== null,
+    lastAnswerCorrect: feedback?.correct ?? false,
+    submitAnswer,
+    continueSession,
   };
 }

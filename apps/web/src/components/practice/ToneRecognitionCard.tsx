@@ -52,7 +52,7 @@ export default function ToneRecognitionCard({ word, onAnswer }: ToneRecognitionC
     if (selected !== null) return;
     setSelected(tone);
     const isCorrect = tone === targetTone;
-    window.setTimeout(() => onAnswer(isCorrect), 600);
+    onAnswer(isCorrect);
   };
 
   return (

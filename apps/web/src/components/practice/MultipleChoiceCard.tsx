@@ -45,8 +45,9 @@ export default function MultipleChoiceCard({
       [option.id]: isCorrect ? 'correct' : 'wrong',
       [word.id]: isCorrect ? 'correct' : 'correct',
     });
-    // Небольшая задержка чтобы пользователь увидел подсветку.
-    window.setTimeout(() => onAnswer(isCorrect), 480);
+    // Вызываем onAnswer сразу — StudyScreen покажет feedback и
+    // дождётся нажатия "Продолжить" прежде чем rateCard.
+    onAnswer(isCorrect);
   };
 
   return (
