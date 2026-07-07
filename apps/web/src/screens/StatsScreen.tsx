@@ -349,9 +349,9 @@ export default function StatsScreen() {
   };
 
   return (
-    <div style={styles.screen}>
+    <div className="stats-screen">
       {/* Summary stats */}
-      <div style={styles.statGrid}>
+      <div className="stats-summary-grid">
         <div style={styles.statCard}>
           <div style={{ ...styles.statNumber, color: 'var(--tone-3)' }}>{streak}</div>
           <div style={styles.statLabel}>🔥 текущий стрик</div>
@@ -371,9 +371,9 @@ export default function StatsScreen() {
       </div>
 
       {/* Activity Calendar */}
-      <div style={styles.calSection}>
-        <div style={styles.calHeader}>
-          <span className="section-label" style={{ margin: 0 }}>Активность</span>
+      <div className="stats-section">
+        <div className="stats-section-header">
+          <span className="section-label">Активность</span>
           <div style={styles.yearSwitcher}>
             <button
               style={styles.yearBtn}
@@ -397,9 +397,9 @@ export default function StatsScreen() {
       </div>
 
       {/* Study Map (PLAN_Features_v0.3 §5) */}
-      <div style={styles.calSection}>
-        <div style={styles.calHeader}>
-          <span className="section-label" style={{ margin: 0 }}>Карта изучения</span>
+      <div className="stats-section">
+        <div className="stats-section-header">
+          <span className="section-label">Карта изучения</span>
           {studyMap && studyMap.totalWords > 0 && (
             <span className="study-map-overall">
               {studyMap.totalLearned} / {studyMap.totalWords} · {studyMap.overallPercentage}%
@@ -431,9 +431,9 @@ export default function StatsScreen() {
       </div>
 
       {/* Leaderboard */}
-      <div style={styles.calSection}>
-        <div style={styles.calHeader}>
-          <span className="section-label" style={{ margin: 0 }}>Таблица лидеров</span>
+      <div className="stats-section">
+        <div className="stats-section-header">
+          <span className="section-label">Таблица лидеров</span>
           <div className="lb-tabs" role="tablist">
             <button
               type="button"
@@ -464,9 +464,9 @@ export default function StatsScreen() {
       </div>
 
       {/* Achievements */}
-      <div style={styles.calSection}>
-        <div style={styles.calHeader}>
-          <span className="section-label" style={{ margin: 0 }}>Достижения</span>
+      <div className="stats-section">
+        <div className="stats-section-header">
+          <span className="section-label">Достижения</span>
         </div>
         <Achievements />
       </div>
@@ -475,26 +475,12 @@ export default function StatsScreen() {
 }
 
 const styles: Record<string, CSSProperties> = {
-  screen: {
-    position: 'absolute', inset: 0, overflowY: 'auto',
-    padding: '26px 26px 20px',
-  },
-  statGrid: {
-    display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 18,
-  },
   statCard: {
     background: 'var(--bg-card)', border: '1px solid var(--border-default)',
     borderRadius: 12, padding: 12, textAlign: 'center',
   },
   statNumber: { fontSize: 22, fontWeight: 600, lineHeight: 1 },
   statLabel: { fontSize: 9, color: 'var(--text-muted)', marginTop: 4 },
-  calSection: {
-    background: 'var(--bg-card)', border: '1px solid var(--border-default)',
-    borderRadius: 12, padding: 16,
-  },
-  calHeader: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
-  },
   yearSwitcher: {
     display: 'flex', alignItems: 'center', gap: 4,
   },

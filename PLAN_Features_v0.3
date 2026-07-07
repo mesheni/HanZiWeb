@@ -1080,7 +1080,7 @@ tone-recognition) после выбора варианта сразу показ
 
 ---
 
-### 10. Отступы элементов во вкладке «Итоги»
+### 10. Отступы элементов во вкладке «Итоги» ✅ (2026-07-07)
 
 **Проблема**: Элементы на экране «Итоги» (`StatsScreen`) имеют неровные
 отступы — разное расстояние между секциями, элементы не выровнены
@@ -1096,6 +1096,41 @@ tone-recognition) после выбора варианта сразу показ
 
 **Ожидаемый результат**: Все секции на экране «Итоги» имеют одинаковые,
 визуально согласованные отступы.
+
+**Реализовано**:
+- `apps/web/src/screens/StatsScreen.tsx` — макет экрана переведён на
+  CSS-классы: `.stats-screen` (флекс-колонка с `gap: 24px` и
+  `padding: 26px 26px 32px`), `.stats-summary-grid` (сетка 2×2 с
+  `gap: 12px`), `.stats-section` (карточка секции с `gap: 12px` и
+  `padding: 16px`), `.stats-section-header` (заголовок секции, отступ
+  до содержимого формируется через `gap` родителя). Убраны разнородные
+  `marginBottom` у сводной сетки и инлайновые `margin: 0` у меток.
+- `apps/web/src/styles/global.css` — добавлен блок «Stats screen» с
+  единой системой отступов; `.ach-grid` и `.study-map-grid` приведены
+  к `gap: 12px` (было 10px), чтобы соответствовать внутрисекционному
+  шагу.
+
+**Проверка**:
+- `pnpm --filter @hanzi/web typecheck` — OK
+- `pnpm --filter @hanzi/web lint` — OK
+- `pnpm --filter @hanzi/web build` — OK (vite + PWA sw)
+- В собранном CSS присутствуют классы `.stats-screen`, `.stats-section`
+  и т.д.
+
+**Запись для коммита**:
+
+```
+fix(web/stats): unify spacing in StatsScreen (PLAN_Features_v0.3 §10)
+
+- StatsScreen.tsx: replace ad-hoc inline layout styles with dedicated
+  CSS classes (.stats-screen, .stats-summary-grid, .stats-section,
+  .stats-section-header). Root now uses gap: 24px between sections,
+  summary grid and section cards use gap: 12px internally.
+- global.css: add Stats screen section with consistent spacing tokens;
+  align .ach-grid and .study-map-grid gaps to 12px.
+
+Refs: PLAN_Features_v0.3 §10
+```
 
 ---
 

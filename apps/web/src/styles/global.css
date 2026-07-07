@@ -3426,6 +3426,44 @@ input {
   }
 }
 
+/* ===== Stats screen (PLAN_Features_v0.3 §10) ===== */
+.stats-screen {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 26px 26px 32px;
+}
+
+.stats-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.stats-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stats-section-header .section-label {
+  margin-bottom: 0;
+}
+
 /* ===== Leaderboard (Таблица лидеров) ===== */
 .lb-tabs {
   display: inline-flex;
@@ -3644,7 +3682,7 @@ input {
 .ach-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .ach-card {
@@ -3751,7 +3789,7 @@ input {
 .study-map-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .study-map-card {
