@@ -6,9 +6,15 @@ import {
   Puzzle,
   CreditCard,
   WholeWord,
+  GraduationCap,
+  Dumbbell,
 } from 'lucide-react';
 import { useStudyStore } from '../../stores/studyStore';
-import { getPracticeTypeInfo } from '../../utils/practiceTypes';
+import {
+  getPracticeTypeInfo,
+  isTrainingPractice,
+  type PracticeTypeInfo,
+} from '../../utils/practiceTypes';
 import { usePracticeTypes } from '../../hooks/useFeatureFlag';
 import { cn } from '../../utils/cn';
 import type { PracticeType, StudyMode } from '@hanzi/shared';
@@ -35,9 +41,59 @@ const MODE_DESCRIPTION: Record<StudyMode, string> = {
   learn: 'Только новые слова — для первичного запоминания',
 };
 
+interface TypeCardProps {
+  info: PracticeTypeInfo;
+  isActive: boolean;
+  isTraining: boolean;
+  onClick: () => void;
+}
+
+function TypeCard({ info, isActive, isTraining, onClick }: TypeCardProps) {
+  const Icon = ICONS[info.icon];
+  return (
+    <button
+      type="button"
+      className={cn(
+        'practice-selector-card',
+        isActive && 'practice-selector-card-active',
+        isTraining && 'practice-selector-card-training',
+      )}
+      style={
+        isActive
+          ? { borderColor: info.color, background: info.bg }
+          : undefined
+      }
+      onClick={onClick}
+    >
+      <div
+        className="practice-selector-icon"
+        style={{ color: info.color, background: info.bg }}
+      >
+        <Icon size={20} />
+      </div>
+      <div className="practice-selector-label">{info.label}</div>
+      <div className="practice-selector-desc">{info.description}</div>
+      {isTraining && (
+        <span
+          className="practice-selector-card-training-badge"
+          title="Тренировка: ответы не влияют на FSRS-прогресс, XP и достижения"
+        >
+          <Dumbbell size={10} aria-hidden />
+          Тренировка
+        </span>
+      )}
+    </button>
+  );
+}
+
 /**
  * Экран выбора типа практики. Показывается перед запуском сессии,
  * если пользователь не указал practiceType явно (или захотел сменить).
+ *
+ * Разделяет режимы на две визуальные секции (PLAN_Features_v0.3 §20):
+ * - **Изучение** — только `flip-card`: ответы влияют на FSRS-прогресс.
+ * - **Тренировка** — все остальные режимы: для практики и запоминания,
+ *   НЕ влияют на прогресс (на карточках стоит бейдж «Тренировка»).
  */
 export default function PracticeTypeSelector({
   mode,
@@ -49,6 +105,11 @@ export default function PracticeTypeSelector({
   const modeInfo = getPracticeTypeInfo(practiceType);
   const visibleTypes = usePracticeTypes();
 
+  // Разделяем на «Изучение» (только flip-card) и «Тренировка» (всё остальное).
+  // Порядок внутри секции сохраняется как в PRACTICE_TYPES.
+  const studyTypes = visibleTypes.filter((p) => !isTrainingPractice(p.id));
+  const trainingTypes = visibleTypes.filter((p) => isTrainingPractice(p.id));
+
   return (
     <div className="practice-selector">
       <div className="practice-selector-header">
@@ -57,37 +118,47 @@ export default function PracticeTypeSelector({
         <p className="practice-selector-sub">{MODE_DESCRIPTION[mode]}</p>
       </div>
 
-      <div className="practice-selector-grid">
-        {visibleTypes.map((p) => {
-          const Icon = ICONS[p.icon];
-          const isActive = practiceType === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              className={cn(
-                'practice-selector-card',
-                isActive && 'practice-selector-card-active',
-              )}
-              style={
-                isActive
-                  ? { borderColor: p.color, background: p.bg }
-                  : undefined
-              }
-              onClick={() => setPracticeType(p.id)}
-            >
-              <div
-                className="practice-selector-icon"
-                style={{ color: p.color, background: p.bg }}
-              >
-                <Icon size={20} />
-              </div>
-              <div className="practice-selector-label">{p.label}</div>
-              <div className="practice-selector-desc">{p.description}</div>
-            </button>
-          );
-        })}
-      </div>
+      {studyTypes.length > 0 && (
+        <div className="practice-selector-section">
+          <div className="practice-selector-section-label">
+            <GraduationCap size={13} aria-hidden />
+            <span>Изучение</span>
+            <small>влияет на прогресс</small>
+          </div>
+          <div className="practice-selector-grid">
+            {studyTypes.map((p) => (
+              <TypeCard
+                key={p.id}
+                info={p}
+                isActive={practiceType === p.id}
+                isTraining={false}
+                onClick={() => setPracticeType(p.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {trainingTypes.length > 0 && (
+        <div className="practice-selector-section">
+          <div className="practice-selector-section-label">
+            <Dumbbell size={13} aria-hidden />
+            <span>Тренировка</span>
+            <small>не влияет на прогресс</small>
+          </div>
+          <div className="practice-selector-grid">
+            {trainingTypes.map((p) => (
+              <TypeCard
+                key={p.id}
+                info={p}
+                isActive={practiceType === p.id}
+                isTraining
+                onClick={() => setPracticeType(p.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="practice-selector-actions">
         {onCancel && (

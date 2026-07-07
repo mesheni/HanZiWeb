@@ -6,7 +6,7 @@ import { useOnlineStatus } from './useOnlineStatus';
 import { getDb } from '../db/database';
 import { getSyncEngine } from '../db/sync';
 import { recalcFsrsLocally } from '../db/fsrs';
-import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
+import { ACHIEVEMENT_CATALOG, isTrainingPractice, type AchievementType } from '@hanzi/shared';
 import type { SrsRating, StudyMode, PracticeType, SessionFilters } from '@hanzi/shared';
 import { trackSessionStarted, trackAnswerRated } from '../utils/analytics';
 
@@ -176,7 +176,8 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     const shownAt = cardShownAtRef.current;
 
     // Аналитика: пользователь оценил карточку. Шлём ДО обновления
-    // стора, чтобы событие содержало валидные card/wordId.
+    // стора, чтобы событие содержало валидные card/wordId. Тренировочные
+    // ответы тоже логируем — для отдельного отчёта по практике.
     trackAnswerRated({
       sessionId,
       wordId: card.word.id,
@@ -189,6 +190,14 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     const studyStore = useStudyStore.getState();
     studyStore.rateCard(rating);
     studyStore.nextCard();
+
+    // Тренировочные режимы (multiple-choice, pinyin-input, …) НЕ влияют
+    // на FSRS-прогресс (PLAN_Features_v0.3 §20): пропускаем локальный
+    // пересчёт, sync-очередь и серверный recordAnswer. Только UI-прогресс
+    // сессии обновляется через `studyStore.rateCard + nextCard` выше.
+    if (isTrainingPractice(storePracticeType)) {
+      return;
+    }
 
     const db = getDb();
     if (db) {

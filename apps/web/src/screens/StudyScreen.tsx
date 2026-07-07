@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, X, RefreshCw, Volume2, VolumeX } from 'lucide-react';
+import { Check, X, RefreshCw, Volume2, VolumeX, GraduationCap, Dumbbell } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
@@ -23,7 +23,11 @@ import SyllableConstructorCard from '../components/practice/SyllableConstructorC
 import CharacterAssemblyCard from '../components/practice/CharacterAssemblyCard';
 import ClozeCard from '../components/practice/ClozeCard';
 import { useWordExamples } from '../queries/examples';
-import { STUDY_MODE_LABELS, getPracticeTypeInfo } from '../utils/practiceTypes';
+import {
+  STUDY_MODE_LABELS,
+  getPracticeTypeInfo,
+  isTrainingPractice,
+} from '../utils/practiceTypes';
 import type { SrsRating, StudyMode, PracticeType, Word, SessionFilters } from '@hanzi/shared';
 
 function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
@@ -60,6 +64,30 @@ const STATE_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const DEFAULT_PRACTICE: PracticeType = 'flip-card';
+
+function CategoryBadge({ practiceType }: { practiceType: PracticeType }) {
+  const isTraining = isTrainingPractice(practiceType);
+  const Icon = isTraining ? Dumbbell : GraduationCap;
+  const label = isTraining ? 'Тренировка' : 'Изучение';
+  return (
+    <span
+      className={cn(
+        'practice-category-badge',
+        isTraining
+          ? 'practice-category-badge-training'
+          : 'practice-category-badge-study',
+      )}
+      title={
+        isTraining
+          ? 'Это тренировочный режим: ответы не влияют на FSRS-прогресс, XP и достижения'
+          : 'Это режим изучения: ответы обновляют FSRS-прогресс и могут приносить XP и достижения'
+      }
+    >
+      <Icon size={10} aria-hidden />
+      {label}
+    </span>
+  );
+}
 
 function parsePracticeParam(value: string | null): PracticeType {
   const valid: PracticeType[] = [
@@ -593,15 +621,24 @@ export default function StudyScreen() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            padding: '3px 10px',
-            borderRadius: 12,
-            fontSize: 11,
-            fontWeight: 500,
-            color: practiceCfg.color,
-            background: practiceCfg.bg,
           }}
         >
-          {practiceCfg.label}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '3px 10px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 500,
+              color: practiceCfg.color,
+              background: practiceCfg.bg,
+            }}
+          >
+            {practiceCfg.label}
+          </span>
+          <CategoryBadge practiceType={storePracticeType} />
         </span>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <button

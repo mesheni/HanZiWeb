@@ -1,4 +1,5 @@
 import type { PracticeType, StudyMode } from '@hanzi/shared';
+import { isTrainingPractice as isTrainingPracticeShared } from '@hanzi/shared';
 
 export interface PracticeTypeInfo {
   id: PracticeType;
@@ -90,3 +91,21 @@ export const STUDY_MODE_LABELS: Record<StudyMode, { label: string; color: string
   review: { label: 'Повторение', color: '#FBBF24', bg: 'rgba(251,191,36,0.15)' },
   learn: { label: 'Изучение', color: '#34D399', bg: 'rgba(52,211,153,0.15)' },
 };
+
+/**
+ * Тренировочные (не-FSRS) режимы. Реэкспорт из `@hanzi/shared` для удобства —
+ * web-код импортирует всё из `utils/practiceTypes`, а не лазит по пакетам.
+ */
+export const TRAINING_PRACTICE_TYPES = [
+  'multiple-choice',
+  'reverse-choice',
+  'pinyin-input',
+  'tone-recognition',
+  'syllable-constructor',
+  'cloze',
+  'character_assembly',
+] as const satisfies readonly PracticeType[];
+
+export function isTrainingPractice(type: PracticeType): boolean {
+  return isTrainingPracticeShared(type);
+}

@@ -1800,6 +1800,86 @@ input {
   gap: 10px;
 }
 
+/* Секции «Изучение» / «Тренировка» внутри селектора (PLAN_Features_v0.3 §20) */
+.practice-selector-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.practice-selector-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  padding: 0 2px;
+}
+
+.practice-selector-section-label > span {
+  color: var(--text-primary);
+}
+
+.practice-selector-section-label > small {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+/* Тренировочная карточка: чуть приглушённая иконка, чтобы визуально отличать */
+.practice-selector-card-training {
+  opacity: 0.92;
+}
+
+.practice-selector-card-training .practice-selector-icon {
+  filter: saturate(0.8);
+}
+
+.practice-selector-card-training-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+/* Бейдж категории в шапке StudyScreen (Изучение / Тренировка) */
+.practice-category-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.practice-category-badge-study {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.practice-category-badge-training {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
 .practice-selector-card {
   display: flex;
   flex-direction: column;

@@ -9,7 +9,15 @@ import {
   intersectWithTagFilter,
   intersectWordWithTagFilter,
 } from './sessionFilters.js';
-import type { StartSession, RecordAnswer, UserAchievement, Tag } from '@hanzi/shared';
+import {
+  isTrainingPractice,
+  PracticeTypeSchema,
+  type PracticeType,
+  type StartSession,
+  type RecordAnswer,
+  type UserAchievement,
+  type Tag,
+} from '@hanzi/shared';
 
 /** Тип прогресса с включённым словом и примерами */
 type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
@@ -284,6 +292,14 @@ export async function startSession(userId: string, input: StartSession) {
  * `apps/server/src/modules/achievements`) и возвращает список
  * только что разблокированных в `unlockedAchievements`. Клиент
  * показывает их через toast (`useToast`).
+ *
+ * Для **тренировочных** режимов (multiple-choice, pinyin-input, … —
+ * см. `isTrainingPractice`) — оборонительный no-op: НЕ пересчитываем
+ * FSRS, НЕ начисляем XP, НЕ проверяем достижения, НЕ создаём
+ * `SessionAnswer`. Только инкрементируем `cardsCompleted` для логов
+ * и возвращаем «нейтральный» SrsRecalcResult, чтобы API-контракт
+ * не сломался, если клиент случайно пришлёт тренировочный ответ
+ * (PLAN_Features_v0.3 §20).
  */
 export async function recordAnswer(userId: string, input: RecordAnswer) {
   const progress = await prisma.userWordProgress.findUnique({
@@ -292,6 +308,40 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
 
   if (!progress) {
     throw Object.assign(new Error('Progress not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  // Загружаем сессию, чтобы узнать practiceType (нужен для ветки
+  // тренировочного режима). Делается ОДИН раз, используется только
+  // в early-return ниже. Prisma хранит `practiceType` как `string`,
+  // поэтому валидируем через Zod-схему — это даёт нам типизированный
+  // `PracticeType` без `as`-кастов (PLAN_Features_v0.3 §20).
+  const session = await prisma.session.findUnique({
+    where: { id: input.sessionId },
+    select: { practiceType: true },
+  });
+  if (!session) {
+    throw Object.assign(new Error('Session not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+  const parsedPracticeType = PracticeTypeSchema.safeParse(session.practiceType);
+  const sessionPracticeType: PracticeType = parsedPracticeType.success
+    ? parsedPracticeType.data
+    : 'flip-card';
+
+  if (isTrainingPractice(sessionPracticeType)) {
+    await prisma.session.update({
+      where: { id: input.sessionId },
+      data: { cardsCompleted: { increment: 1 } },
+    });
+    return {
+      wordId: input.wordId,
+      newStability: progress.stability,
+      newDifficulty: progress.difficulty,
+      newState: progress.state,
+      newDueDate: progress.dueDate.toISOString(),
+      intervalDays: 0,
+      xpGain: 0,
+      unlockedAchievements: [],
+    };
   }
 
   // Пересчёт по FSRS
