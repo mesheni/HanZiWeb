@@ -16,6 +16,8 @@ import HandwritingScreen from './screens/HandwritingScreen';
 import DonationScreen from './screens/DonationScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import TestScreen from './screens/TestScreen';
+import ReadingScreen from './screens/ReadingScreen';
+import ReadingTextScreen from './screens/ReadingTextScreen';
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -71,6 +73,8 @@ export default function App() {
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<HomeScreen />} />
           <Route path="/study" element={<StudyScreen />} />
+          <Route path="/reading" element={<ReadingScreen />} />
+          <Route path="/reading/:id" element={<ReadingTextScreen />} />
           <Route path="/library" element={<LibraryScreen />} />
           <Route path="/stats" element={<StatsScreen />} />
           <Route path="/handwriting" element={<HandwritingScreen />} />

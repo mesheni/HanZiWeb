@@ -1,9 +1,10 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, PenLine, BarChart3, ClipboardList } from 'lucide-react';
+import { Home, BookOpen, Library, PenLine, BarChart3, ClipboardList, Glasses } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'home', icon: Home, label: 'Главная', route: '/' },
   { id: 'study', icon: BookOpen, label: 'Учить', route: '/study' },
+  { id: 'reading', icon: Glasses, label: 'Чтение', route: '/reading' },
   { id: 'library', icon: Library, label: 'Слова', route: '/library' },
   { id: 'handwriting', icon: PenLine, label: 'Письмо', route: '/handwriting' },
   { id: 'test', icon: ClipboardList, label: 'Тест', route: '/test' },
@@ -17,7 +18,10 @@ export default function BottomNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-bg-secondary border-t border-border-default flex justify-around items-center px-1 py-1.5 md:hidden">
       {NAV_ITEMS.map((item) => {
-        const active = location.pathname === item.route;
+        const active =
+          item.route === '/'
+            ? location.pathname === item.route
+            : location.pathname === item.route || location.pathname.startsWith(`${item.route}/`);
         const Icon = item.icon;
 
         return (
