@@ -8,6 +8,10 @@ interface StudyState {
   currentIndex: number;
   /** Перевёрнута ли текущая карточка (для flip-card) */
   isFlipped: boolean;
+  /** Идёт ли CSS-анимация переворота (PLAN_Features_v0.3 #12).
+   *  Пока true — нельзя переворачивать снова и нельзя переходить
+   *  к следующему слову, иначе можно подсмотреть его перевод. */
+  isFlipping: boolean;
   /** Прогресс сессии */
   progress: { current: number; total: number };
   /** ID активной сессии (с сервера) */
@@ -21,6 +25,7 @@ interface StudyState {
   startSession: (cards: SessionCard[], sessionId: string, opts?: { mode?: StudyMode; practiceType?: PracticeType }) => void;
   setPracticeType: (type: PracticeType) => void;
   flipCard: () => void;
+  setIsFlipping: (v: boolean) => void;
   rateCard: (rating: SrsRating) => void;
   nextCard: () => void;
   resetSession: () => void;
@@ -30,6 +35,7 @@ export const useStudyStore = create<StudyState>((set, get) => ({
   cards: [],
   currentIndex: 0,
   isFlipped: false,
+  isFlipping: false,
   progress: { current: 0, total: 0 },
   sessionId: null,
   mode: 'mixed',
@@ -41,6 +47,7 @@ export const useStudyStore = create<StudyState>((set, get) => ({
       sessionId,
       currentIndex: 0,
       isFlipped: false,
+      isFlipping: false,
       progress: { current: 0, total: cards.length },
       mode: opts?.mode ?? 'mixed',
       practiceType: opts?.practiceType ?? 'flip-card',
@@ -48,7 +55,13 @@ export const useStudyStore = create<StudyState>((set, get) => ({
 
   setPracticeType: (type) => set({ practiceType: type }),
 
-  flipCard: () => set({ isFlipped: true }),
+  flipCard: () => {
+    const { isFlipping } = get();
+    if (isFlipping) return;
+    set({ isFlipped: true, isFlipping: true });
+  },
+
+  setIsFlipping: (v) => set({ isFlipping: v }),
 
   rateCard: (rating) => {
     const { cards, currentIndex } = get();
@@ -65,6 +78,7 @@ export const useStudyStore = create<StudyState>((set, get) => ({
     set({
       currentIndex: nextIndex,
       isFlipped: false,
+      isFlipping: false,
       progress: { ...progress, current: nextIndex },
     });
   },
@@ -74,6 +88,7 @@ export const useStudyStore = create<StudyState>((set, get) => ({
       cards: [],
       currentIndex: 0,
       isFlipped: false,
+      isFlipping: false,
       progress: { current: 0, total: 0 },
       sessionId: null,
       mode: 'mixed',

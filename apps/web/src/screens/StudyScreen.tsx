@@ -132,6 +132,7 @@ export default function StudyScreen() {
   const cards = useStudyStore((s) => s.cards);
   const currentIndex = useStudyStore((s) => s.currentIndex);
   const isFlipped = useStudyStore((s) => s.isFlipped);
+  const isFlipping = useStudyStore((s) => s.isFlipping);
   const progress = useStudyStore((s) => s.progress);
   const flipCard = useStudyStore((s) => s.flipCard);
   const resetSession = useStudyStore((s) => s.resetSession);
@@ -250,6 +251,8 @@ export default function StudyScreen() {
     const handler = (e: KeyboardEvent) => {
       if (isSessionComplete) return;
       if (!currentCard) return;
+      // Пока идёт анимация переворота — игнорируем ввод (PLAN_Features_v0.3 #12).
+      if (isFlipping) return;
 
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
@@ -269,7 +272,7 @@ export default function StudyScreen() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isSessionComplete, currentCard, isFlipped, flipCard, rateCard, storePracticeType]);
+  }, [isSessionComplete, currentCard, isFlipped, isFlipping, flipCard, rateCard, storePracticeType]);
 
   // Экран выбора типа практики — показываем до старта сессии.
   if (!hasStarted) {
@@ -764,6 +767,7 @@ export default function StudyScreen() {
           {!isFlipped ? (
             <button
               onClick={flipCard}
+              disabled={isFlipping}
               style={{
                 display: 'block',
                 width: '100%',
@@ -776,7 +780,8 @@ export default function StudyScreen() {
                 color: '#fff',
                 fontSize: 14,
                 fontWeight: 500,
-                cursor: 'pointer',
+                cursor: isFlipping ? 'not-allowed' : 'pointer',
+                opacity: isFlipping ? 0.6 : 1,
               }}
             >
               Показать ответ
@@ -788,6 +793,7 @@ export default function StudyScreen() {
                   key={opt.rating}
                   className={`rate-btn ${opt.className}`}
                   onClick={() => rateCard(opt.rating)}
+                  disabled={isFlipping}
                 >
                   {opt.label}
                   <small>{opt.hint}</small>

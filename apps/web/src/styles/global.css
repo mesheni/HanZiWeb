@@ -793,6 +793,14 @@ input {
   transform: rotateY(180deg);
 }
 
+/* PLAN_Features_v0.3 #12: пока идёт CSS-анимация переворота, блокируем
+   любые клики/тапы на сцене (включая вложенные кнопки аудио и «Писать»),
+   чтобы пользователь не мог перевернуть повторно или открыть handwriting
+   в момент, когда контент обратной стороны ещё не синхронизирован. */
+.flashcard-animating {
+  pointer-events: none;
+}
+
 .flashcard-face {
   position: absolute;
   inset: 0;
@@ -966,6 +974,15 @@ input {
   font-size: 10px;
   color: var(--text-muted);
   font-weight: 400;
+}
+
+/* PLAN_Features_v0.3 #12: на время анимации переворота кнопки рейтинга
+   неактивны — иначе можно успеть ткнуть в «Следующее» и увидеть перевод
+   следующего слова до того, как карточка доехала до лицевой стороны. */
+.rate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .rate-again {
