@@ -114,6 +114,8 @@ export const StartSessionSchema = z.object({
   cardLimit: z.number().int().min(1).max(50).default(20),
   /** Добавлять ли новые слова в микс (true = микс новых + повтор) */
   includeNew: z.boolean().default(true),
+  /** Включать ли приоритетные слова (из вкладки «Чтение») в начало сессии. */
+  includePriority: z.boolean().optional(),
   /** Режим сессии: микс, только повтор, только новые слова. */
   mode: StudyModeSchema.default('mixed'),
   /** Тип практики в сессии. По умолчанию — flip-card. */
