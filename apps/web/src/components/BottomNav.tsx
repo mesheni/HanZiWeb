@@ -35,7 +35,7 @@ export default function BottomNav() {
             }}
           >
             <Icon size={18} />
-            <span className="text-[9px] leading-none">{item.label}</span>
+            <span className="text-[9px] leading-none whitespace-nowrap">{item.label}</span>
           </button>
         );
       })}

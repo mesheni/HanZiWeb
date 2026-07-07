@@ -1563,7 +1563,7 @@ input {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  width: 72px;
+  width: 260px;
   height: 100%; /* держится на всю высоту родителя */
   flex-shrink: 0;
   background: var(--bg-secondary);
@@ -1616,12 +1616,12 @@ input {
 .sidebar-btn {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
+  justify-content: flex-start;
+  gap: 12px;
   width: 100%;
-  padding: 10px 6px;
+  padding: 10px 16px;
   border-radius: 10px;
   border: none;
   background: transparent;
@@ -1630,9 +1630,9 @@ input {
   transition:
     background 0.15s,
     color 0.15s;
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 500;
-  text-align: center;
+  text-align: left;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -1645,12 +1645,19 @@ input {
   flex-shrink: 0;
 }
 
-/* Метка под иконкой */
+/* Метка рядом с иконкой — занимает остаток ширины кнопки,
+   min-width: 0 разрешает сжатие flex-child ниже intrinsic-width
+   (без него overflow:hidden + ellipsis в row-flex не работают) */
 .sidebar-btn span {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 500;
   color: inherit;
-  line-height: 1;
+  line-height: 1.2;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Hover */
