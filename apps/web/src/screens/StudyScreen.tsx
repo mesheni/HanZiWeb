@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { X, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
-import { useDistractorPool } from '../hooks/useDistractorPool';
+import { useDistractorPool, getCharacterDistractors } from '../hooks/useDistractorPool';
 import { useStudyStore } from '../stores/studyStore';
 import { useUiStore } from '../stores/uiStore';
 import Flashcard from '../components/Flashcard';
@@ -19,6 +19,7 @@ import ReverseChoiceCard from '../components/practice/ReverseChoiceCard';
 import PinyinInputCard from '../components/practice/PinyinInputCard';
 import ToneRecognitionCard from '../components/practice/ToneRecognitionCard';
 import SyllableConstructorCard from '../components/practice/SyllableConstructorCard';
+import CharacterAssemblyCard from '../components/practice/CharacterAssemblyCard';
 import ClozeCard from '../components/practice/ClozeCard';
 import { useWordExamples } from '../queries/examples';
 import { STUDY_MODE_LABELS, getPracticeTypeInfo } from '../utils/practiceTypes';
@@ -68,6 +69,7 @@ function parsePracticeParam(value: string | null): PracticeType {
     'tone-recognition',
     'syllable-constructor',
     'cloze',
+    'character_assembly',
   ];
   if (value && (valid as string[]).includes(value)) {
     return value as PracticeType;
@@ -108,12 +110,13 @@ export default function StudyScreen() {
   // Запускаем сессию только после явного "Начать" — иначе показываем
   // экран выбора практики. Хук не делает побочных эффектов, пока
   // enabled = false, поэтому на экране выбора мы не дёргаем /sessions/start.
-  const { isLoading, isError, isSessionComplete, rateCard, retrySession, startNow } = useStudySession({
-    mode,
-    practiceType: activePracticeType,
-    filters: activeFilters,
-    enabled: hasStarted,
-  });
+  const { isLoading, isError, isSessionComplete, rateCard, retrySession, startNow } =
+    useStudySession({
+      mode,
+      practiceType: activePracticeType,
+      filters: activeFilters,
+      enabled: hasStarted,
+    });
 
   const cards = useStudyStore((s) => s.cards);
   const currentIndex = useStudyStore((s) => s.currentIndex);
@@ -138,7 +141,8 @@ export default function StudyScreen() {
   const needsDistractors =
     storePracticeType === 'multiple-choice' ||
     storePracticeType === 'reverse-choice' ||
-    storePracticeType === 'syllable-constructor';
+    storePracticeType === 'syllable-constructor' ||
+    storePracticeType === 'character_assembly';
   const { data: distractorPool = [] } = useDistractorPool({
     count: 24,
     enabled: hasStarted && needsDistractors,
@@ -151,6 +155,12 @@ export default function StudyScreen() {
     const extras = distractorPool.filter((w) => !seen.has(w.id));
     return [...sessionWords, ...extras];
   }, [cards, distractorPool]);
+
+  // Иероглифы-дистракторы для режима `character_assembly`.
+  const characterDistractors = useMemo(() => {
+    if (!currentCard) return [];
+    return getCharacterDistractors(currentCard.word, combinedPool, 6);
+  }, [currentCard, combinedPool]);
 
   // Примеры для текущего слова — нужны cloze-карточке.
   // Берём встроенные примеры из слова, а если их нет — подгружаем
@@ -253,8 +263,24 @@ export default function StudyScreen() {
   // Экран выбора типа практики — показываем до старта сессии.
   if (!hasStarted) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'auto', padding: '18px 22px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+          padding: '18px 22px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 8,
+          }}
+        >
           <span
             style={{
               display: 'inline-block',
@@ -271,7 +297,15 @@ export default function StudyScreen() {
           <button
             onClick={() => navigate('/')}
             aria-label="Выйти"
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: 18,
+              cursor: 'pointer',
+              lineHeight: 1,
+              padding: 0,
+            }}
           >
             <X size={18} />
           </button>
@@ -280,11 +314,7 @@ export default function StudyScreen() {
             только для режимов, где фильтры осмыслены: в `learn` (новые
             слова) stability=0, поэтому min/max стабильности не действует. */}
         <div style={{ marginBottom: 12 }}>
-          <SessionFiltersPanel
-            value={filtersValue}
-            onChange={setFiltersValue}
-            mode={mode}
-          />
+          <SessionFiltersPanel value={filtersValue} onChange={setFiltersValue} mode={mode} />
         </div>
         <PracticeTypeSelector
           mode={mode}
@@ -307,24 +337,62 @@ export default function StudyScreen() {
   // Состояние ошибки
   if (isError && !cards.length) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          gap: 16,
+        }}
+      >
         <div style={{ textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 4, fontSize: 16, fontWeight: 500 }}>Не удалось загрузить сессию</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>Проверьте подключение и попробуйте снова</p>
+          <p
+            style={{
+              color: 'var(--text-secondary)',
+              marginBottom: 4,
+              fontSize: 16,
+              fontWeight: 500,
+            }}
+          >
+            Не удалось загрузить сессию
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
+            Проверьте подключение и попробуйте снова
+          </p>
         </div>
         <button
           onClick={() => retrySession()}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 24px', background: 'var(--accent)',
-            border: 'none', borderRadius: 10, color: '#fff',
-            fontSize: 14, fontWeight: 500, cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '12px 24px',
+            background: 'var(--accent)',
+            border: 'none',
+            borderRadius: 10,
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: 'pointer',
           }}
         >
           <RefreshCw size={16} />
           Попробовать снова
         </button>
-        <button onClick={() => navigate('/')} style={{ color: 'var(--text-muted)', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <button
+          onClick={() => navigate('/')}
+          style={{
+            color: 'var(--text-muted)',
+            fontSize: 13,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+          }}
+        >
           На главную
         </button>
       </div>
@@ -334,14 +402,30 @@ export default function StudyScreen() {
   // Состояния загрузки
   if (isLoading) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+        }}
+      >
         <span className="spinner" style={{ width: 28, height: 28 }} />
         <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Загрузка сессии...</span>
-        <span style={{
-          display: 'inline-block', padding: '3px 10px', borderRadius: 12,
-          fontSize: 11, fontWeight: 500,
-          color: practiceCfg.color, background: practiceCfg.bg,
-        }}>
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '3px 10px',
+            borderRadius: 12,
+            fontSize: 11,
+            fontWeight: 500,
+            color: practiceCfg.color,
+            background: practiceCfg.bg,
+          }}
+        >
           {practiceCfg.label}
         </span>
       </div>
@@ -362,32 +446,75 @@ export default function StudyScreen() {
 
   if (!currentCard) {
     return (
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, gap: 16 }}>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          gap: 16,
+        }}
+      >
         <div style={{ textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 4, fontSize: 16, fontWeight: 500 }}>Нет карточек для изучения</p>
+          <p
+            style={{
+              color: 'var(--text-secondary)',
+              marginBottom: 4,
+              fontSize: 16,
+              fontWeight: 500,
+            }}
+          >
+            Нет карточек для изучения
+          </p>
           <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12 }}>
-            {mode === 'review' ? 'Все слова повторены. Возвращайтесь позже.' : 'Попробуйте другой режим.'}
+            {mode === 'review'
+              ? 'Все слова повторены. Возвращайтесь позже.'
+              : 'Попробуйте другой режим.'}
           </p>
         </div>
         <button
           onClick={() => retrySession()}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '10px 20px', background: 'var(--accent)',
-            border: 'none', borderRadius: 10, color: '#fff',
-            fontSize: 14, fontWeight: 500, cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 20px',
+            background: 'var(--accent)',
+            border: 'none',
+            borderRadius: 10,
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: 'pointer',
           }}
         >
           <RefreshCw size={16} />
           Обновить
         </button>
-        <button onClick={() => navigate('/')} style={{ color: 'var(--text-muted)', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' }}>На главную</button>
+        <button
+          onClick={() => navigate('/')}
+          style={{
+            color: 'var(--text-muted)',
+            fontSize: 13,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+          }}
+        >
+          На главную
+        </button>
       </div>
     );
   }
 
   const progressPct = Math.round((progress.current / progress.total) * 100);
-  const stateCfg: { label: string; color: string } = STATE_LABELS[currentCard.state] ?? { label: 'Новое', color: '#6EE7B7' };
+  const stateCfg: { label: string; color: string } = STATE_LABELS[currentCard.state] ?? {
+    label: 'Новое',
+    color: '#6EE7B7',
+  };
   const isBinaryMode = storePracticeType !== 'flip-card';
 
   // В бинарных режимах (multiple-choice, pinyin-input, …) сами знаем
@@ -397,7 +524,15 @@ export default function StudyScreen() {
   };
 
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
       {/* Progress bar */}
       <div style={{ padding: '8px 22px 0' }}>
         <ProgressBar value={progressPct} />
@@ -417,17 +552,19 @@ export default function StudyScreen() {
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
           {progress.current + 1} / {progress.total}
         </span>
-        <span style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '3px 10px',
-          borderRadius: 12,
-          fontSize: 11,
-          fontWeight: 500,
-          color: practiceCfg.color,
-          background: practiceCfg.bg,
-        }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '3px 10px',
+            borderRadius: 12,
+            fontSize: 11,
+            fontWeight: 500,
+            color: practiceCfg.color,
+            background: practiceCfg.bg,
+          }}
+        >
           {practiceCfg.label}
         </span>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -443,7 +580,15 @@ export default function StudyScreen() {
           <button
             onClick={() => navigate('/')}
             aria-label="Выйти"
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: 18,
+              cursor: 'pointer',
+              lineHeight: 1,
+              padding: 0,
+            }}
           >
             <X size={18} />
           </button>
@@ -453,15 +598,17 @@ export default function StudyScreen() {
       {/* Card state badge */}
       {currentCard.state && (
         <div style={{ padding: '6px 22px 0', textAlign: 'center' }}>
-          <span style={{
-            display: 'inline-block',
-            padding: '2px 8px',
-            borderRadius: 8,
-            fontSize: 11,
-            fontWeight: 500,
-            color: stateCfg.color,
-            background: `${stateCfg.color}15`,
-          }}>
+          <span
+            style={{
+              display: 'inline-block',
+              padding: '2px 8px',
+              borderRadius: 8,
+              fontSize: 11,
+              fontWeight: 500,
+              color: stateCfg.color,
+              background: `${stateCfg.color}15`,
+            }}
+          >
             {stateCfg.label}
           </span>
         </div>
@@ -521,10 +668,7 @@ export default function StudyScreen() {
         )}
 
         {storePracticeType === 'tone-recognition' && (
-          <ToneRecognitionCard
-            word={currentCard.word}
-            onAnswer={handleBinaryAnswer}
-          />
+          <ToneRecognitionCard word={currentCard.word} onAnswer={handleBinaryAnswer} />
         )}
 
         {storePracticeType === 'syllable-constructor' && (
@@ -537,12 +681,18 @@ export default function StudyScreen() {
           />
         )}
 
-        {storePracticeType === 'cloze' && (
-          <ClozeCard
+        {storePracticeType === 'character_assembly' && (
+          <CharacterAssemblyCard
             word={currentCard.word}
-            examples={allExamples}
+            distractors={characterDistractors}
             onAnswer={handleBinaryAnswer}
+            onPlayAudio={() => audio.play()}
+            audioAvailable={audio.isAvailable}
           />
+        )}
+
+        {storePracticeType === 'cloze' && (
+          <ClozeCard word={currentCard.word} examples={allExamples} onAnswer={handleBinaryAnswer} />
         )}
       </div>
 

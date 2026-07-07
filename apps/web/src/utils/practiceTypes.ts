@@ -64,6 +64,14 @@ export const PRACTICE_TYPES: PracticeTypeInfo[] = [
     bg: 'rgba(186,104,200,0.15)',
   },
   {
+    id: 'character_assembly',
+    label: 'Собери слово',
+    description: 'Собери слово из иероглифов в правильном порядке',
+    icon: 'Puzzle',
+    color: '#9575CD',
+    bg: 'rgba(149,117,205,0.15)',
+  },
+  {
     id: 'cloze',
     label: 'Подстановка',
     description: 'Вставь пропущенное слово в предложение-пример',

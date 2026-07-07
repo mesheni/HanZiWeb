@@ -19,6 +19,17 @@ type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
 const HSK_LEVELS = [1, 2, 3, 4, 5, 6] as const;
 const HSK_LEVEL_LIST = [...HSK_LEVELS];
 
+function shuffle<T>(arr: readonly T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i]!;
+    a[i] = a[j]!;
+    a[j] = tmp;
+  }
+  return a;
+}
+
 async function getUnlockedHskLevel(userId: string): Promise<number | null> {
   for (const level of HSK_LEVELS) {
     const total = await prisma.word.count({ where: { hskLevel: level } });
@@ -91,9 +102,7 @@ export async function startSession(userId: string, input: StartSession) {
   // Если задан фильтр по тегам, заранее вычисляем id подходящих слов.
   // Это сокращает выборку, если слов без тегов очень много.
   const tagFilteredWordIds: string[] | null =
-    filters?.tags && filters.tags.length > 0
-      ? await wordIdsWithAnyTag(filters.tags)
-      : null;
+    filters?.tags && filters.tags.length > 0 ? await wordIdsWithAnyTag(filters.tags) : null;
 
   // Для due-карточек: пересекаем фильтр stability + audio/mnemonic + tags с deckScope.
   // `buildProgressWhereForFilters` уже накладывает deckScope (если не задан фильтр
@@ -184,9 +193,16 @@ export async function startSession(userId: string, input: StartSession) {
 
   const allCards = orderCards([...dueWords, ...newWords]);
 
+  // Для режима `character_assembly` подбираем иероглифы-дистракторы из
+  // других слов того же HSK-уровня, не пересекающиеся с иероглифами целевого слова.
+  const characterDistractors =
+    input.practiceType === 'character_assembly'
+      ? await pickCharacterDistractors(allCards)
+      : new Map<string, string[]>();
+
   // Создаём сессию
   const deckName = input.deckId
-    ? (await prisma.deck.findUnique({ where: { id: input.deckId } }))?.name ?? undefined
+    ? ((await prisma.deck.findUnique({ where: { id: input.deckId } }))?.name ?? undefined)
     : undefined;
 
   const session = await prisma.session.create({
@@ -200,20 +216,19 @@ export async function startSession(userId: string, input: StartSession) {
   });
 
   // Избегаем union type issue — маппим карточки отдельно
-  const cards: Array<{ index: number; word: unknown; answered: boolean; state: string }> = [
-    ...dueWords.map((p, i) => ({
-      index: i,
-      word: { ...p.word, tags: extractWordTags(p.word) },
-      answered: false,
-      state: p.state,
-    })),
-    ...newWords.map((p, i) => ({
-      index: dueWords.length + i,
-      word: { ...p.word, tags: extractWordTags(p.word) },
-      answered: false,
-      state: p.state,
-    })),
-  ];
+  const cards: Array<{
+    index: number;
+    word: unknown;
+    answered: boolean;
+    state: string;
+    distractors: string[];
+  }> = allCards.map((p, i) => ({
+    index: i,
+    word: { ...p.word, tags: extractWordTags(p.word) },
+    answered: false,
+    state: p.state,
+    distractors: characterDistractors.get(p.word.id) ?? [],
+  }));
 
   return {
     ...session,
@@ -292,10 +307,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // ошибке пользователь получит корректный SRS-результат.
   let unlockedAchievements: UserAchievement[] = [];
   try {
-    unlockedAchievements = await achievementsService.checkAllAchievements(
-      userId,
-      input.sessionId,
-    );
+    unlockedAchievements = await achievementsService.checkAllAchievements(userId, input.sessionId);
   } catch (err) {
     // Достижения не должны ломать основной поток
     console.error('checkAllAchievements failed', err);
@@ -347,4 +359,81 @@ export async function getRandomWords(
     skip,
     take: count,
   });
+}
+
+/**
+ * Возвращает случайные слова, иероглифы которых не пересекаются с
+ * иероглифами целевого слова. Используется для режима `character_assembly`.
+ */
+export async function getRandomCharacterDistractorWords(targetWordId: string, count: number) {
+  const target = await prisma.word.findUnique({
+    where: { id: targetWordId },
+    select: { id: true, character: true, hskLevel: true },
+  });
+  if (!target) return getRandomWords([], count);
+
+  const targetChars = new Set(Array.from(target.character));
+  const where: Prisma.WordWhereInput = {
+    id: { not: target.id },
+    hskLevel: target.hskLevel != null ? target.hskLevel : undefined,
+  };
+
+  const total = await prisma.word.count({ where });
+  if (total === 0) return [];
+
+  const take = Math.min(100, total);
+  const skip = Math.max(0, Math.floor(Math.random() * Math.max(0, total - take)));
+  const words = await prisma.word.findMany({
+    where,
+    include: { examples: true, tags: { include: { tag: true } } },
+    orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
+    skip,
+    take,
+  });
+
+  const filtered = words.filter((w) => Array.from(w.character).every((ch) => !targetChars.has(ch)));
+  return shuffle(filtered).slice(0, count);
+}
+
+/**
+ * Подбирает иероглифы-дистракторы для каждой карточки режима
+ * `character_assembly` из других слов того же HSK-уровня.
+ */
+async function pickCharacterDistractors(cards: ProgressWithWord[]): Promise<Map<string, string[]>> {
+  const targetIds = cards.map((c) => c.word.id);
+  const levels = [
+    ...new Set(cards.map((c) => c.word.hskLevel).filter((l): l is number => l != null)),
+  ];
+
+  const where: Prisma.WordWhereInput = {
+    id: targetIds.length > 0 ? { notIn: targetIds } : undefined,
+    hskLevel: levels.length > 0 ? { in: levels } : undefined,
+  };
+
+  const total = await prisma.word.count({ where });
+  const pool =
+    total === 0
+      ? []
+      : await prisma.word.findMany({
+          where,
+          select: { id: true, character: true },
+          orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
+          skip: Math.max(0, Math.floor(Math.random() * Math.max(0, total - 100))),
+          take: 100,
+        });
+
+  const result = new Map<string, string[]>();
+  for (const card of cards) {
+    const targetChars = new Set(Array.from(card.word.character));
+    const candidates = [
+      ...new Set(
+        pool
+          .filter((w) => w.id !== card.word.id)
+          .flatMap((w) => Array.from(w.character))
+          .filter((ch) => !targetChars.has(ch)),
+      ),
+    ];
+    result.set(card.word.id, shuffle(candidates).slice(0, 6));
+  }
+  return result;
 }

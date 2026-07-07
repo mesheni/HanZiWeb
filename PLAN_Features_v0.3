@@ -878,7 +878,7 @@ Refs: PLAN_Features_v0.3 §6
 
 ---
 
-### 7. Режим «Собери слово из иероглифов»
+### 7. Режим «Собери слово из иероглифов» ✅ (2026-07-07)
 
 **Проблема**: Есть режим «Собери пиньинь» (из слогов), но нет аналогичного
 режима для иероглифов. Пользователь не тренирует порядок иероглифов в слове,
@@ -922,6 +922,39 @@ Refs: PLAN_Features_v0.3 §6
 **Ожидаемый результат**: Новый режим тренировки доступен в `StudyScreen`
 наряду с остальными. Пользователь собирает слово из иероглифов, получает
 обратную связь.
+
+**Реализовано**:
+- `packages/shared/src/schemas/session.ts` — добавлен `character_assembly`
+  в `PracticeTypeSchema`; `SessionCardSchema` дополнен полем `distractors`
+  для передачи иероглифов-дистракторов с сервера.
+- `apps/web/src/components/practice/CharacterAssemblyCard.tsx` — новый
+  компонент: перевод + TTS, слоты под каждый иероглиф, перемешанный пул
+  с дистракторами, клик для перемещения, подсветка верно/неверно,
+  вызов `onAnswer` (Good/Again).
+- `apps/web/src/utils/practiceTypes.ts` — зарегистрирован тип
+  `character_assembly` («Собери слово», иконка `Puzzle`).
+- `apps/web/src/components/practice/PracticeTypeSelector.tsx` — новый тип
+  автоматически подхватывается из `PRACTICE_TYPES`.
+- `apps/web/src/hooks/useStudySession.ts` / `apps/web/src/screens/StudyScreen.tsx` —
+  передача `practiceType` на сервер, рендер `CharacterAssemblyCard`,
+  подключение пула дистракторов.
+- `apps/server/src/modules/sessions/sessions.service.ts` — `startSession`
+  подбирает иероглифы-дистракторы из других слов того же HSK-уровня
+  для режима `character_assembly`; добавлена
+  `getRandomCharacterDistractorWords`.
+- `apps/server/src/modules/sessions/sessions.routes.ts` — `GET /sessions/random-words`
+  расширен параметром `targetWordId`, возвращающим слова с
+  непересекающимися иероглифами.
+- `apps/web/src/hooks/useDistractorPool.ts` — добавлена чистая функция
+  `getCharacterDistractors(word, pool, count)`.
+- `apps/server/src/lib/featureFlags/flags.ts` — зарегистрирован флаг
+  `practice:character_assembly`.
+
+**Проверка**:
+- `pnpm typecheck` — OK (shared, server, web, mobile-sdk, mobile).
+- `pnpm lint` — OK.
+- `pnpm --filter @hanzi/server exec vitest run` — 262 passed.
+- `pnpm --filter @hanzi/web test` — 57 passed.
 
 ---
 

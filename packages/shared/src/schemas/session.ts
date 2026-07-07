@@ -16,6 +16,7 @@ export type StudyMode = z.infer<typeof StudyModeSchema>;
  * - `tone-recognition`       — воспроизвести TTS и выбрать тон (1/2/3/4).
  * - `syllable-constructor`   — drag-and-drop слогов пиньиня в правильном порядке.
  * - `cloze`                  — подставить пропущенное слово в предложении-примере.
+ * - `character_assembly`     — собрать слово из иероглифов в правильном порядке.
  */
 export const PracticeTypeSchema = z.enum([
   'flip-card',
@@ -25,6 +26,7 @@ export const PracticeTypeSchema = z.enum([
   'tone-recognition',
   'syllable-constructor',
   'cloze',
+  'character_assembly',
 ]);
 export type PracticeType = z.infer<typeof PracticeTypeSchema>;
 
@@ -63,6 +65,8 @@ export const SessionCardSchema = z.object({
   rating: SrsRatingSchema.optional(),
   /** Текущее состояние слова (new/learning/review/graduated) */
   state: WordStateSchema.default('new'),
+  /** Дистракторы для режима `character_assembly` (иероглифы из других слов). */
+  distractors: z.array(z.string()).default([]),
 });
 
 export type SessionCard = z.infer<typeof SessionCardSchema>;
@@ -79,8 +83,9 @@ export type SessionCard = z.infer<typeof SessionCardSchema>;
  * - `onlyWithAudio` — пропускать слова без `audioUrl`.
  * - `onlyWithMnemonic` — пропускать слова без `mnemonic`.
  */
-export const SessionFiltersSchema = z
-  .union([z.undefined(), z
+export const SessionFiltersSchema = z.union([
+  z.undefined(),
+  z
     .object({
       minStability: z.number().nonnegative().optional(),
       maxStability: z.number().positive().optional(),
@@ -88,7 +93,8 @@ export const SessionFiltersSchema = z
       onlyWithAudio: z.boolean().optional(),
       onlyWithMnemonic: z.boolean().optional(),
     })
-    .strict()]);
+    .strict(),
+]);
 
 export type SessionFilters = z.infer<typeof SessionFiltersSchema>;
 

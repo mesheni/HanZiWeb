@@ -36,7 +36,7 @@ describe('featureFlags', () => {
   });
 
   describe('FEATURE_FLAGS registry', () => {
-    it('registers all 7 practice mode flags by default', () => {
+    it('registers all 8 practice mode flags by default', () => {
       const keys = getKnownFlagKeys();
       expect(keys).toEqual(
         expect.arrayContaining([
@@ -47,9 +47,10 @@ describe('featureFlags', () => {
           practiceFlagKey('tone-recognition'),
           practiceFlagKey('syllable-constructor'),
           practiceFlagKey('cloze'),
+          practiceFlagKey('character_assembly'),
         ]),
       );
-      expect(keys).toHaveLength(7);
+      expect(keys).toHaveLength(8);
     });
 
     it('all defaults are enabled with 100% rollout', () => {
@@ -68,9 +69,7 @@ describe('featureFlags', () => {
 
   describe('hashToBucket', () => {
     it('is deterministic for the same input', () => {
-      expect(hashToBucket('practice:cloze:user-1')).toBe(
-        hashToBucket('practice:cloze:user-1'),
-      );
+      expect(hashToBucket('practice:cloze:user-1')).toBe(hashToBucket('practice:cloze:user-1'));
     });
 
     it('produces a value in [0, 99]', () => {
