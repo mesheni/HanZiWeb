@@ -87,18 +87,6 @@ async function loadPriorityCards(
     .filter((p): p is ProgressWithWord => p !== undefined);
 }
 
-function orderCards(cards: ProgressWithWord[]): ProgressWithWord[] {
-  return [...cards].sort((a, b) => {
-    const aLevel = a.word.hskLevel ?? Number.POSITIVE_INFINITY;
-    const bLevel = b.word.hskLevel ?? Number.POSITIVE_INFINITY;
-    if (aLevel !== bLevel) return aLevel - bLevel;
-
-    const aCreated = new Date(a.word.createdAt).getTime();
-    const bCreated = new Date(b.word.createdAt).getTime();
-    return aCreated - bCreated;
-  });
-}
-
 /** Извлекает DTO Tag[] из связки WordTag. */
 function extractWordTags(
   word: Prisma.WordGetPayload<{ include: { tags: { include: { tag: true } } } }>,
@@ -239,7 +227,10 @@ export async function startSession(userId: string, input: StartSession) {
     })) as ProgressWithWord[];
   }
 
-  const allCards = [...priorityCards, ...orderCards([...dueWords, ...newWords])];
+  // Приоритетные карточки — первыми (порядок добавления пользователем).
+  // due + fresh перемешиваются Fisher-Yates. Фильтры наложены на Prisma `where`
+  // выше, поэтому гарантированно применены ДО перемешивания.
+  const allCards = [...priorityCards, ...shuffle([...dueWords, ...newWords])];
 
   // Для режима `character_assembly` подбираем иероглифы-дистракторы из
   // других слов того же HSK-уровня, не пересекающиеся с иероглифами целевого слова.
