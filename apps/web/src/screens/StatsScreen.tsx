@@ -38,6 +38,7 @@ const ACHIEVEMENT_ICONS: Record<
 };
 
 const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
 function getIntensity(count: number): number {
   if (count === 0) return 0;
@@ -48,11 +49,11 @@ function getIntensity(count: number): number {
 }
 
 const INTENSITY_COLORS = [
-  'var(--bg-secondary)',
-  'color-mix(in srgb, var(--accent) 20%, transparent)',
-  'color-mix(in srgb, var(--accent) 40%, transparent)',
-  'color-mix(in srgb, var(--accent) 65%, transparent)',
-  'color-mix(in srgb, var(--accent) 90%, transparent)',
+  'var(--cal-empty)',
+  'var(--cal-level-1)',
+  'var(--cal-level-2)',
+  'var(--cal-level-3)',
+  'var(--cal-level-4)',
 ];
 
 interface TooltipData {
@@ -99,9 +100,49 @@ function ActivityCalendar({
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
 
+    const monthStartMap = new Map<number, number>();
+    for (let month = 0; month < 12; month++) {
+      const date = new Date(year, month, 1);
+      const dayOfYear = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
+      const weekIdx = Math.floor((dayOfYear + startDow) / 7);
+      monthStartMap.set(weekIdx, month);
+    }
+
+    const getWeekMonth = (week: (number | null)[]): number => {
+      for (const dayNum of week) {
+        if (dayNum !== null) {
+          return new Date(year, 0, dayNum).getMonth();
+        }
+      }
+      return 0;
+    };
+
     return (
       <div style={{ position: 'relative' }}>
-        <div style={styles.calendarGrid}>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 'max-content' }}>
+            {/* Month labels */}
+            <div style={styles.monthHeader}>
+              <div style={styles.monthHeaderSpacer} />
+              <div style={styles.monthHeaderCols}>
+                {weeks.map((_, wi) => {
+                  const month = monthStartMap.get(wi);
+                  const isMonthStart = month !== undefined;
+                  return (
+                    <div
+                      key={wi}
+                      style={{
+                        ...styles.monthHeaderCol,
+                        ...(isMonthStart && wi > 0 ? styles.monthHeaderColStart : undefined),
+                      }}
+                    >
+                      {isMonthStart && <span style={styles.monthLabel}>{MONTHS[month]}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={styles.calendarGrid}>
           {/* DOW labels */}
           <div style={styles.dowCol}>
             {DOW.map((d) => (
@@ -109,56 +150,69 @@ function ActivityCalendar({
             ))}
           </div>
           {/* Week columns */}
-          <div style={styles.weekCols}>
-            {weeks.map((week, wi) => (
-              <div key={wi} style={styles.weekCol}>
-                {week.map((dayNum, di) => {
-                  if (dayNum === null) return <div key={di} style={styles.cell} />;
-                  const dateObj = new Date(year, 0, dayNum);
-                  const dateStr = dateObj.toISOString().slice(0, 10);
-                  const count = activityMap.get(dateStr) ?? 0;
-                  const intensity = getIntensity(count);
-                  const isToday = dateStr === todayStr;
-                  return (
-                    <div
-                      key={di}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`${dateStr}: ${count} повторений`}
-                      style={{
-                        ...styles.cell,
-                        background: INTENSITY_COLORS[intensity],
-                        border: isToday ? '1px solid var(--accent)' : '1px solid transparent',
-                      }}
-                      onMouseEnter={(e) => {
-                        const rect = (e.target as HTMLElement).getBoundingClientRect();
-                        setTooltip({
-                          date: dateStr,
-                          count,
-                          x: rect.left + rect.width / 2,
-                          y: rect.top - 8,
-                        });
-                      }}
-                      onMouseLeave={() => setTooltip(null)}
-                      onClick={(e) => {
-                        const rect = (e.target as HTMLElement).getBoundingClientRect();
-                        setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
+          <div style={{ ...styles.weekCols, overflowX: 'visible' }}>
+            {weeks.map((week, wi) => {
+              const weekMonth = getWeekMonth(week);
+              const isMonthStart = monthStartMap.has(wi);
+              return (
+                <div
+                  key={wi}
+                  style={{
+                    ...styles.weekCol,
+                    ...(weekMonth % 2 === 1 ? styles.weekColOdd : undefined),
+                    ...(isMonthStart && wi > 0 ? styles.weekColMonthStart : undefined),
+                  }}
+                >
+                  {week.map((dayNum, di) => {
+                    if (dayNum === null) return <div key={di} style={{ ...styles.cell, background: INTENSITY_COLORS[0] }} />;
+                    const dateObj = new Date(year, 0, dayNum);
+                    const dateStr = dateObj.toISOString().slice(0, 10);
+                    const count = activityMap.get(dateStr) ?? 0;
+                    const intensity = getIntensity(count);
+                    const isToday = dateStr === todayStr;
+                    return (
+                      <div
+                        key={di}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${dateStr}: ${count} повторений`}
+                        style={{
+                          ...styles.cell,
+                          background: INTENSITY_COLORS[intensity],
+                          border: isToday ? '1px solid var(--accent)' : '1px solid transparent',
+                        }}
+                        onMouseEnter={(e) => {
+                          const rect = (e.target as HTMLElement).getBoundingClientRect();
+                          setTooltip({
+                            date: dateStr,
+                            count,
+                            x: rect.left + rect.width / 2,
+                            y: rect.top - 8,
+                          });
+                        }}
+                        onMouseLeave={() => setTooltip(null)}
+                        onClick={(e) => {
                           const rect = (e.target as HTMLElement).getBoundingClientRect();
                           setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
-                        }
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            const rect = (e.target as HTMLElement).getBoundingClientRect();
+                            setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
-        {/* Tooltip */}
+      </div>
+    </div>
+    {/* Tooltip */}
         {tooltip && (
           <div
             style={{
@@ -496,6 +550,25 @@ const styles: Record<string, CSSProperties> = {
   calendarGrid: {
     display: 'flex', gap: 3,
   },
+  monthHeader: {
+    display: 'flex', gap: 3, marginBottom: 4,
+  },
+  monthHeaderSpacer: {
+    width: 24, flexShrink: 0,
+  },
+  monthHeaderCols: {
+    display: 'flex', gap: 3,
+  },
+  monthHeaderCol: {
+    width: 12, position: 'relative', height: 14,
+  },
+  monthHeaderColStart: {
+    borderLeft: '1px solid var(--border-default)',
+  },
+  monthLabel: {
+    position: 'absolute', left: 2, top: 0,
+    fontSize: 9, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: '14px',
+  },
   dowCol: {
     display: 'flex', flexDirection: 'column', gap: 3,
   },
@@ -504,10 +577,16 @@ const styles: Record<string, CSSProperties> = {
     paddingRight: 4, width: 20,
   },
   weekCols: {
-    display: 'flex', gap: 3, overflowX: 'auto', flex: 1,
+    display: 'flex', gap: 3, flex: 1,
   },
   weekCol: {
     display: 'flex', flexDirection: 'column', gap: 3,
+  },
+  weekColOdd: {
+    background: 'var(--bg-hover)', borderRadius: 3,
+  },
+  weekColMonthStart: {
+    borderLeft: '1px solid var(--border-default)',
   },
   cell: {
     width: 12, height: 12, borderRadius: 3, transition: 'all 0.1s',
