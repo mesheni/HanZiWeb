@@ -15,6 +15,7 @@ import OAuthCallbackScreen from './screens/OAuthCallbackScreen';
 import HandwritingScreen from './screens/HandwritingScreen';
 import DonationScreen from './screens/DonationScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import TestScreen from './screens/TestScreen';
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="/library" element={<LibraryScreen />} />
           <Route path="/stats" element={<StatsScreen />} />
           <Route path="/handwriting" element={<HandwritingScreen />} />
+          <Route path="/test" element={<TestScreen />} />
           <Route path="/donate" element={<DonationScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
         </Route>

@@ -18,3 +18,4 @@ export * from './schemas/oauth.js';
 export * from './schemas/analytics.js';
 export * from './schemas/featureFlag.js';
 export * from './schemas/stats.js';
+export * from './schemas/test.js';

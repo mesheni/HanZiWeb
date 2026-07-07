@@ -45,6 +45,7 @@ model User {
   decks         Deck[]
   achievements  UserAchievement[]
   accounts      UserAccount[]
+  testResults   TestResult[]
 
   /// Индекс для быстрого leaderboard (топ по XP за всё время).
   @@index([xp(sort: Desc)])
@@ -261,4 +262,28 @@ model ClozeProgress {
 
   @@unique([userId, exampleId])
   @@index([userId])
+}
+
+/// Результат прохождения теста по уровню HSK.
+/// См. PLAN_Features_v0.3 §6 — «Вкладка Тестирование».
+/// Активная (in-flight) сессия теста хранится в Redis (TTL 2 часа)
+/// и не персистится — после submit она удаляется, а результат
+/// пишется в эту таблицу.
+model TestResult {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level          Int
+  totalQuestions Int
+  correctAnswers Int
+  /// Процент правильных ответов (0..100), округлённый до целого.
+  percentage     Int
+  /// Время прохождения теста в миллисекундах.
+  timeSpentMs    Int
+  /// Разбор по типам заданий в виде JSON-строки:
+  /// `[{ type: 'multiple-choice-translation', correct: 4, total: 5 }, …]`.
+  breakdown      String
+  completedAt    DateTime @default(now())
+
+  @@index([userId, completedAt(sort: Desc)])
 }

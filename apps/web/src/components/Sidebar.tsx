@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Heart, Moon, Sun } from 'lucide-react';
+import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Heart, Moon, Sun, ClipboardList } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useTheme } from '@/ui/useTheme';
@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { id: 'study', icon: BookOpen, label: 'Учить', route: '/study' },
   { id: 'library', icon: Library, label: 'Слова', route: '/library' },
   { id: 'handwriting', icon: PenLine, label: 'Письмо', route: '/handwriting' },
+  { id: 'test', icon: ClipboardList, label: 'Тест', route: '/test' },
 ] as const;
 
 const BOTTOM_ITEMS = [

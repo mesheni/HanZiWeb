@@ -733,6 +733,149 @@ Refs: PLAN_Features_v0.3 §5
 **Ожидаемый результат**: Пользователь может пройти тест по любому уровню HSK,
 получить оценку и детальный разбор ошибок.
 
+**Реализовано** ✅ (2026-07-07):
+- `packages/shared/src/schemas/test.ts` — Zod-схемы `TestLevelSchema` (1..6),
+  `TestQuestionTypeSchema` (6 типов), `TestQuestionSchema`
+  (`type, wordId, wordCharacter/Pinyin/Translation, options[], correctAnswer,
+  audioUrl?, clozeSentence?, characterPool[]`),
+  `TestAnswerSchema`, `TestSessionSchema` (активная сессия),
+  `StartTestSchema`, `SubmitTestSchema`, `TestBreakdownItemSchema`,
+  `TestAnswerResultSchema`, `TestResultSchema`, `TestHistoryItemSchema`.
+  Схема `test.ts` подключена в `packages/shared/src/index.ts`.
+- `apps/server/prisma/schema.prisma` — модель `TestResult(id, userId, level,
+  totalQuestions, correctAnswers, percentage, timeSpentMs, breakdown,
+  completedAt)` с FK на `User` (cascade) и индексом
+  `(userId, completedAt DESC)`. Связь `User.testResults TestResult[]`.
+- `apps/server/prisma/migrations/20260707000001_add_test_results/migration.sql` —
+  `CREATE TABLE "TestResult"` + индекс + FK.
+- `apps/server/src/modules/tests/tests.service.ts`:
+  - `generateTest(userId, { level })` — берёт 20–30 случайных слов
+    HSK-уровня (через `prisma.word.findMany` с `include: examples`),
+    генерирует вопросы 6 типов с равномерным распределением, перемешивает
+    Fisher–Yates. Если для конкретного типа недостаёт данных (например,
+    `cloze` без примера) — фолбэк на `pinyin-input`/`multiple-choice`.
+    Сессия сохраняется в Redis (`test:session:<id>`, TTL 2ч).
+  - `submitTest(userId, testId, { answers, timeSpentMs })` — загружает
+    сессию из Redis (с проверкой владельца → 403), грейдит через pure
+    `gradeAnswer` (без диакритики для пиньиня, строгое сравнение для
+    multiple-choice/cloze/character-assembly, tone как строка), считает
+    `correctAnswers/totalQuestions/percentage`, формирует `breakdown` по
+    типам, пишет в `TestResult`, удаляет сессию.
+  - `getHistory(userId, limit)` — последние результаты пользователя
+    (без деталей ответов).
+  - `loadTestSession(testId, userId)` — общий хелпер: 404
+    `TEST_SESSION_NOT_FOUND` / 403 `TEST_SESSION_FORBIDDEN`.
+- `apps/server/src/modules/tests/tests.grading.ts` — pure-функции
+  `detectTone` / `normalizePinyinAnswer` / `isAnswerCorrect` /
+  `gradeAnswer` / `computeBreakdown` для unit-тестирования.
+- `apps/server/src/modules/tests/tests.routes.ts` — 3 эндпоинта под
+  `preHandler: [app.authenticate]`:
+  - `POST /tests/start` (body `StartTestSchema` → 201 `TestSession`)
+  - `POST /tests/:id/submit` (body `SubmitTestSchema` → 200 `TestResult`)
+  - `GET /tests/history?limit=1..50` → 200 `TestResult[]`
+- `apps/server/src/index.ts` — `testsRoutes` зарегистрирован под
+  префиксом `/tests` в общем API-scope.
+- `apps/web/src/queries/tests.ts` — `useStartTest` (useMutation),
+  `useSubmitTest` (useMutation), `useTestHistory(limit=20)` (useQuery).
+- `apps/web/src/components/test/TestQuestionCard.tsx` — универсальный
+  рендер 6 типов: 4-вариантный multiple-choice (translations и chars),
+  pinyin-input, tone-recognition (с `useAudio` хуком), character-assembly
+  (слоты + пул иероглифов), cloze (4-вариантный выбор иероглифа-пропуска).
+  Без мгновенной обратной связи — `onAnswer(string)` сразу зовётся.
+- `apps/web/src/components/test/TestResultCard.tsx` — экран результатов:
+  крупный процент, статус «сдан/нужно подтянуть» (60% threshold),
+  meta (правильных/время), breakdown по типам с цветными барами
+  (good/mid/bad), список ошибок с разбором «ваш ответ / правильный» и
+  кликом → `onWordClick`. Кнопки «К уровням» / «Пройти заново».
+- `apps/web/src/screens/TestScreen.tsx` — 3 фазы:
+  `level-select` (6 карточек HSK 1..6 + история) → `in-progress`
+  (прогресс-бар с таймером, смена вопроса по `onAnswer`, сабмит
+  последнего) → `results` (рендер TestResultCard + клик по ошибке
+  → `WordDetailModalWrapper` (использует `useWord` чтобы подгрузить
+  полный `Word` для `WordDetailModal`)).
+- `apps/web/src/App.tsx` — роут `/test → <TestScreen />` в `ProtectedLayout`.
+- `apps/web/src/components/Sidebar.tsx` — пункт «Тест» (иконка
+  `ClipboardList`) в `NAV_ITEMS` после Handwriting.
+- `apps/web/src/components/BottomNav.tsx` — пункт «Тест» (иконка
+  `ClipboardList`) добавлен в `NAV_ITEMS` (6 пунктов, `w-14` под моб.
+  ширину).
+- `apps/web/src/styles/global.css` — секция `.test-*` (~330 строк):
+  layout экрана, выбор уровня, история, прогресс-бар, 6 типов вопросов,
+  слоты/пул character-assembly, экран результатов, breakdown-бары,
+  кнопки действий, адаптивные брейкпоинты.
+- `packages/shared/api-spec.md` — раздел «Тесты по уровням HSK
+  (PLAN_Features_v0.3 §6)» с описанием 3 эндпоинтов, payload'ами
+  (Request/Response) и кодами ошибок (`INSUFFICIENT_WORDS`,
+  `INSUFFICIENT_QUESTIONS`, `TEST_SESSION_NOT_FOUND`,
+  `TEST_SESSION_FORBIDDEN`). Endpoint summary обновлён до 39
+  эндпоинтов / 11 модулей.
+- `apps/server/src/modules/tests/tests.grading.test.ts` — 20 unit-тестов
+  для pure-логики grading'а: `detectTone` (4 тона), `normalizePinyinAnswer`
+  (lowercase, диакритика, цифры, пробелы), `isAnswerCorrect` для всех 6
+  типов вопросов, `gradeAnswer` (полный TestAnswerResult), `computeBreakdown`
+  (группировка по типам, empty inputs).
+
+**Проверка**:
+- `pnpm typecheck` — все 7 пакетов OK
+- `pnpm lint` — все 7 пакетов OK
+- `pnpm --filter @hanzi/shared build` — OK
+- `pnpm --filter @hanzi/server build` — OK
+- `pnpm --filter @hanzi/web build` — OK (vite + PWA sw)
+- `pnpm --filter @hanzi/server exec vitest run` — 262/262 тестов
+  пройдены (включая 20 новых для `tests.grading.test.ts`)
+- `pnpm --filter @hanzi/server exec prisma generate` — OK (после
+  добавления модели `TestResult`)
+
+**Запись для коммита**:
+
+```
+feat(tests): HSK-level tests tab with 6 question types (PLAN_Features_v0.3 §6)
+
+- shared: add Zod schemas in @hanzi/shared/schemas/test.ts (TestLevel
+  1..6, TestQuestionType 6 типов, TestQuestion с type/word/options/
+  correctAnswer/audioUrl/clozeSentence/characterPool, TestSession,
+  TestAnswer, StartTest, SubmitTest, TestBreakdownItem,
+  TestAnswerResult, TestResult, TestHistoryItem).
+- server: Prisma model TestResult(id, userId, level, totalQuestions,
+  correctAnswers, percentage, timeSpentMs, breakdown, completedAt)
+  с FK на User (cascade) и индексом (userId, completedAt DESC).
+  Migration 20260707000001_add_test_results.
+- server: new module modules/tests/ с tests.service.ts
+  (generateTest: 20-30 случайных слов уровня, 6 типов вопросов,
+  fallback если cloze не применим; submitTest: grading + persist
+  TestResult + delete Redis-сессию; getHistory), tests.grading.ts
+  (pure detectTone/normalizePinyinAnswer/isAnswerCorrect/gradeAnswer/
+  computeBreakdown), tests.routes.ts (POST /tests/start,
+  POST /tests/:id/submit, GET /tests/history). Регистрация в
+  index.ts под /tests. Сессия в Redis test:session:<id> TTL 2ч.
+- web: queries/tests.ts с useStartTest/useSubmitTest/useTestHistory.
+- web: components/test/TestQuestionCard.tsx — универсальный рендер
+  6 типов (multiple-choice-translation, reverse-choice-character,
+  pinyin-input, tone-recognition с useAudio, character-assembly
+  с слотами/пулом, cloze 4-вариантный).
+- web: components/test/TestResultCard.tsx — экран результатов с
+  процентом, статусом (60% threshold), breakdown по типам с
+  цветными барами, списком ошибок (ваш ответ / правильный).
+- web: screens/TestScreen.tsx — 3 фазы: level-select (6 HSK-карточек
+  + история) → in-progress (прогресс-бар, таймер, автосабмит на
+  последнем вопросе) → results (TestResultCard + клик ошибки →
+  WordDetailModal через useWord-обёртку).
+- web: роут /test в App.tsx; пункты «Тест» в Sidebar (ClipboardList)
+  и BottomNav.
+- web: ~330 строк CSS в global.css: .test-screen, .test-levels,
+  .test-history, .test-progress, .test-question-*, .test-result-*.
+- docs: api-spec.md — новый раздел «Тесты по уровням HSK» с
+  описанием 3 эндпоинтов, payload'ами, кодами ошибок
+  (INSUFFICIENT_WORDS, INSUFFICIENT_QUESTIONS,
+  TEST_SESSION_NOT_FOUND, TEST_SESSION_FORBIDDEN). Endpoint
+  summary: 36 → 39 эндпоинтов.
+- tests: 20 unit-тестов в tests.grading.test.ts для detectTone,
+  normalizePinyinAnswer, isAnswerCorrect (все 6 типов), gradeAnswer,
+  computeBreakdown. Всего 262/262 серверных тестов проходят.
+
+Refs: PLAN_Features_v0.3 §6
+```
+
 ---
 
 ### 7. Режим «Собери слово из иероглифов»

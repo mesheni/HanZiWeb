@@ -21,6 +21,7 @@ import { usersRoutes } from './modules/users/users.routes.js';
 import { tagsRoutes } from './modules/tags/tags.routes.js';
 import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { featureFlagsRoutes } from './modules/featureFlags/featureFlags.routes.js';
+import { testsRoutes } from './modules/tests/tests.routes.js';
 
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
@@ -126,6 +127,8 @@ async function main() {
     await child.register(analyticsRoutes);
     // Feature flags / A/B-тесты: /api/flags (см. PLAN_Features_v0.2 §15).
     await child.register(featureFlagsRoutes, { prefix: '/flags' });
+    // Тесты по уровням HSK: /api/tests/* (см. PLAN_Features_v0.3 §6).
+    await child.register(testsRoutes, { prefix: '/tests' });
 
   }, { prefix: '/api' });
 
