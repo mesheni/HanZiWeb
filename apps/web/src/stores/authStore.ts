@@ -19,11 +19,42 @@ interface AuthState {
   logout: () => void;
   setAccessToken: (token: string) => void;
   hydrateAuth: () => Promise<void>;
+  /**
+   * Пробует silent refresh через httpOnly cookie. Возвращает `true`, если
+   * новый access-токен получен и записан в стор; `false` если refresh
+   * не удался (сеть / истёк refresh-токен). При успехе НЕ трогает `user`.
+   * Используется в `onSessionExpired` и `apiClient` для повторной попытки
+   * вместо немедленного logout.
+   */
+  silentRefresh: () => Promise<boolean>;
+  /**
+   * Обработчик «сессия истекла» (PLAN_Features_v0.3 §15). Сначала пробует
+   * {@link silentRefresh} — если refresh удалось, возвращает `true`
+   * (вызывающий код может повторить исходный запрос). Только если
+   * refresh тоже упал — делает logout. Так избегаем «выкидывания» юзера
+   * из аккаунта при кратковременном обрыве сети / блипе.
+   */
+  onSessionExpired: () => Promise<boolean>;
 }
 
 let hydratePromise: Promise<void> | null = null;
 
-export const useAuthStore = create<AuthState>((set) => ({
+async function doSilentRefresh(): Promise<{ user: User; accessToken: string } | null> {
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { success?: boolean; data?: AuthResponse };
+    if (!json.success || !json.data?.accessToken || !json.data?.user) return null;
+    return { user: json.data.user, accessToken: json.data.accessToken };
+  } catch {
+    return null;
+  }
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   accessToken: null,
   isAuthenticated: false,
@@ -37,36 +68,39 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAccessToken: (accessToken) => set({ accessToken }),
 
+  silentRefresh: async () => {
+    const result = await doSilentRefresh();
+    if (!result) return false;
+    set({
+      user: result.user,
+      accessToken: result.accessToken,
+      isAuthenticated: true,
+    });
+    return true;
+  },
+
+  onSessionExpired: async () => {
+    const recovered = await get().silentRefresh();
+    if (recovered) return true;
+    get().logout();
+    return false;
+  },
+
   hydrateAuth: async () => {
     if (hydratePromise) return hydratePromise;
 
     hydratePromise = (async () => {
-    try {
-      const res = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (!res.ok) {
+      const result = await doSilentRefresh();
+      if (!result) {
         set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
         return;
       }
-
-      const json = (await res.json()) as { success?: boolean; data?: AuthResponse };
-      if (!json.success || !json.data?.accessToken || !json.data?.user) {
-        set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
-        return;
-      }
-
       set({
-        user: json.data.user,
-        accessToken: json.data.accessToken,
+        user: result.user,
+        accessToken: result.accessToken,
         isAuthenticated: true,
         isHydrating: false,
       });
-    } catch {
-      set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
-    }
     })().finally(() => {
       hydratePromise = null;
     });

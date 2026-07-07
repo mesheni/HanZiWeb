@@ -14,12 +14,16 @@ import * as oauthService from './oauth.service.js';
 import { listProviders, registerOAuthRoutes } from './oauth.providers.js';
 
 export async function authRoutes(app: FastifyInstance) {
+  // Cookie maxAge привязан к TTL refresh-токена, чтобы cookie не «отваливалась»
+  // раньше, чем сам токен (и наоборот). PLAN_Features_v0.3 §15.
+  const refreshExpirySec = authService.getRefreshTokenExpiresInSec();
+  const accessExpirySec = authService.getAccessTokenExpiresInSec();
   const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const, // 'lax' нужен для редиректа после OAuth
     path: '/api/auth',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: refreshExpirySec,
   };
 
   /** POST /auth/register — создание аккаунта */
@@ -29,7 +33,14 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.status(201).send({ success: true, data: result });
   });
 
-  /** POST /auth/login — вход */
+  /**
+   * POST /auth/login — вход.
+   *
+   * Rate limit per-email (PLAN_Features_v0.3 §15) делается в
+   * `authService.loginUser` через Redis: ключ `login-attempts:<email>`,
+   * лимит `LOGIN_RATE_LIMIT_MAX` за `LOGIN_RATE_LIMIT_WINDOW_SEC` сек.
+   * Сбрасывается при успешной аутентификации.
+   */
   app.post('/login', async (request, reply) => {
     const body = LoginSchema.parse(request.body);
     const result = await authService.loginUser(body);
@@ -37,7 +48,7 @@ export async function authRoutes(app: FastifyInstance) {
     reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
     return reply.send({
       success: true,
-      data: { user: result.user, accessToken: result.accessToken, expiresIn: 900 },
+      data: { user: result.user, accessToken: result.accessToken, expiresIn: accessExpirySec },
     });
   });
 
@@ -68,7 +79,7 @@ export async function authRoutes(app: FastifyInstance) {
         user: result.user,
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
-        expiresIn: 900,
+        expiresIn: accessExpirySec,
       },
     });
   });
@@ -202,7 +213,7 @@ export async function authRoutes(app: FastifyInstance) {
     reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
     return reply.send({
       success: true,
-      data: { user: result.user, accessToken: result.accessToken, expiresIn: 900 },
+      data: { user: result.user, accessToken: result.accessToken, expiresIn: accessExpirySec },
     });
   });
 

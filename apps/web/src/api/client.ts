@@ -8,10 +8,12 @@ interface RequestOptions extends Omit<RequestInit, 'headers'> {
 
 /**
  * API-клиент: обёртка над fetch с авто-прикреплением токена
- * и обработкой 401 (refresh → retry).
+ * и обработкой 401 (refresh → retry). Если refresh не помог —
+ * вызывает `authStore.onSessionExpired()`, который делает ещё одну
+ * попытку silent refresh перед logout (PLAN_Features_v0.3 §15).
  */
 export async function apiClient<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { accessToken, setAccessToken, logout } = useAuthStore.getState();
+  const { accessToken, setAccessToken, onSessionExpired } = useAuthStore.getState();
 
   const headers: Record<string, string> = {
     ...options.headers,
@@ -26,11 +28,10 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
 
-  let res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  const doFetch = () =>
+    fetch(`${BASE_URL}${path}`, { ...options, headers, credentials: 'include' });
+
+  let res = await doFetch();
 
   // 401 → пробуем refresh
   if (res.status === 401 && accessToken) {
@@ -45,11 +46,20 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
       if (newToken) {
         setAccessToken(newToken);
         headers['Authorization'] = `Bearer ${newToken}`;
-        res = await fetch(`${BASE_URL}${path}`, { ...options, headers, credentials: 'include' });
+        res = await doFetch();
       }
     } else {
-      logout();
-      throw new Error('Session expired');
+      const recovered = await onSessionExpired();
+      if (recovered) {
+        const newToken = useAuthStore.getState().accessToken;
+        if (newToken) {
+          headers['Authorization'] = `Bearer ${newToken}`;
+          res = await doFetch();
+        }
+      }
+      if (res.status === 401) {
+        throw new Error('Session expired');
+      }
     }
   }
 
@@ -109,9 +119,12 @@ export function apiDelete<T>(path: string): Promise<T> {
  * GET-запрос, который возвращает «сырое» тело ответа как Blob
  * (а не JSON). Используется для скачивания файлов экспорта.
  * Прикрепляет access token, при 401 пытается refresh и повторяет.
+ * Если refresh не помог — вызывает `onSessionExpired` (silent refresh
+ * → fallback на logout) перед тем, как бросить ошибку
+ * (PLAN_Features_v0.3 §15).
  */
 export async function apiGetBlob(path: string): Promise<Blob> {
-  const { accessToken, setAccessToken, logout } = useAuthStore.getState();
+  const { accessToken, setAccessToken, onSessionExpired } = useAuthStore.getState();
 
   const headers: Record<string, string> = {};
   if (accessToken) {
@@ -137,8 +150,17 @@ export async function apiGetBlob(path: string): Promise<Blob> {
         res = await doFetch();
       }
     } else {
-      logout();
-      throw new Error('Session expired');
+      const recovered = await onSessionExpired();
+      if (recovered) {
+        const newToken = useAuthStore.getState().accessToken;
+        if (newToken) {
+          headers['Authorization'] = `Bearer ${newToken}`;
+          res = await doFetch();
+        }
+      }
+      if (res.status === 401) {
+        throw new Error('Session expired');
+      }
     }
   }
 

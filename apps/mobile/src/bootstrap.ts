@@ -92,10 +92,23 @@ export const api = new ApiClient({
   onRefreshed: (response) => {
     tokenStore.setAccessToken(response.accessToken);
   },
-  onSessionExpired: () => {
+  /**
+   * Вызывается ApiClient'ом, когда 401 И первый silent refresh
+   * (через `doRefresh`) уже не сработал. Делаем ещё одну попытку —
+   * `PLAN_Features_v0.3 §15` — на случай транзиентной сетевой ошибки.
+   * Возвращаем `true`, если восстановились (ApiClient повторит исходный
+   * запрос), `false` если пришлось чистить токены и логаутить стор.
+   */
+  onSessionExpired: async () => {
+    const recovered = await doRefresh();
+    if (recovered) {
+      tokenStore.setAccessToken(recovered.accessToken);
+      return true;
+    }
     tokenStore.setAccessToken(null);
     tokenStore.setRefreshToken(null);
     useAuthStore.getState().logout();
+    return false;
   },
 });
 

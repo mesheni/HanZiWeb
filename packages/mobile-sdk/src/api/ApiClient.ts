@@ -15,10 +15,15 @@ export interface ApiClientOptions {
    */
   onRefreshed?: (response: AuthResponse) => void;
   /**
-   * Called when refresh fails — the consumer should drop the session
-   * (clear tokens, redirect to login).
+   * Called when refresh fails. The consumer gets one last chance to
+   * recover the session (PLAN_Features_v0.3 §15): it may attempt another
+   * silent refresh internally and return `true` if it succeeded — in
+   * that case the original request is retried automatically. If the
+   * callback returns `false`/`void` (or the returned Promise resolves to
+   * `false`/`void`), the consumer has dropped the session and the
+   * caller sees a `401 UNAUTHENTICATED` result.
    */
-  onSessionExpired?: () => void;
+  onSessionExpired?: () => Promise<boolean> | boolean | void;
   /** Default `fetch` to use. Override in tests. */
   fetchImpl?: typeof fetch;
 }
@@ -65,7 +70,7 @@ export class ApiClient {
   private baseUrl: string;
   private refresh: () => Promise<AuthResponse | null>;
   private onRefreshed?: (response: AuthResponse) => void;
-  private onSessionExpired?: () => void;
+  private onSessionExpired?: () => Promise<boolean> | boolean | void;
   private fetchImpl: typeof fetch;
   private isRefreshing = false;
 
@@ -103,18 +108,23 @@ export class ApiClient {
   /**
    * Downloads the response as a `Blob` (used for progress export / CSV).
    * Returns `null` on HTTP error so the caller can render a toast.
+   * Mirrors the 401 → refresh → `onSessionExpired` flow used by
+   * {@link request} (PLAN_Features_v0.3 §15).
    */
   async getBlob(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<Blob | null> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
     const init = this.buildInit(options);
-    const res = await this.fetchImpl(url, init);
+    let res = await this.fetchImpl(url, init);
 
     if (res.status === 401) {
       const refreshed = await this.tryRefresh();
       if (refreshed) {
         return this.getBlob(path, options);
       }
-      this.onSessionExpired?.();
+      const recovered = await this.onSessionExpired?.();
+      if (recovered) {
+        return this.getBlob(path, options);
+      }
       return null;
     }
     if (!res.ok) return null;
@@ -159,7 +169,10 @@ export class ApiClient {
       if (refreshed) {
         return this.request<T>(path, options);
       }
-      this.onSessionExpired?.();
+      const recovered = await this.onSessionExpired?.();
+      if (recovered) {
+        return this.request<T>(path, options);
+      }
       return {
         ok: false,
         status: 401,

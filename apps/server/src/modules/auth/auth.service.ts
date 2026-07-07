@@ -22,6 +22,9 @@ const PASSWORD_RESET_TTL_SEC = 15 * 60;
 /** Префикс ключа Redis для токенов сброса пароля. */
 const PASSWORD_RESET_PREFIX = 'pwreset:';
 
+/** Префикс ключа Redis для счётчика неудачных попыток входа (PLAN_Features_v0.3 §15). */
+const LOGIN_ATTEMPTS_PREFIX = 'login-attempts:';
+
 interface AccessTokenPayload {
   userId: string;
   email: string;
@@ -34,20 +37,90 @@ interface RefreshTokenPayload {
   tokenVersion: number;
 }
 
-/** Генерирует короткоживущий JWT (15 минут) для авторизации. */
+/**
+ * Парсит строку вида `1h` / `30d` / `15m` / `7d` в секунды.
+ * Используется только в response'е (`expiresIn`), не влияет на сам JWT —
+ * `jsonwebtoken` принимает тот же формат напрямую.
+ */
+function parseExpiryToSec(expiry: string): number {
+  const match = /^(\d+)([smhdw])$/.exec(expiry);
+  if (!match) {
+    throw new Error(`Invalid JWT expiry format: ${expiry}`);
+  }
+  const value = Number.parseInt(match[1] as string, 10);
+  const unit = match[2] as 's' | 'm' | 'h' | 'd' | 'w';
+  const multipliers: Record<typeof unit, number> = {
+    s: 1,
+    m: 60,
+    h: 60 * 60,
+    d: 60 * 60 * 24,
+    w: 60 * 60 * 24 * 7,
+  };
+  return value * multipliers[unit];
+}
+
+/** TTL access-токена в секундах (для поля `expiresIn` в ответе). */
+export function getAccessTokenExpiresInSec(): number {
+  return parseExpiryToSec(loadConfig().JWT_ACCESS_EXPIRY);
+}
+
+/** TTL refresh-токена в секундах (для `maxAge` httpOnly cookie). */
+export function getRefreshTokenExpiresInSec(): number {
+  return parseExpiryToSec(loadConfig().JWT_REFRESH_EXPIRY);
+}
+
+/** Генерирует короткоживущий JWT (по умолчанию 1 час) для авторизации. */
 export function generateAccessToken(userId: string, email: string, pv: number): string {
   const config = loadConfig();
   return jwt.sign(
     { userId, email, pv } satisfies AccessTokenPayload,
     config.JWT_ACCESS_SECRET,
-    { expiresIn: '15m' },
+    { expiresIn: parseExpiryToSec(config.JWT_ACCESS_EXPIRY) },
   );
 }
 
-/** Генерирует долгоживущий refresh-токен (30 дней). */
+/** Генерирует долгоживущий refresh-токен (по умолчанию 30 дней). */
 export function generateRefreshToken(userId: string, tokenVersion: number): string {
   const config = loadConfig();
-  return jwt.sign({ userId, tokenVersion } satisfies RefreshTokenPayload, config.JWT_REFRESH_SECRET, { expiresIn: '30d' });
+  return jwt.sign(
+    { userId, tokenVersion } satisfies RefreshTokenPayload,
+    config.JWT_REFRESH_SECRET,
+    { expiresIn: parseExpiryToSec(config.JWT_REFRESH_EXPIRY) },
+  );
+}
+
+/**
+ * Проверяет лимит попыток входа для email через Redis (PLAN_Features_v0.3 §15).
+ *
+ * Стратегия: `INCR` ключа `login-attempts:<email>`, на первой попытке
+ * (`incr` вернул 1) выставляем TTL-окно (`LOGIN_RATE_LIMIT_WINDOW_SEC`).
+ * Если значение превышает `LOGIN_RATE_LIMIT_MAX` → 429 `TOO_MANY_LOGIN_ATTEMPTS`.
+ *
+ * Считаем ВСЕ попытки, включая неудачные и попытки по несуществующему
+ * email — иначе атакующий мог бы перебирать адреса и по отсутствию 429
+ * узнавать, какие email зарегистрированы.
+ *
+ * @throws 429 `TOO_MANY_LOGIN_ATTEMPTS` — превышен лимит.
+ */
+export async function checkLoginRateLimit(email: string): Promise<void> {
+  const config = loadConfig();
+  const redis = getRedis();
+  const key = `${LOGIN_ATTEMPTS_PREFIX}${email}`;
+  const attempts = await redis.incr(key);
+  if (attempts === 1) {
+    await redis.expire(key, config.LOGIN_RATE_LIMIT_WINDOW_SEC);
+  }
+  if (attempts > config.LOGIN_RATE_LIMIT_MAX) {
+    throw Object.assign(
+      new Error('Слишком много попыток. Подождите 1 минуту'),
+      { statusCode: 429, code: 'TOO_MANY_LOGIN_ATTEMPTS' },
+    );
+  }
+}
+
+/** Сбрасывает счётчик попыток входа при успешной аутентификации. */
+export async function resetLoginRateLimit(email: string): Promise<void> {
+  await getRedis().del(`${LOGIN_ATTEMPTS_PREFIX}${email}`);
 }
 
 export async function registerUser(input: Register) {
@@ -93,6 +166,11 @@ export async function registerUser(input: Register) {
 }
 
 export async function loginUser(input: Login) {
+  // Rate limit проверяем ДО чтения из БД, чтобы:
+  // 1) быстрее отбивать брутфорс без обращения к Postgres;
+  // 2) не палить существование email'а через разницу во времени ответа.
+  await checkLoginRateLimit(input.email);
+
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   if (!user) {
     throw Object.assign(new Error('Invalid credentials'), { statusCode: 401, code: 'INVALID_CREDENTIALS' });
@@ -110,6 +188,9 @@ export async function loginUser(input: Login) {
   if (!valid) {
     throw Object.assign(new Error('Invalid credentials'), { statusCode: 401, code: 'INVALID_CREDENTIALS' });
   }
+
+  // Успешный вход — сбрасываем счётчик неудачных попыток.
+  await resetLoginRateLimit(input.email);
 
   // Обновляем lastActiveDate
   await prisma.user.update({ where: { id: user.id }, data: { lastActiveDate: new Date() } });

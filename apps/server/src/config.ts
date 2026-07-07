@@ -6,6 +6,21 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
+  // TTL access-токена в формате jsonwebtoken: '1h', '15m', '30s', '7d'.
+  // PLAN_Features_v0.3 §15: увеличиваем с 15 минут до 1 часа.
+  JWT_ACCESS_EXPIRY: z
+    .string()
+    .regex(/^\d+[smhdw]$/, 'Use jsonwebtoken format: e.g. 15m, 1h, 7d, 30d')
+    .default('1h'),
+  // TTL refresh-токена. PLAN_Features_v0.3 §15: 30 дней.
+  JWT_REFRESH_EXPIRY: z
+    .string()
+    .regex(/^\d+[smhdw]$/, 'Use jsonwebtoken format: e.g. 15m, 1h, 7d, 30d')
+    .default('30d'),
+  // Лимит попыток входа на один email за окно (PLAN_Features_v0.3 §15).
+  // Блокировка срабатывает на (MAX + 1)-й попытке, т.е. >3 за минуту.
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
+  LOGIN_RATE_LIMIT_WINDOW_SEC: z.coerce.number().int().positive().default(60),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   // Публичный origin web-клиента (для редиректа после OAuth).
   // По умолчанию совпадает с CORS_ORIGIN.
