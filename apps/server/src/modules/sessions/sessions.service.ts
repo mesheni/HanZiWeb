@@ -51,6 +51,42 @@ async function getUnlockedHskLevel(userId: string): Promise<number | null> {
   return null;
 }
 
+async function loadPriorityCards(
+  userId: string,
+  cardLimit: number,
+): Promise<ProgressWithWord[]> {
+  const priorities = await prisma.userWordPriority.findMany({
+    where: { userId },
+    orderBy: { addedAt: 'asc' },
+    take: cardLimit,
+    include: { word: true },
+  });
+  if (priorities.length === 0) return [];
+
+  const now = new Date();
+  await prisma.userWordProgress.createMany({
+    data: priorities.map((p) => ({
+      userId,
+      wordId: p.wordId,
+      state: 'new' as const,
+      dueDate: now,
+    })),
+    skipDuplicates: true,
+  });
+
+  const progressRecords = await prisma.userWordProgress.findMany({
+    where: { userId, wordId: { in: priorities.map((p) => p.wordId) } },
+    include: {
+      word: { include: { examples: true, tags: { include: { tag: true } } } },
+    },
+  });
+
+  const byWordId = new Map(progressRecords.map((p) => [p.wordId, p]));
+  return priorities
+    .map((p) => byWordId.get(p.wordId))
+    .filter((p): p is ProgressWithWord => p !== undefined);
+}
+
 function orderCards(cards: ProgressWithWord[]): ProgressWithWord[] {
   return [...cards].sort((a, b) => {
     const aLevel = a.word.hskLevel ?? Number.POSITIVE_INFINITY;
@@ -114,14 +150,23 @@ export async function startSession(userId: string, input: StartSession) {
   );
   const progressWhere = intersectWithTagFilter(baseProgressWhere, tagFilteredWordIds);
 
+  // Приоритетные слова из вкладки «Чтение» — идут первыми.
+  const priorityCards =
+    input.includePriority !== false
+      ? await loadPriorityCards(userId, input.cardLimit)
+      : [];
+  const priorityWordIds = new Set(priorityCards.map((p) => p.wordId));
+  const remainingLimit = Math.max(0, input.cardLimit - priorityCards.length);
+
   const dueWords: ProgressWithWord[] =
-    mode === 'learn'
+    mode === 'learn' || remainingLimit === 0
       ? []
       : ((await prisma.userWordProgress.findMany({
           where: {
             userId,
             dueDate: { lte: now },
             state: { not: 'new' },
+            wordId: { notIn: Array.from(priorityWordIds) },
             ...progressWhere,
           },
           include: {
@@ -132,16 +177,16 @@ export async function startSession(userId: string, input: StartSession) {
             { word: { hskLevel: 'asc' } },
             { word: { createdAt: 'asc' } },
           ],
-          take: input.cardLimit,
+          take: remainingLimit,
         })) as ProgressWithWord[]);
 
   // Если нужен микс или режим только новых слов, подбираем fresh words.
   const newWordsNeeded =
-    mode === 'review'
+    mode === 'review' || remainingLimit === 0
       ? 0
       : mode === 'learn'
-        ? input.cardLimit
-        : Math.max(0, input.cardLimit - dueWords.length);
+        ? remainingLimit
+        : Math.max(0, remainingLimit - dueWords.length);
   let newWords: ProgressWithWord[] = [];
 
   if (newWordsNeeded > 0 && (input.includeNew || mode === 'learn')) {
@@ -150,7 +195,10 @@ export async function startSession(userId: string, input: StartSession) {
       where: { userId },
       select: { wordId: true },
     });
-    const excludeIds = existingWordIds.map((p: { wordId: string }) => p.wordId);
+    const excludeIds = [
+      ...existingWordIds.map((p: { wordId: string }) => p.wordId),
+      ...priorityWordIds,
+    ];
 
     const wordWhere = intersectWordWithTagFilter(
       buildWordWhereForFilters(filters, deckWhere),
@@ -191,7 +239,7 @@ export async function startSession(userId: string, input: StartSession) {
     })) as ProgressWithWord[];
   }
 
-  const allCards = orderCards([...dueWords, ...newWords]);
+  const allCards = [...priorityCards, ...orderCards([...dueWords, ...newWords])];
 
   // Для режима `character_assembly` подбираем иероглифы-дистракторы из
   // других слов того же HSK-уровня, не пересекающиеся с иероглифами целевого слова.
