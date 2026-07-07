@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from 'react';
 import { Download, FileUp, FileJson, FileText, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { ProgressExportSchema, type ProgressImportMode, type ProgressImportResponse } from '@hanzi/shared';
-import { Button, Card } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { toast } from '@/stores/toastStore';
 import { downloadProgressExport, useImportProgress } from '@/queries/stats';
 
@@ -98,23 +98,25 @@ export default function ProgressExportImport() {
     status.kind === 'import-pending' || importProgress.isPending;
 
   return (
-    <Card padding="lg" className="space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-tone-2-bg text-tone-2 flex items-center justify-center shrink-0">
-          <Download size={18} />
-        </div>
-        <div className="flex-1">
-          <div className="font-medium text-text-primary">Экспорт и импорт прогресса</div>
-          <div className="text-sm text-text-muted mt-1">
-            Скачайте бэкап своих карточек (для переноса на другое устройство или аналитики)
-            или восстановите прогресс из ранее сохранённого JSON-файла.
+    <section className="settings-card">
+      <header className="settings-card-header">
+        <div className="settings-card-header-meta">
+          <div className="settings-card-icon bg-tone-2-bg text-tone-2">
+            <Download size={18} />
+          </div>
+          <div className="settings-card-titles">
+            <div className="settings-card-title">Экспорт и импорт прогресса</div>
+            <div className="settings-card-description">
+              Скачайте бэкап своих карточек (для переноса на другое устройство или аналитики)
+              или восстановите прогресс из ранее сохранённого JSON-файла.
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="space-y-3">
+      <div className="settings-card-body">
         <div>
-          <div className="text-sm text-text-secondary mb-2">Экспорт</div>
+          <div className="settings-card-sublabel">Экспорт</div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
@@ -140,8 +142,8 @@ export default function ProgressExportImport() {
           </div>
         </div>
 
-        <div className="border-t border-border-default pt-3">
-          <div className="text-sm text-text-secondary mb-2">Импорт</div>
+        <div>
+          <div className="settings-card-sublabel">Импорт</div>
 
           <div className="flex flex-wrap items-center gap-3 mb-2">
             <label className="flex items-center gap-2 cursor-pointer text-sm">
@@ -175,15 +177,17 @@ export default function ProgressExportImport() {
             onChange={handleFileSelected}
             style={{ display: 'none' }}
           />
-          <Button
-            variant="secondary"
-            loading={isImporting}
-            onClick={handleImportClick}
-            disabled={isExporting || isImporting}
-          >
-            {isImporting ? <Loader2 size={16} className="spinner-inline" /> : <FileUp size={16} />}
-            Загрузить JSON
-          </Button>
+          <div className="settings-card-body--right">
+            <Button
+              variant="secondary"
+              loading={isImporting}
+              onClick={handleImportClick}
+              disabled={isExporting || isImporting}
+            >
+              {isImporting ? <Loader2 size={16} className="spinner-inline" /> : <FileUp size={16} />}
+              Загрузить JSON
+            </Button>
+          </div>
 
           {importMode === 'replace' && (
             <div className="text-xs text-tone-4 mt-2 flex items-start gap-1">
@@ -211,6 +215,6 @@ export default function ProgressExportImport() {
           </div>
         )}
       </div>
-    </Card>
+    </section>
   );
 }

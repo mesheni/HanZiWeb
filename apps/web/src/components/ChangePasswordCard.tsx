@@ -1,6 +1,6 @@
 import { useState, useMemo, type FormEvent } from 'react';
 import { Lock } from 'lucide-react';
-import { Button, Card, Input } from '@/components/ui';
+import { Button, Input } from '@/components/ui';
 import { useChangePassword } from '@/queries/auth';
 import { toast } from '@/stores/toastStore';
 
@@ -95,20 +95,22 @@ export default function ChangePasswordCard() {
   const isBusy = changePassword.isPending;
 
   return (
-    <Card padding="lg" className="space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-tone-1-bg text-tone-1 flex items-center justify-center shrink-0">
-          <Lock size={18} />
-        </div>
-        <div className="flex-1">
-          <div className="font-medium text-text-primary">Смена пароля</div>
-          <div className="text-sm text-text-muted mt-1">
-            Измените пароль аккаунта. После смены другие устройства должны будут войти заново.
+    <section className="settings-card">
+      <header className="settings-card-header">
+        <div className="settings-card-header-meta">
+          <div className="settings-card-icon bg-tone-1-bg text-tone-1">
+            <Lock size={18} />
+          </div>
+          <div className="settings-card-titles">
+            <div className="settings-card-title">Смена пароля</div>
+            <div className="settings-card-description">
+              Измените пароль аккаунта. После смены другие устройства должны будут войти заново.
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+      <form onSubmit={handleSubmit} className="settings-card-body" noValidate>
         <Input
           variant="password"
           label="Текущий пароль"
@@ -156,15 +158,17 @@ export default function ChangePasswordCard() {
           {...(errors.confirmPassword ? { error: errors.confirmPassword } : {})}
         />
 
-        <Button
-          type="submit"
-          variant="primary"
-          loading={isBusy}
-          disabled={isBusy || !currentPassword || !newPassword || !confirmPassword}
-        >
-          Изменить пароль
-        </Button>
+        <div className="settings-card-body--right">
+          <Button
+            type="submit"
+            variant="primary"
+            loading={isBusy}
+            disabled={isBusy || !currentPassword || !newPassword || !confirmPassword}
+          >
+            Изменить пароль
+          </Button>
+        </div>
       </form>
-    </Card>
+    </section>
   );
 }

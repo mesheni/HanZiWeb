@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link2, Unlink } from 'lucide-react';
 import { OAUTH_PROVIDER_LABELS, type OAuthProvider, type UserAccountsResponse } from '@hanzi/shared';
-import { Card } from '@/components/ui';
 import { apiGet, apiDelete } from '@/api/client';
 import { toast } from '@/stores/toastStore';
 
@@ -52,55 +51,59 @@ export default function LinkedAccountsCard() {
   };
 
   return (
-    <Card padding="lg" className="space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-tone-1-bg text-tone-1 flex items-center justify-center shrink-0">
-          <Link2 size={18} />
-        </div>
-        <div className="flex-1">
-          <div className="font-medium text-text-primary">Привязанные аккаунты</div>
-          <div className="text-sm text-text-muted mt-1">
-            Войти также можно через Яндекс.
+    <section className="settings-card">
+      <header className="settings-card-header">
+        <div className="settings-card-header-meta">
+          <div className="settings-card-icon bg-tone-1-bg text-tone-1">
+            <Link2 size={18} />
+          </div>
+          <div className="settings-card-titles">
+            <div className="settings-card-title">Привязанные аккаунты</div>
+            <div className="settings-card-description">
+              Войти также можно через Яндекс.
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {loading ? (
-        <div className="text-sm text-text-muted">Загрузка…</div>
-      ) : data && data.accounts.length > 0 ? (
-        <ul className="flex flex-col gap-2">
-          {data.accounts.map((a) => (
-            <li
-              key={a.id}
-              className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-bg-primary border border-border-default"
-            >
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm text-text-primary">
-                  {OAUTH_PROVIDER_LABELS[a.provider]}
-                </span>
-                {a.providerEmail && (
-                  <span className="text-xs text-text-muted truncate">{a.providerEmail}</span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleUnlink(a.provider)}
-                disabled={!data.canUnlink || unlinking === a.provider}
-                title={data.canUnlink ? 'Отвязать' : 'Невозможно удалить единственный способ входа'}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-border-default text-text-secondary hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      <div className="settings-card-body">
+        {loading ? (
+          <div className="text-sm text-text-muted">Загрузка…</div>
+        ) : data && data.accounts.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {data.accounts.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-bg-primary border border-border-default"
               >
-                <Unlink size={14} />
-                {unlinking === a.provider ? 'Отвязка…' : 'Отвязать'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="text-sm text-text-muted">
-          Социальные аккаунты не привязаны. Войдите через Яндекс на экране «Вход» — это
-          автоматически создаст привязку.
-        </div>
-      )}
-    </Card>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-sm text-text-primary">
+                    {OAUTH_PROVIDER_LABELS[a.provider]}
+                  </span>
+                  {a.providerEmail && (
+                    <span className="text-xs text-text-muted truncate">{a.providerEmail}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleUnlink(a.provider)}
+                  disabled={!data.canUnlink || unlinking === a.provider}
+                  title={data.canUnlink ? 'Отвязать' : 'Невозможно удалить единственный способ входа'}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-border-default text-text-secondary hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <Unlink size={14} />
+                  {unlinking === a.provider ? 'Отвязка…' : 'Отвязать'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-sm text-text-muted">
+            Социальные аккаунты не привязаны. Войдите через Яндекс на экране «Вход» — это
+            автоматически создаст привязку.
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

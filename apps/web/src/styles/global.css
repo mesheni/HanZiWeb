@@ -771,6 +771,121 @@ input {
   color: var(--tone-4);
 }
 
+/* ===== Settings screen (PLAN_Features_v0.3 #18) =====
+   Единая сетка карточек на экране настроек:
+   .settings-container    — внешний контейнер с max-width и центрированием;
+   .settings-card          — карточка: одинаковые padding, margin-bottom,
+                             border-radius, фон; word-wrap для длинных
+                             описаний, чтобы текст не вылезал за края;
+   .settings-card-header   — flex-строка: иконка + заголовок слева,
+                             основное действие (toggle/кнопка/индикатор) справа;
+   .settings-card-body     — вторичные контролы под header-ом с фиксированным gap. */
+
+.settings-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.settings-card {
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.settings-card:last-child {
+  margin-bottom: 0;
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-card-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-card-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-card-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.settings-card-description {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.settings-card-action {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-card-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-card-body--right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-card-sublabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.settings-card-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  padding: 4px 10px;
+  background: var(--bg-hover);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
 /* ===== Flashcard component ===== */
 .flashcard-scene {
   width: 100%;

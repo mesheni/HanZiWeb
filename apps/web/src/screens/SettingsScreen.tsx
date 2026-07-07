@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target, Moon, Sun } from 'lucide-react';
 import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
-import { Button, Card } from '@/components/ui';
+import { Button } from '@/components/ui';
 import ProgressExportImport from '@/components/ProgressExportImport';
 import LinkedAccountsCard from '@/components/LinkedAccountsCard';
 import ChangePasswordCard from '@/components/ChangePasswordCard';
@@ -221,97 +221,103 @@ export default function SettingsScreen() {
   };
 
   return (
-    <div className="absolute inset-0 overflow-y-auto p-6">
-      <div className="max-w-xl mx-auto flex flex-col gap-4">
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="settings-container">
         <div>
           <div className="text-2xl font-semibold text-text-primary">Настройки</div>
           <div className="text-sm text-text-muted mt-1">Управление данными и уведомлениями.</div>
         </div>
 
         {pushSupported && (
-          <Card padding="lg" className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-tone-1-bg text-tone-1 flex items-center justify-center shrink-0">
-                {settings.notificationEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+          <section className="settings-card">
+            <header className="settings-card-header">
+              <div className="settings-card-header-meta">
+                <div className="settings-card-icon bg-tone-1-bg text-tone-1">
+                  {settings.notificationEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+                </div>
+                <div className="settings-card-titles">
+                  <div className="settings-card-title">Push-уведомления</div>
+                  <div className="settings-card-description">
+                    Напоминания о словах, которые нужно повторить сегодня.
+                  </div>
+                </div>
               </div>
-              <div className="flex-1">
-                <div className="font-medium text-text-primary">Push-уведомления</div>
-                <div className="text-sm text-text-muted mt-1">
-                  Напоминания о словах, которые нужно повторить сегодня.
+              <div className="settings-card-action">
+                <Button
+                  size="sm"
+                  variant={settings.notificationEnabled ? 'danger' : 'primary'}
+                  loading={notifLoading}
+                  onClick={handleToggleNotifications}
+                >
+                  {settings.notificationEnabled ? 'Выключить' : 'Включить'}
+                </Button>
+              </div>
+            </header>
+
+            {settings.notificationEnabled && subscribed && (
+              <div className="settings-card-body">
+                <div>
+                  <div className="settings-card-sublabel">Время уведомлений</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(['morning', 'evening', 'both'] as NotificationTime[]).map((time) => (
+                      <button
+                        key={time}
+                        onClick={() => handleTimeChange(time)}
+                        className={`px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer ${
+                          settings.notificationTime === time
+                            ? 'bg-accent text-white border-accent'
+                            : 'bg-bg-card border-border-default text-text-secondary hover:bg-bg-hover'
+                        }`}
+                      >
+                        {timeLabels[time]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="settings-card-sublabel">
+                    Частота: {settings.notificationFrequency} раз/день
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={4}
+                    value={settings.notificationFrequency}
+                    onChange={(e) => handleFrequencyChange(Number(e.target.value))}
+                    className="w-full accent-accent"
+                  />
+                  <div className="flex justify-between text-xs text-text-muted mt-1">
+                    <span>1</span>
+                    <span>2</span>
+                    <span>3</span>
+                    <span>4</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <div className="settings-card-header-meta">
+              <div className="settings-card-icon bg-tone-2-bg text-tone-2">
+                {isDark ? <Moon size={18} /> : <Sun size={18} />}
+              </div>
+              <div className="settings-card-titles">
+                <div className="settings-card-title">Тема оформления</div>
+                <div className="settings-card-description">
+                  Светлая или тёмная палитра. Выбор сохраняется локально.
                 </div>
               </div>
             </div>
-
-            <div className="space-y-3">
-              <Button
-                variant={settings.notificationEnabled ? 'danger' : 'primary'}
-                loading={notifLoading}
-                onClick={handleToggleNotifications}
-              >
-                {settings.notificationEnabled ? 'Выключить уведомления' : 'Включить уведомления'}
-              </Button>
-
-              {settings.notificationEnabled && subscribed && (
-                <>
-                  <div>
-                    <div className="text-sm text-text-secondary mb-2">Время уведомлений</div>
-                    <div className="flex flex-wrap gap-2">
-                      {(['morning', 'evening', 'both'] as NotificationTime[]).map((time) => (
-                        <button
-                          key={time}
-                          onClick={() => handleTimeChange(time)}
-                          className={`px-3 py-1.5 text-xs rounded-lg border transition-colors cursor-pointer ${
-                            settings.notificationTime === time
-                              ? 'bg-accent text-white border-accent'
-                              : 'bg-bg-card border-border-default text-text-secondary hover:bg-bg-hover'
-                          }`}
-                        >
-                          {timeLabels[time]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-sm text-text-secondary mb-2">
-                      Частота: {settings.notificationFrequency} раз/день
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={4}
-                      value={settings.notificationFrequency}
-                      onChange={(e) => handleFrequencyChange(Number(e.target.value))}
-                      className="w-full accent-accent"
-                    />
-                    <div className="flex justify-between text-xs text-text-muted">
-                      <span>1</span>
-                      <span>2</span>
-                      <span>3</span>
-                      <span>4</span>
-                    </div>
-                  </div>
-                </>
-              )}
+            <div className="settings-card-action">
+              <span className="settings-card-value">{isDark ? 'Тёмная' : 'Светлая'}</span>
             </div>
-          </Card>
-        )}
+          </header>
 
-        <Card padding="lg" className="space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-tone-2-bg text-tone-2 flex items-center justify-center shrink-0">
-              {isDark ? <Moon size={18} /> : <Sun size={18} />}
-            </div>
-            <div className="flex-1">
-              <div className="font-medium text-text-primary">Тема оформления</div>
-              <div className="text-sm text-text-muted mt-1">
-                Светлая или тёмная палитра. Выбор сохраняется локально.
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-sm text-text-secondary mb-2">Текущая тема</div>
+          <div className="settings-card-body">
             <div className="flex flex-wrap gap-2">
               {(
                 [
@@ -340,26 +346,28 @@ export default function SettingsScreen() {
               })}
             </div>
           </div>
-        </Card>
+        </section>
 
-        <Card padding="lg" className="space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-tone-3-bg text-tone-3 flex items-center justify-center shrink-0">
-              <Target size={18} />
-            </div>
-            <div className="flex-1">
-              <div className="font-medium text-text-primary">Ежедневная цель</div>
-              <div className="text-sm text-text-muted mt-1">
-                Сколько ревью в день вы хотите выполнять. Используется в кольцевом
-                прогрессе на главной странице.
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <div className="settings-card-header-meta">
+              <div className="settings-card-icon bg-tone-3-bg text-tone-3">
+                <Target size={18} />
+              </div>
+              <div className="settings-card-titles">
+                <div className="settings-card-title">Ежедневная цель</div>
+                <div className="settings-card-description">
+                  Сколько ревью в день вы хотите выполнять. Используется в кольцевом
+                  прогрессе на главной странице.
+                </div>
               </div>
             </div>
-          </div>
-
-          <div>
-            <div className="text-sm text-text-secondary mb-2">
-              Цель: <span className="text-text-primary font-medium">{dailyGoal}</span> ревью/день
+            <div className="settings-card-action">
+              <span className="settings-card-value">{dailyGoal} ревью/день</span>
             </div>
+          </header>
+
+          <div className="settings-card-body">
             <input
               type="range"
               min={DAILY_GOAL_MIN}
@@ -378,7 +386,7 @@ export default function SettingsScreen() {
               <span>{DAILY_GOAL_MAX}</span>
             </div>
           </div>
-        </Card>
+        </section>
 
         <ProgressExportImport />
 
@@ -386,37 +394,43 @@ export default function SettingsScreen() {
 
         <ChangePasswordCard />
 
-        <Card padding="lg" className="space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-tone-4-bg text-tone-4 flex items-center justify-center shrink-0">
-              <Trash2 size={18} />
-            </div>
-            <div className="flex-1">
-              <div className="font-medium text-text-primary">Локальные данные</div>
-              <div className="text-sm text-text-muted mt-1">
-                Управление кэшем слов и локальной базой данных.
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <div className="settings-card-header-meta">
+              <div className="settings-card-icon bg-tone-4-bg text-tone-4">
+                <Trash2 size={18} />
+              </div>
+              <div className="settings-card-titles">
+                <div className="settings-card-title">Локальные данные</div>
+                <div className="settings-card-description">
+                  Управление кэшем слов и локальной базой данных.
+                </div>
               </div>
             </div>
-          </div>
+            <div className="settings-card-action">
+              <Button size="sm" variant="ghost" onClick={() => navigate(-1)}>
+                Назад
+              </Button>
+            </div>
+          </header>
 
-          <div className="space-y-3">
-            <Button variant="secondary" loading={refreshLoading} onClick={handleRefreshWordsCache}>
-              <RefreshCw size={16} />
-              Обновить кэш слов
-            </Button>
-            <Button variant="secondary" loading={reindexLoading} onClick={handleReindexDictionary}>
-              <DatabaseZap size={16} />
-              Переиндексировать словарь
-            </Button>
-            <Button variant="danger" loading={resetLoading} onClick={handleResetLocalData}>
-              <RotateCcw size={16} />
-              Сбросить данные
-            </Button>
-            <Button variant="secondary" onClick={() => navigate(-1)}>
-              Назад
-            </Button>
+          <div className="settings-card-body">
+            <div className="settings-card-body--right">
+              <Button variant="secondary" loading={refreshLoading} onClick={handleRefreshWordsCache}>
+                <RefreshCw size={16} />
+                Обновить кэш слов
+              </Button>
+              <Button variant="secondary" loading={reindexLoading} onClick={handleReindexDictionary}>
+                <DatabaseZap size={16} />
+                Переиндексировать словарь
+              </Button>
+              <Button variant="danger" loading={resetLoading} onClick={handleResetLocalData}>
+                <RotateCcw size={16} />
+                Сбросить данные
+              </Button>
+            </div>
           </div>
-        </Card>
+        </section>
       </div>
     </div>
   );
