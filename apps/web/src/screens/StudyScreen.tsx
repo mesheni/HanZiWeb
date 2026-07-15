@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, X, RefreshCw, Volume2, VolumeX, GraduationCap, Dumbbell } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useStudySession } from '../hooks/useStudySession';
@@ -111,6 +112,7 @@ export default function StudyScreen() {
   const [searchParams] = useSearchParams();
   const mode = (searchParams.get('mode') ?? 'mixed') as StudyMode;
   const practiceFromUrl = parsePracticeParam(searchParams.get('practice'));
+  const queryClient = useQueryClient();
 
   // Храним выбранный тип практики в сторе, чтобы экран выбора и сам
   // экран сессии синхронизировались.
@@ -486,13 +488,24 @@ export default function StudyScreen() {
   }
 
   if (isSessionComplete) {
+    // PLAN_Features_v0.4 §1: «Ещё сессия» не работала, т.к. navigate на
+    // тот же URL не размонтирует StudyScreen, а deps `useStudySession`
+    // не меняются — новая сессия не стартовала. Сбрасываем стор и кэш
+    // stats, затем вызываем `retrySession()` (он инкрементит
+    // generationRef и стартует новую мутацию). `replace: true` чистит
+    // историю: «Назад» не возвращает на завершённую сессию.
+    const handleRestartSession = () => {
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      retrySession();
+      navigate(`/study?mode=${mode}`, { replace: true });
+    };
     return (
       <SessionComplete
         total={stats.total}
         correct={stats.correct}
         incorrect={stats.incorrect}
         xpEarned={xpEarned}
-        mode={mode}
+        onRestart={handleRestartSession}
       />
     );
   }

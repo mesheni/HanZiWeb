@@ -1,0 +1,1201 @@
+# PLAN_Features_v0.4
+
+Дорожная карта доработок HanZiWeb v0.4.
+Полный аудит кодовой базы: **Баги** — пользовательские находки + код-ревью
+всех пакетов монорепо (web / server / shared / mobile / mobile-sdk).
+Архитектура: Fastify 5 + Prisma/PostgreSQL + Redis, React 18 PWA + RxDB,
+React Native (Expo SDK 51) + WatermelonDB, FSRS v5, hanzi-writer, Google Cloud TTS.
+
+Каждая запись — **Проблема → Что исправить → Ожидаемый результат**, с
+конкретными файлами и номерами строк. Список сгруппирован по подсистемам,
+нумерация сквозная. Дублирующиеся баги, затрагивающие несколько пакетов,
+отмечены примечанием «also affects: …».
+
+---
+
+# Часть A. UI/UX — баги, замеченные пользователем
+
+## 1. Кнопка «Ещё сессия» при завершении сессии не работает
+
+**Проблема**: На экране `SessionComplete` кнопка «Ещё сессия» либо не
+реагирует, либо после клика сессия не запускается — пользователь остаётся
+на экране завершения.
+
+**Что исправить**:
+- `apps/web/src/components/SessionComplete.tsx:84-91` — кнопка
+  `onClick={() => navigate(\`/study?mode=${mode}\`)}`. Проверить, что
+  `mode` приходит непустой (не `undefined`); дефолтить на `'mixed'`.
+- `apps/web/src/screens/StudyScreen.tsx:~488-490` — убедиться, что после
+  `navigate('/study?mode=...')` `useSearchParams()` читает `mode` и что
+  стейт `isSessionComplete` снимается, `useStudySession` стартует новую
+  сессию, а «зомби»-стейт от старой не висит.
+- Добавить `queryClient.invalidateQueries({ queryKey: ['session'] })`
+  перед навигацией и `navigate(..., { replace: true })`, чтобы «Назад»
+  не возвращал на завершённую сессию.
+
+**Ожидаемый результат**: «Ещё сессия» мгновенно запускает новую сессию в
+том же режиме, экран завершения исчезает.
+
+---
+
+## 2. Верстка вкладки «Тестирование» — кнопки прилипают к краям экрана
+
+**Проблема**: На экране выбора HSK-уровня (`TestScreen`, фаза
+`level-select`) карточки и кнопка «Назад» прижаты к левому и правому
+краям viewport. Нет «воздуха».
+
+**Что исправить**:
+- `apps/web/src/styles/global.css:4328-4333` — у `.test-screen` сейчас
+  `padding: 20px 0 40px` (горизонтальный отступ **0**). Заменить на
+  `padding: 20px 24px 40px`; на `@media (max-width: 640px)` —
+  `16px 16px 32px`; на `< 360px` — `12px`.
+- Добавить `max-width: 720px; margin: 0 auto;` для центрирования на
+  широких экранах.
+- Проверить все 3 фазы (`level-select`, `in-progress`, `results`) —
+  одинаковые горизонтальные отступы минимум 16-24 px.
+- Убедиться, что вложенные `.test-screen-header`, `.test-levels`,
+  `.test-history` не имеют `width: 100vw` или отрицательных отступов.
+
+**Ожидаемый результат**: Ровные отступы слева/справа; карточки не касаются
+краёв ни на десктопе, ни на мобильном.
+
+---
+
+## 3. Календарь активности — месяцы слеплены вместе
+
+**Проблема**: В heatmap-календаре на вкладке «Итоги» все месяцы сливаются
+в одну полосу. Нет ни разделителей, ни контрастных меток.
+
+**Что исправить**:
+- `apps/web/src/screens/StatsScreen.tsx:66-250` (компонент
+  `ActivityCalendar`) и inline-стили `:550-568`.
+- Добавить визуальные разделители между колонками разных месяцев:
+  `margin-left: 8px` или `border-left: 1px solid var(--border-subtle)`
+  на 1-й колонке каждого месяца.
+- Заголовки месяцев (`.month-label`, `:103-110`): `font-size: 12px`,
+  `font-weight: 500/600`, `text-transform: uppercase`,
+  `letter-spacing: 0.5px`, цвет `var(--text-secondary)`.
+- Выровнять метки строго над первой колонкой соответствующего месяца.
+- Опционально: тонкие вертикальные «зоны» с фоном `var(--bg-subtle)`
+  между месяцами.
+- Вынести inline-стили в классы `.activity-calendar`, `-month-label`,
+  `-grid`, `-col-month-start` в `global.css`.
+- Проверить обе темы: тёмная → `--border-subtle ~ #2a2a2a`, светлая →
+  `#e5e7eb`.
+
+**Ожидаемый результат**: Каждый месяц явно отделён от соседнего; с первого
+взгляда видны Янв, Фев, Мар и т.д.
+
+---
+
+## 4. Вкладка «Тестирование» — пиньинь и перевод съезжают вбок
+
+**Проблема**: В `TestQuestionCard`:
+1. Пиньинь/перевод показаны **сбоку** от иероглифа, а должны быть **над**.
+2. Перевод также позиционируется некорректно.
+3. При наведении на слово должны появляться пиньинь + перевод.
+4. Текст мелкий и не выровнен по центру.
+
+**Что исправить**:
+- `apps/web/src/components/test/TestQuestionCard.tsx`:
+  - `MultipleChoiceBody:91-113` — над `.practice-card-character` добавить
+    `question.wordPinyin` и `question.wordTranslation` **вертикальным
+    стеком** (пиньинь → перевод → иероглиф крупно).
+  - `ReverseChoiceBody:117-139` — аналогично: пиньинь → иероглиф → перевод.
+  - `PinyinInputBody:143-196` — над иероглифом подсказка пиньинь, ниже
+    иероглифа — перевод.
+  - `ToneRecognitionBody`, `CharacterAssemblyBody`, `ClozeBody` —
+    аналогично где применимо.
+- `apps/web/src/styles/global.css` (классы `.test-question-cue`,
+  `.practice-card-character`, `.practice-card-hint`):
+  - Новый класс `.test-question-character` с `font-size: 72-96px`.
+  - Внутри `.test-question-card` — `text-align: center`,
+    `align-items: center`, `flex-direction: column`.
+  - Пиньинь: `font-size: 18-20px`, `var(--text-secondary)`. Перевод:
+    `font-size: 16px`, `var(--text-secondary)`.
+- **Тултип при наведении**: `title="<пиньинь> — <перевод>"` (нативный),
+  либо кастомный `WordTooltip` (`onMouseEnter`/`onMouseLeave`); на тач
+  (`@media (hover: none)`) — долгое нажатие.
+- `packages/shared/src/schemas/test.ts` — убедиться, что `wordPinyin` и
+  `wordTranslation` есть в `TestQuestionSchema` и заполняются в
+  `apps/server/src/modules/tests/tests.service.ts:generateTest`
+  (поля уже использует `TestResultCard`, значит данные есть).
+
+**Ожидаемый результат**: Иероглиф крупно и по центру; пиньинь и перевод
+над ним вертикально; при наведении — тултип.
+
+---
+
+# Часть B. Web-клиент (`apps/web/`)
+
+## 5. Кнопка «Выйти» не вызывает `/auth/logout` — пользователь остаётся залогиненным
+
+**Проблема**: `src/stores/authStore.ts:66-67` — `logout()` только чистит
+zustand-стейт: `set({ user: null, accessToken: null, isAuthenticated:
+false })`. На сервере эндпоинт `POST /auth/logout` существует
+(`apps/server/src/modules/auth/auth.routes.ts:87`) и инвалидирует
+refresh-токен/cookie, но клиент его не зовёт. Refresh-кука httpOnly
+остаётся валидной, и при следующем `hydrateAuth()` (App.tsx:32)
+`doSilentRefresh()` тихо логинит пользователя обратно.
+**Severity**: High.
+
+**Что исправить**:
+- `authStore.ts:logout()` — перед `set(...)` сделать fire-and-forget
+  `apiPost('/auth/logout')` (с перехватом ошибок), чтобы сервер
+  инвалидировал refresh-token cookie.
+- В `onSessionExpired` тоже звать logout-эндпоинт.
+
+**Ожидаемый результат**: После «Выйти» F5 не возвращает в аккаунт.
+
+---
+
+## 6. Service Worker кэширует `/api/*` через NetworkFirst — утечка пользовательских данных
+
+**Проблема**: `src/sw.ts:18-26` —
+`registerRoute(/^\/api\/.*/i, new NetworkFirst(...))` матчит ВСЕ
+эндпоинты, включая `/auth/me`, `/stats/dashboard`, `/words/...`, и даже
+`/auth/refresh`-ответы. Workbox NetworkFirst хранит последний ответ 5 мин
+(50 записей в `api-cache`). При offline/сети-сбое кэш предыдущего
+пользователя возвращается новому логину на shared device — пользователь
+видит чужие данные/имя.
+
+**Что исправить**:
+- Ограничить кэшируемые API только public read-only (`/api/words/*`).
+- Для `/api/auth/*`, `/api/stats/*`, `/api/sessions/*`, `/api/tests/*` —
+  `new NetworkOnly()` (без кэша).
+- На logout — `caches.delete('api-cache')` для гарантии.
+
+**Ожидаемый результат**: Аутентифицированные ответы не оседают в кэше SW.
+
+---
+
+## 7. Тултип слова в «Чтение» при первом клике уезжает в верхний-левый угол
+
+**Проблема**: `src/screens/ReadingTextScreen.tsx:77-81, 174-181` —
+`ReadingWord.onClick` пробрасывает только токен, без DOM-события.
+Родитель подставляет `tooltipPos` (старые координаты) в `clientX/clientY`
+фальшивого `React.MouseEvent`, `handleWordClick` добавляет `+12`.
+Начальное `tooltipPos = {x:0, y:0}` → первый клик фиксирует тултип в
+`(12, 12)` — верхний-левый угол, вдали от слова. Каждый следующий клик
+дрейфует по диагонали.
+**Severity**: High.
+
+**Что исправить**:
+- `src/components/reading/ReadingWord.tsx:30` —
+  `onClick={(t, e) => onClick(t, e)}` (передавать реальное событие) либо
+  вычислять `e.currentTarget.getBoundingClientRect()` внутри `ReadingWord`
+  и кидать наверх уже готовые координаты.
+
+**Ожидаемый результат**: Тултип всплывает у кликнутого слова.
+
+---
+
+## 8. Двойной запрос `POST /sessions/start` на каждом «Начать»
+
+**Проблема**: `StudyScreen.tsx:374-382` — хендлер `PracticeTypeSelector.onStart`
+сразу зовёт `startNow(activeFilters)` (синхронно), а уже потом
+`setHasStarted(true)` переключает `useStudySession`'s `enabled` с false
+на true, что запускает hook-эффект, который тоже зовёт `startMutation`.
+Итог: два запроса `/sessions/start` идут параллельно; первый шлёт
+**старый** `practiceType` (pre-change default), второй — выбранный.
+Сервер создаёт две сессии; `['stats']` инвалидируется дважды; если второй
+фейлит, а первый проходит — пользователь попадает в сессию с неверным
+режимом тренировки.
+**Severity**: Medium.
+
+**Что исправить**: В `onStart` убрать ручной `startNow(...)` и полагаться
+только на hook-эффект (он создаётся под этот path). Hook-эффект шлёт
+правильный `activePracticeType`.
+
+**Ожидаемый результат**: Один запрос на «Начать» с выбранным режимом.
+
+---
+
+## 9. Каскад-логаут при конкурентных 401 (race в apiClient-рефреше)
+
+**Проблема**: `src/api/client.ts:37-64` (и `apiGetBlob:139-165`) — при
+стухшем access-токене N конкурентных запросов получают 401 одновременно,
+каждый независимо зовёт `fetch('/api/auth/refresh')`. Сервер **ротирует**
+refresh-куку, поэтому успешно отрабатывает только один из N, остальные
+падают → `onSessionExpired()` → тихий logout. Пользователь выбрасывается
+на `/login` посреди дашборда.
+**Severity**: Medium.
+
+**Что исправить**: Сериализовать рефреш через общий in-flight promise:
+```ts
+let refreshPromise: Promise<string | null> | null = null;
+function getRefreshedToken() {
+  if (!refreshPromise) refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+```
+`apiClient` и `apiGetBlob` ждут один и тот же promise перед retry.
+Альтернатива: добавить refresh-флаг в `authStore` и ожидать его.
+
+**Ожидаемый результат**: Конкурентные 401 делают ровно один refresh.
+
+---
+
+## 10. «Скачать офлайн-пакет» на HomeScreen тихо фейлит через 401
+
+**Проблема**: `src/screens/HomeScreen.tsx:55-104` —
+`handleDownloadOffline` использует сырой `fetch('/api/words?...', {
+credentials: 'include' })` (строка 68), а не auth-aware `apiGet`. Fastify
+требует `Authorization: Bearer`, refresh-кука сама по себе не
+авторизует → все страницы возвращают 401, `json.data ?? []` даёт `[]`,
+цикл сразу `break`, `setDlState('done')` → пользователь видит «Готово»,
+но ничего не скачано. Тоста об ошибке нет.
+**Severity**: Medium.
+
+**Что исправить**: Заменить `fetch` на `apiGet<PaginatedResponse<...>>`
+(прозрачный refresh). Явно обрабатывать не-200; показывать toast при
+ошибке. Сбрасывать `dlState` в `'error'` при неудаче.
+
+**Ожидаемый результат**: Офлайн-пакет либо реально скачивается, либо даёт
+читаемую ошибку.
+
+---
+
+## 11. CharacterAssembly в тесте: клик по чипу удаляет ВСЕ одноимённые чипы
+
+**Проблема**:
+`apps/web/src/components/test/TestQuestionCard.tsx:285-289`:
+```ts
+setPool((p) => p.filter((c) => c !== ch || p.indexOf(c) !== p.indexOf(ch)));
+```
+`p.indexOf(c) !== p.indexOf(ch)` всегда `false` (одинаковые аргументы),
+поэтому фильтр схлопывается в `c !== ch` — **удаляет ВСЕ чипы со
+значением `ch` за один клик**. Для слов с повторами («谢谢»,
+「谢谢」,「妈妈」) сервер кладёт 2 копии иероглифа в `characterPool`;
+кликнув «谢», пользователь теряет оба чипа → второй слот никогда не
+заполнится → `finished` не true → submit disabled → вопрос невозможно
+ответить.
+**Severity**: Medium.
+
+**Что исправить**: Трекать чипы по индексу, а не по значению:
+```ts
+setPool((p) => p.filter((_, i) => i !== poolIdx))
+```
+Зеркалить механику `SyllableConstructorCard.moveToAnswer`
+(он корректно работает).
+
+**Ожидаемый результат**: Клик удаляет ровно один чип; слова с повторами
+решаемы.
+
+---
+
+## 12. CharacterAssembly в тренировке пересобирает пул во время сборки
+
+**Проблема**:
+`apps/web/src/components/practice/CharacterAssemblyCard.tsx:35-47` —
+`useEffect`-deps включают `distractors`, который родитель пересчитывает
+через `useDistractorPool` (момент финиширования загрузки меняет
+`combinedPool` → `characterDistractors` получает новую ссылку + новый
+shuffle → эффект перезапускается → `answer` сбрасывается в `null`-массив,
+пул re-shuffle'ится — пользователь теряет прогресс). В `SyllableConstructorCard`
+эту же проблему решили через `lastBuiltKeyRef` (`:45-55`), здесь фикс не
+применили.
+**Severity**: Medium.
+
+**Что исправить**: Зеркально применить `lastBuiltKeyRef`-паттерн:
+пересобирать пул только когда `${word.id}:${word.character}:${distractors.join()}`
+реально меняется.
+
+**Ожидаемый результат**: Пул стабилен после начала сборки слова.
+
+---
+
+## 13. ResetPasswordScreen: таймер `navigate('/login')` не чистится на unmount
+
+**Проблема**: `src/screens/ResetPasswordScreen.tsx:95` —
+`setTimeout(() => navigate('/login', { replace: true }), 1500)` без
+cleanup в `useEffect`. Если пользователь успевает уйти (клик «Запросить
+ссылку заново»), через 1.5 с таймер всё равно срабатывает и насильно
+перекидывает на `/login`.
+**Severity**: Medium.
+
+**Что исправить**: Сохранить timer-id в ref, чистить в эффекте.
+
+**Ожидаемый результат**: Уход со страницы не вызывает внезапный redirect.
+
+---
+
+## 14. useAudio не сбрасывает `isLoading` при `wordId → null`
+
+**Проблема**: `src/hooks/useAudio.ts:33-71` — на смене `wordId` эффект
+сбрасывает `audioUrl/character/isAvailable/isPlaying`, но **не `isLoading`**
+(его сброс только в `finally` внутри IIFE, который не выполняется, если
+ранний `return` сработал). При смене слова с `non-null` на `null` во
+время fetch (конец сессии, `currentCard?.word.id ?? null`) — флаг
+`isLoading` остаётся `true` до следующего слова.
+**Severity**: Low.
+
+**Что исправить**: Перенести `setIsLoading(false)` выше — перед `if
+(!wordId) return;`.
+
+**Ожидаемый результат**: Спиннер аудио не зависает.
+
+---
+
+## 15. Flashcard: кнопка «Писать» ведёт на НОВОЕ слово во время flip-анимации
+
+**Проблема**: `src/components/Flashcard.tsx:172-185` — кнопка читает
+`word.character/Pinyin/translation` (новое проп), а back-face рендерит
+`displayedWord` (заморожен, PLAN_Features_v0.3 §12). Если кликнуть «Писать»
+в течение `FLIP_DURATION_MS`, URL будет `/handwriting?char=<НОВОЕ>`, а
+на экране пользователь видел перевод/пример СТАРОГО.
+**Severity**: Low.
+
+**Что исправить**: Использовать `displayedWord.character/Pinyin/translation`
+в URL, либо `disabled` пока `isFlipping`.
+
+**Ожидаемый результат**: Карандаш ведёт на иероглиф, видимый на карточке.
+
+---
+
+## 16. useConfetti не чистит таймеры — конфетти на посторонних экранах
+
+**Проблема**: `src/hooks/useConfetti.ts:21-39` — два `setTimeout` (+200, +400 ms)
+без cleanup. Если `SessionComplete` размонтируется в этом окне (клик
+«На главную»), через 200-400 мс конфетти вспыхивает поверх HomeScreen.
+**Severity**: Low.
+
+**Что исправить**: Сохранять ID в refs и чистить в cleanup, либо весь
+блок в `useEffect` с `return () => clearAll()`.
+
+**Ожидаемый результат**: Конфетти только пока `SessionComplete` смонтирован.
+
+---
+
+## 17. useFeatureFlag видит новый array в deps → эффект на каждом рендере
+
+**Проблема**: `src/hooks/useFeatureFlag.ts:67-100` — deps `[visible,
+evaluated, isLoading]`, при этом `visible` пересоздаётся каждый рендер
+(`isLoading || !evaluated ? TYPES : TYPES.filter(...)`) — новый array
+ref всегда. Эффект exposure-tracking срабатывает каждый рендер
+(parent PracticeTypeSelector); `exposedRef`-Set защищает от дублей,
+но работа впустую.
+**Severity**: Low.
+
+**Что исправить**: Deps только `[evaluated]`; внутри итерировать
+`PRACTICE_TYPES` (stable) с фильтрацией по `evaluated`. Иначе memoize
+`visible` по строковым ключам.
+
+**Ожидаемый результат**: Exposure-эффект не зависит от рендер-счётчика.
+
+---
+
+## 18. Modal: `body.overflow = ''` сбрасывает преждевременно при вложенных модалках
+
+**Проблема**: `src/components/ui/Modal.tsx:19-28` — каждый Modal
+инстанс при unmount пишет `document.body.style.overflow = ''`. Двойной
+Modal (`WordDetailModal` внутри `DeckBuilderModal`) — закрытие внутреннего
+реактивирует scroll, хотя внешний ещё открыт.
+**Severity**: Low.
+
+**Что исправить**: Module-level счётчик `let depth = 0`; только при
+`depth === 0` сбрасывать `overflow`.
+
+**Ожидаемый результат**: Body-scroll заблокирован, пока хотя бы один
+Modal открыт.
+
+---
+
+## 19. MultipleChoiceCard: тернарник в reveal-стейте — копи-паста-баг
+
+**Проблема**: `src/components/practice/MultipleChoiceCard.tsx:40-51` —
+объект-литерал содержит `isCorrect ? 'correct' : 'correct'`
+(оба ветка одинаковые из-за копи-пасты). Сейчас безвредно, но латентный
+баг, если задумают другой reveal-цвет.
+**Severity**: Low (latent).
+
+**Что исправить**: Заменить на реальный тернарник или безусловный
+`[word.id]: 'correct'`.
+
+**Ожидаемый результат**: Логика reveal-подсветки явная.
+
+---
+
+# Часть C. Сервер (`apps/server/`)
+
+## 20. `recordAnswer` — IDOR: любой юзер может писать ответы в чужую сессию
+
+**Проблема**: `src/modules/sessions/sessions.service.ts:304-384`,
+`src/modules/sessions/sessions.routes.ts:22-34` — `recordAnswer` грузит
+сессию `findUnique({ where: { id } })` и **не проверяет**
+`session.userId === userId`. Любой залогиненный юзер может постить
+`cardsCompleted++` и `SessionAnswer`-записи в сессию другого
+пользователя, зная UUID.
+**Severity**: Critical.
+
+**Что исправить**:
+```ts
+const session = await prisma.session.findFirst({ where: { id, userId } });
+if (!session) throw new NotFoundError('SESSION_NOT_FOUND_OR_FORBIDDEN');
+```
+
+**Ожидаемый результат**: Чужая сессия недоступна.
+
+---
+
+## 21. Ротация refresh-токена не атомарна — replay обходит single-use
+
+**Проблема**: `src/modules/auth/auth.service.ts:208-240` —
+`refreshTokens`: `jwt.verify` → `prisma.user.findUnique` →
+`payload.tokenVersion === user.tokenVersion` →
+`user.update({ tokenVersion: increment: 1 })` → issue new. Два параллельных
+запроса с одним украденным токеном оба читают один `tokenVersion`, оба
+проходят проверку, оба инкрементят и выпускают новые пары токенов.
+Ротация задумана single-use; атакующий получает сколько угодно валидных
+пар.
+**Severity**: High.
+
+**Что исправить**: CAS через `updateMany`:
+```ts
+const r = await prisma.user.updateMany({
+  where: { id, tokenVersion: payload.tokenVersion },
+  data: { tokenVersion: { increment: 1 } },
+});
+if (r.count === 0) throw new UnauthorizedError('REFRESH_TOKEN_REUSE');
+```
+
+**Ожидаемый результат**: Повторное использование refresh-токена детектится.
+
+---
+
+## 22. Word CRUD: нет админ-Authorization — любой юзер меняет словарь
+
+**Проблема**: `src/modules/words/words.routes.ts:46-63` — `POST/PUT/DELETE /words`
+требуют только `app.authenticate`. Любой залогиненный может
+создавать/изменять/удалять слова HSK, ломая генерацию тестов и чтение.
+Ролей/`isAdmin` нет нигде.
+**Severity**: High.
+
+**Что исправить**: Добавить `User.role` (`USER | ADMIN`) в Prisma-схему +
+миграция; `app.authenticate` + `requireAdmin` guard; включить `role` в
+access-token-payload; проверять на каждом /words write-эндпоинте.
+
+**Ожидаемый результат**: Мутации словаря доступны только админу.
+
+---
+
+## 23. Decks — IDOR: приватные колоды и подписки доступны без проверки owner
+
+**Проблема**:
+- `src/modules/decks/decks.routes.ts:17-32, 76-87` — `GET /decks` и
+  `GET /decks/:id` **без `app.authenticate`**.
+- `src/modules/decks/decks.service.ts:36-68` — `listDecks` без
+  `where` возвращает ВСЕ колоды, включая приватные другого юзера.
+- `subscribeToDeck` (service:362-396) — не проверяет `isSystemDeck ||
+  ownerId === userId` → любой может подписаться на чужую UUID, импортировав
+  слова в свой прогресс.
+
+**Severity**: High.
+
+**Что исправить**: `GET /decks` (auth + фильтр `isSystemDeck ||
+ownerId === userId`); `GET /:id` под auth + проверка; `subscribeToDeck`
+→ 403 для private non-owner.
+
+**Ожидаемый результат**: Чужие приватные колоды невидимы/недоступны.
+
+---
+
+## 24. Стрик и daily-goal считаются по UTC-полуночи, без timezone пользователя
+
+**Проблема**: `src/modules/stats/stats.service.ts:253-259, 265-273,
+494-540` — `getTodayUtcRange`, `getUserStreak`, `countTodayReviews`
+бакетят дни через `setUTCHours(0,0,0,0)`. Россия — UTC+3..+12; для всех
+не-UTC "сегодня" отстаёт от пользовательского календаря на часы.
+Учёба в 23:30 пн локально сдвигает стрик на вторник UTC; пропуск
+вторника локально ломает ожидаемый "consecutive local days".
+**Severity**: Medium.
+
+**Что исправить**: Добавить `User.timezone` (IANA); бакетить через
+`Intl.DateTimeFormat` для стен-клоковых границ, либо
+`pg TIMEZONE`-выражениями.
+
+**Ожидаемый результат**:斯特 keeps по локальному дню.
+
+---
+
+## 25. Heatmap группируется по UTC-дате — сдвиг для не-UTC юзеров
+
+**Проблема**: `src/modules/stats/stats.service.ts:346-371` (стр. 363:
+`a.answeredAt.toISOString().slice(0,10)`) — продолжение бага §24
+применительно к календарю. Активность «понедельник 23:30 локально»
+появится во вторнике на heatmap.
+**Severity**: Medium.
+
+**Что исправить**: Группировать по дате в tz пользователя.
+
+**Ожидаемый результат**: Heatmap совпадает с локальным восприятием дней.
+
+---
+
+## 26. `recordAnswer` — не транзакционный, частичный сбой ломает прогресс
+
+**Проблема**: `src/modules/sessions/sessions.service.ts:358-391` —
+четыре независимых await: `userWordProgress.update` →
+`sessionAnswer.create` → `session.update` → `user.update(xp)`. Если,
+например, `sessionAnswer.create` упадёт (FK / сеть), `UserWordProgress`
+уже изменён, а сессия осталась без записи ответа → несогласованное
+состояние.
+**Severity**: Medium.
+
+**Что исправить**: Обернуть шаги 1-3 в `prisma.$transaction(async (tx) =>
+{...})` (XP можно отдельно). `checkAllAchievements` оставить вне.
+
+**Ожидаемый результат**: Прогресс и сессия согласованы всегда.
+
+---
+
+## 27. `buildCharacterPool` протекает целевыми иероглифами в пул distractors
+
+**Проблема**: `src/modules/tests/tests.service.ts:81-94` —
+`const seen = new Set<string>([target.character])` сохраняет целевую
+строку КАК ОДИН элемент (`Set(["你好"])`), а не посимвольно. Цикл
+`for (const ch of w.character) if (!seen.has(ch))` сравнивает одиночные
+char'ы с этим целым-строкой-элементом → `seen.has("你")` всегда `false`
+→ целевые иероглифы НЕ исключаются из candidates → `character_assembly`
+для многокорневых слов тривиализируется (есть сам ответ в пуле
+distractors). Для single-char слов случайно работает.
+**Severity**: Medium.
+
+**Что исправить**: `const seen = new Set<string>(Array.from(target.character));`
+
+**Ожидаемый результат**: В пуле сборки — только настоящие distractors.
+
+---
+
+## 28. `findClozeExample` сабстринг- maternity + только первое вхождение
+
+**Проблема**: `src/modules/tests/tests.service.ts:97-105` —
+`ex.chinese.includes(word.character)` succeed'ит, даже если цель
+внутренний сабстринг большего слова (`"大"` в `"大学"`), а
+`ex.chinese.replace(word.character, '____')` (string-pattern) заменяет
+**только первое** вхождение. Для нескольких вхождений — blank'ается
+первое, даже если семантически не то.
+**Severity**: Medium.
+
+**Что исправить**: Regex с `u`-флагом и word-boundary (или
+pre-tokenized позиции из `ReadingTextWord`); заменять все вхождения или
+выбирать корректное смещение.
+
+**Ожидаемый результат**: Cloze blank'ает ровно целевое вхождение.
+
+---
+
+## 29. Тесты гоняют на общей БД без изоляции — флакинг
+
+**Проблема**: `vitest.setup.ts:4-7`, `vitest.config.ts`, например
+`src/modules/sessions/sessions.priority.test.ts:6, 20-31` — указывают на
+`postgresql://test:test@localhost:5432/test` и создают реальные
+`User`/`Word`/`UserWordPriority`. Чистка только `afterAll`; упавший тест
+оставляет мусор. Concurrent test-файлы параллелятся и сталкиваются на
+общих таблицах (особенно удаление общих seed-`Word`).
+**Severity**: Medium.
+
+**Что исправить**: Per-file schema (`CREATE SCHEMA test_<random>` +
+`search_path`), либо wrap каждого теста в `$transaction` с ROLLBACK, либо
+`fileParallelism: false`.
+
+**Ожидаемый результат**: Тесты не флекают и не зависят от порядка.
+
+---
+
+## 30. Audio GCS-upload не реализован, хотя заявлен
+
+**Проблема**: `src/modules/audio/audio.service.ts:182-190` — комменты и
+`config.ts:33-35` говорят, что при `GCS_BUCKET_NAME` файл льётся в GCS, но
+код только `writeFileSync(localPath, audioBytes)` и безусловно возвращает
+`${AUDIO_PUBLIC_BASE_URL}/${fileName}`. В production URL не резолвится.
+Коммент откровенно: «В production здесь была бы загрузка в GCS».
+**Severity**: Medium.
+
+**Что исправить**: Реализовать `@google-cloud/storage` upload (либо
+удалить `GCS_BUCKET_NAME` и документировать dev-only режим).
+
+**Ожидаемый результат**: В prod аудио доступно по возвращаемому URL.
+
+---
+
+## 31. `/audio/generate` принимает произвольный текст для платного Google TTS
+
+**Проблема**: `src/modules/audio/audio.routes.ts:6-27` — любой
+авторизованный может запросить TTS для любого `text` (до 200 символов).
+Cache key `sha1(language:text)` → уникальные строки обходят кэш →
+бilled Google Cloud bill можно разогнать с разных IP, лимит один — 60/min/IP.
+**Severity**: Medium.
+
+**Что исправить**:
+- Если `wordId` есть — синхронизировать `text` с `Word.character`.
+- Иначе — админ-guard, либо per-user Redis-счётчик запросов
+  свободного `text` (например, ≤20/день).
+
+**Ожидаемый результат**: Платный TTS нельзя абузить.
+
+---
+
+## 32. CORS: нет валидации `CORS_ORIGIN` при `credentials: true`
+
+**Проблема**: `src/index.ts:41` — `cors({ origin: config.CORS_ORIGIN,
+credentials: true })`. Если ops поставит `CORS_ORIGIN="*"` (частая
+ошибка) при `credentials: true`, новые Chrome отвергнут credentialed
+cross-origin, но Safari/старые могут пропустить, и старта нет проверки
+такого конфликта.
+**Severity**: Medium.
+
+**Что исправить**: В `loadConfig` — `CORS_ORIGIN.refine(v => v !== '*',
+'CORS_ORIGIN cannot be * with credentials')`. А лучше — function-form
+`origin: (req) => allowed.includes(req.headers.origin) ? req.headers.origin : null`.
+
+**Ожидаемый результат**: Misconfig ловится на старте.
+
+---
+
+## 33. `startSession` грузит ВСЕ `UserWordProgress` юзера каждый запрос
+
+**Проблема**: `src/modules/sessions/sessions.service.ts:190-197` —
+`prisma.userWordProgress.findMany({ where: { userId }, select: { wordId:
+true } })` тащит все записи юзера (тысячи для продвинутых), затем
+`Word.findMany({ where: { id: { notIn: excludeIds } }})` шлёт огромный
+`notIn`-массив в Postgres. Память и query-plan деградируют с размером
+колоды.
+**Severity**: Low (perf).
+
+**Что исправить**: Коррелированный subquery:
+```ts
+Word.findMany({ where: { NOT: { progress: { some: { userId } } } }, ... })
+```
+
+**Ожидаемый результат**: Старт сессии не зависит от размера прогресса.
+
+---
+
+## 34. `jwt.verify` не пинит `algorithms: ['HS256']`
+
+**Проблема**: `src/plugins/auth.ts:45, 79`;
+`src/modules/auth/auth.service.ts:212` — `jsonwebtoken@9` по умолчанию
+отвергает `alg: "none"`, но без пина остаётся footgun: если кто-то
+заменит secret на RSA и забудет пин, атакующий кует `alg: HS256` с
+RSA public key (классический CVE-2017-11428).
+**Severity**: Low.
+
+**Что исправить**: `jwt.verify(token, secret, { algorithms: ['HS256'] })`
+во всех трёх местах.
+
+**Ожидаемый результат**: Алгоритмический confusion невозможен.
+
+---
+
+## 35. `computeRetrievability` всегда возвращает 0.9 — игнорируется elapsed time (FSRS-баг)
+
+**Проблема**:
+- `apps/server/src/modules/sessions/srs.ts:53-67` и
+- `packages/mobile-sdk/src/fsrs/recalcFsrs.ts:16-19` (один и тот же код
+  в двух пакетах) —
+`computeRetrievability(stability)` без `elapsedDays`-параметра всегда
+возвращает `FACTOR = 0.9`. FSRS-5: `R = exp( ln(target_retention) *
+elapsed_days / stability )`. Без elapsed опоздавшие/ранние оценки
+**не влияют** на пересчёт stability, `(1-R)=0.1` становится константой в
+`stabilityAfterFailure/Success`. Расписание деградирует с непостоянством
+пользователя.
+**See also**: часть E §52 (влияет на оба пакета).
+
+**Что исправить**:
+- Сигнатура: `computeRetrievability(stability, elapsedDays)`.
+- Использовать `UserWordProgress.lastReviewDate` (уже хранится) →
+  `(Date.now() - lastReviewDate) / MS_PER_DAY` в днях.
+- Применить ОБА в server `srs.ts` и sdk `recalcFsrs.ts`.
+
+**Ожидаемый результат**: Опоздавшие ответы влияют на пересчёт stability.
+
+---
+
+## 36. `resetPassword` — гонка позволяет дважды потребить один токен
+
+**Проблема**: `src/modules/auth/auth.service.ts:398-433` —
+`redis.get(key)` → `user.update` → `redis.del(key)`. Два параллельных
+запроса с одним токеном оба видят userId, оба обновляют password (дважды
+инкрементят `tokenVersion` и `passwordVersion`).
+**Severity**: Low.
+
+**Что исправить**: `redis.getdel(key)` (ioredis 5) или Lua-`eval` —
+атомарный get+del; только один запрос получает non-null.
+
+**Ожидаемый результат**: Reset-token single-use гарантированно.
+
+---
+
+## 37. `findOrCreateOAuthUser` (ветка by-email) не обновляет `lastActiveDate`
+
+**Проблема**: `src/modules/auth/oauth.service.ts:114-159` — при матче по
+email (стр. 126-134) зовётся `linkOAuthAccount`, но `User.lastActiveDate`
+НЕ бампается (это делает только `issueTokensForUser:274-277` на
+явных login-флоу). `getUserStreak` считает от `lastActiveDate` → юзер,
+входящий только через OAuth, может поймать фантомный разрыв streak.
+**Severity**: Low.
+
+**Что исправить**: В by-email ветке добавить `prisma.user.update({
+where: { id: byEmail.id }, data: { lastActiveDate: new Date() } })`.
+
+**Ожидаемый результат**: Streak обновляется при любом логине.
+
+---
+
+## 38. `buildQuestion` может выдать дубликаты distractors в MCQ
+
+**Проблема**: `src/modules/tests/tests.service.ts:75-78, 119-137` —
+`pickNUnique(pool, exclude, n)` фильтрует `pool` по Set, содержащему
+`word.translation`/`word.character`. Если в пуле 2 слова с одинаковым
+переводом (варианты «爸爸|爸»), `pickNUnique` вернёт дубликаты строк
+→ в `shuffle([word.translation, ...distractors])` получится два
+одинаковых варианта-ответа. Guard `distractors.length < OPTIONS_COUNT - 1`
+это не ловит.
+**Severity**: Low.
+
+**Что исправить**: `pickNUnique` сначала `Array.from(new Set(pool.filter(x
+=> !exclude.has(x))))`, потом `shuffle().slice(0, n)`.
+
+**Ожидаемый результат**: Все варианты MCQ уникальны.
+
+---
+
+## 39. Гарантия 20-30 вопросов тихо нарушается для sparse HSK-уровней
+
+**Проблема**: `src/modules/tests/tests.service.ts:324-348` — при
+`allWords.length < TEST_MIN_QUESTIONS` `targetCount` кlamp'ится к
+`TEST_MIN_QUESTIONS`, но `shuffle(allWords).slice(0, targetCount)`
+тихо возвращает меньше. Guard только `questions.length < 4` → для HSK
+5/6 (часть слов еще не засeed'ена) тест может прийти на 5-10 вопросов,
+при этом shared-контракт говорит «20-30» → фиксированные сетки теста
+показывают пустые строки.
+**Severity**: Low.
+
+**Что исправить**: Либо документировать «≥4», либо кидать
+`INSUFFICIENT_WORDS` при `allWords.length < TEST_MIN_QUESTIONS`.
+
+**Ожидаемый результат**: Контракт «20-30» соблюдается либо ясная ошибка.
+
+---
+
+# Часть D. Shared-пакет (`packages/shared/`)
+
+## 40. `SyncResponseSchema.serverChanges` — `z.array(z.any())`, нет контракта
+
+**Проблема**: `packages/shared/src/schemas/sync.ts:48` —
+```ts
+serverChanges: z.array(z.any()),
+```
+Сервер может вернуть любой shape. Mobile `SyncEngine.ts:171` кастует
+`response.data.serverChanges as unknown as ServerChange[]` — интерфейс
+`ServerChange` объявлен локально в SyncEngine.ts:206-215, но не валидируется.
+Дрифт сервера проходит тихо.
+**Severity**: Medium.
+
+**Что исправить**: Завести `ServerChangeSchema` в `sync.ts` и
+`z.array(ServerChangeSchema)`. Зеркалить интерфейс из SDK.
+
+**Ожидаемый результат**: Дрифт sync-контракта детектится на границе.
+
+---
+
+## 41. `SyncResultSchema.newDifficulty` — без границ, хотя везде `[0, 1]`
+
+**Проблема**:
+- `packages/shared/src/schemas/sync.ts:34-43` —
+  `newDifficulty: z.number()` (без диапазона).
+- `packages/shared/src/schemas/progress.ts:47, 73` —
+  `newDifficulty: z.number().min(0).max(1)` ( bounded).
+
+Если сервер ушлёт `newDifficulty: 5`, оно пройдёт Zod, запишется в
+WatermelonDB `progress.difficulty`, и следующий FSRS-вызов получит
+значение вне диапазона.
+**Severity**: Medium.
+
+**Что исправить**: `newDifficulty: z.number().min(0).max(1)` в
+`SyncResultSchema` (и `SrsRecalcResultSchema` уже так).
+
+**Ожидаемый результат**: Согласованный диапазон difficulty по sync.
+
+---
+
+## 42. `ProgressRecordSchema.difficulty` принимает `5.0` (экспорт), хотя внутри `[0, 1]`
+
+**Проблема**: `packages/shared/src/schemas/progressExport.ts:42` —
+`difficulty: z.number().nonnegative()` (без верха). Комментарий в
+примере (`:17`) упоминает `difficulty: 5.0` — путаница между FSRS-5
+`[1, 10]` шкалой и внутренней `[0, 1]`. Импорт `difficulty: 5` тихо
+испортит FSRS после записи в `UserWordProgress.difficulty`.
+**Severity**: Low/Medium.
+
+**Что исправить**: Либо `.min(0).max(1)` (соответствует внутренней), либо
+документировать публичную шкалу `[1, 10]` (тогда править баг §46 о
+формуле), и конвертировать на границе.
+
+**Ожидаемый результат**: Единая шкала difficulty.
+
+---
+
+## 43. `PracticeType` (session.ts) vs `TestQuestionType` (test.ts): underscore vs hyphen
+
+**Проблема**:
+- `packages/shared/src/schemas/session.ts:29` — `character_assembly`
+  (подчёркивание).
+- `packages/shared/src/schemas/test.ts:40` — `character-assembly`
+  (дефис); для `multiple-choice` vs `multiple-choice-translation` тоже
+  расхождение.
+
+Конвертация между типом тренировки и типом теста требует ручной
+map'ы; строковый lookup, случайно пересекающий их, тихо фейлит.
+**Severity**: Low.
+
+**Что исправить**: Унифицировать конвенцию (один разделитель). Если
+схемы расходятся намеренно — вынести маппинг
+`practiceTypeToTestType` в `packages/shared/src/utils/`. Покрыть unit-тестом.
+
+**Ожидаемый результат**: Нет случайных string-lookup-фейлов.
+
+---
+
+# Часть E. Mobile (`apps/mobile/`) и mobile-sdk (`packages/mobile-sdk/`)
+
+## 44. Mobile `isOnline()` всегда `true` — `Boolean(Promise) === true`
+
+**Проблема**: `apps/mobile/src/bootstrap.ts:48-58` —
+```ts
+isOnline() {
+  return Boolean(NetInfo.fetch().then((s) => s.isConnected));
+}
+```
+`NetInfo.fetch()` возвращает Promise; `.then()` возвращает Promise;
+`Boolean(<Promise>)` === `true` (любой объект). `NetworkAdapter`
+(`packages/mobile-sdk/src/network/NetworkAdapter.ts:13`) ожидает
+**синхронный** snapshot. `SyncEngine` думает «всегда онлайн» →
+`enqueueChange` стреляет flush на каждый ответ даже в оффлайне →
+сервер хаммерится ретраями. Подписка `:53` стреляет позже, но `isOnline()`
+никогда не обновляется.
+**Severity**: Critical.
+
+**Что исправить**: Кэшировать состояние подписки:
+```ts
+let cached = true;
+const adapter = {
+  isOnline: () => cached,
+  subscribe(listener) {
+    const sub = NetInfo.addEventListener(s => { cached = Boolean(s.isConnected); listener(cached); });
+    return () => sub();
+  },
+};
+```
+Также в `start()` дёрнуть `NetInfo.fetch().then(s => { cached = s.isConnected; })`
+(см. §51).
+
+**Ожидаемый результат**: SyncEngine знает реальный онлайн-статус.
+
+---
+
+## 45. Mobile StudyScreen дабл-процессит каждый ответ — расход XP/reps ×2
+
+**Проблема**: `apps/mobile/src/screens/StudyScreen.tsx:91-117` — на
+каждый ответ зовутся ОДНОВРЕМЕННО:
+1. `getSync().enqueueChange('study_answer', {wordId, rating, sessionId,
+   timestamp})` → `POST /sync` (через `SyncEngine.flush()` сразу).
+2. `api.post('/sessions/{id}/answer', {wordId, rating})` (live).
+
+Сервер `sync.service.ts:27-55` дедуплит по timestamp
+(`if (changeTime < existingTime) continue;`), но `lastReviewDate` был
+0 → оба в итоге проходят, `reps` и XP инкрементятся **дважды*/, stability
+пересчитывается два раза → «Again» применяется дважды, XP надувается.
+**Severity**: Critical.
+
+**Что исправить**: Очередь ИЛИ live-post, не оба.
+- Онлайн → только `api.post('/sessions/.../answer')`, не класть в очередь.
+- Оффлайн → только `enqueueChange` (не live-post), пусть flush догонит
+  с `/sync` позже.
+
+**Ожидаемый результат**: Один ответ → один пересчёт прогресса.
+
+---
+
+## 46. FSRS: difficulty clamped [0,1], но формула `(11 - difficulty)` ожидает [1,10]
+
+**Проблема**:
+- `packages/mobile-sdk/src/fsrs/recalcFsrs.ts:21-24, 38-40` —
+  `computeDifficulty` → `Math.max(0, Math.min(1, current + delta))`
+  (ограничение `[0, 1]`).
+- `stabilityAfterSuccess` использует `1 + Math.exp(W[8]) * (11 -
+  difficulty) * ...` — FSRS-5 формула предполагает **D ∈ [1, 10]**,
+  отсюда `(11 - D) ∈ [1, 10]`. С `D ∈ [0, 1]` — `(11 - D) ∈ [10, 11]`,
+  константа → сложность почти не влияет на планирование — теряется
+  ключевая FSRS-обратная-связь.
+- Сейчас `apps/server/src/modules/sessions/srs.ts:78-82, 105-111` — та
+  же формула и то же ограничение.
+- `packages/shared/src/schemas/progress.ts:47` — `difficulty:
+  z.number().min(0).max(1)` — формализует заблуждение.
+
+**Severity**: Critical.
+
+**Что исправить**:
+- Привести к канонической FSRS-5 шкале `D ∈ [1, 10]`:
+  - `computeDifficulty` clamp `[1, 10]`.
+  - Формула `(11 - D)` → корректна.
+  - `progress.ts`-схемы: `.min(1).max(10)`.
+  - Прогресс users в БД, у которых `difficulty ∈ [0,1]`, мигрировать
+    (single-pass `prisma.userWordProgress.updateMany` с нормализацией).
+- Илu переделать формулу под `[0,1]` (неканонично, doc-flow сложнее).
+
+**Ожидаемый результат**: Сложность реально влияет на интервал.
+
+---
+
+## 47. Mobile `doRefresh` читает `result.data.refreshToken`, которого нет в `AuthResponseSchema`
+
+**Проблема**:
+- `apps/mobile/src/bootstrap.ts:79-86` и `apps/mobile/src/screens/LoginScreen.tsx:31, 39` —
+  код зовёт `api.post<AuthResponse & { refreshToken: string }>('/auth/refresh')`,
+  затем `tokenStore.setRefreshToken(result.data.refreshToken)`.
+- `packages/shared/src/schemas/auth.ts:56-67` — `AuthResponseSchema` имеет
+  только `user`, `accessToken`, `expiresIn`. `refreshToken` НЕ входит в
+  контракт; сервер отдаёт refresh-token через `HttpOnly` cookie (web),
+  на mobile документально не определён.
+- В рантайме `result.data.refreshToken === undefined`. ->
+  `tokenStore.setRefreshToken(undefined)` ->
+  `mmkv.set(REFRESH_TOKEN_KEY, undefined)` — MMKV ожидает `string |
+  number | boolean` и **бросает** исключение (try/catch нет – refresh-флоу
+  падает). Пользователь не может обновить токен -> не может держать
+  сессию между запусками после перелогина.
+**Severity**: High.
+
+**Что исправить**:
+- Определить контракт: добавить `refreshToken: string` в
+  `AuthResponseSchema` и научить сервер отдавать его для non-cookie
+  клиентов (по заголовку `X-Client-Type: mobile` или absence of cookie).
+- Илu перестать читать `result.data.refreshToken` и сохранять
+  `existing` refresh token (с серверной ротацией по другому каналу).
+
+**Ожидаемый результат**: Refresh на mobile работает, MMKV не бросает.
+
+---
+
+## 48. `POST /sync` отдаёт ALL прогресс-записи без cursor — O(N) на каждый sync
+
+**Проблема**: `apps/server/src/modules/sync/sync.service.ts:70-83` —
+```ts
+const allProgress = await prisma.userWordProgress.findMany({ where: { userId } });
+return { results, serverChanges: allProgress.map(...) };
+```
+Mobile `SyncEngine.ts:171-173` пишет все записи в WatermelonDB на
+каждом sync. Для юзера с 5 000+ words — гигабайты трафика и
+Watermelon-apdate на каждом скринe через React observer'ы → ре-рендеры.
+Cursor'а `since=` нет.
+**Severity**: High.
+
+**Что исправить**: В `SyncRequestSchema` добавить `sinceTimestamp` (ISO
+строка ms). В сервисе: `where: { userId, lastReviewDate: { gt:
+since } }`. Mobile хранить `lastSyncAt` и кидать его.
+
+**Ожидаемый результат**: Бандл sync'а линейный по изменённому, не по
+всему.
+
+---
+
+## 49. `SyncEngine.runFlushLoop` выходит на `MAX_ITERATIONS=10` без retry
+
+**Проблема**: `packages/mobile-sdk/src/sync/SyncEngine.ts:145-181` —
+loop крутится, пока очередь не пуста, но оборвётся на 10 итераций.
+`scheduleRetry()` зовётся только в `!response.ok` и `catch` ветках.
+Iteration-cap ветвь тихо return'ит — новые pending элементы ждут
+следующего внешнего триггера (`enqueueChange` или reconnect).
+Симптом: юзер учит оффлайн, выходит в сеть — часть прогресса остаётся в
+очереди до «пинка» (следующего ответа).
+**Severity**: Medium.
+
+**Что исправить**: Перед `return` из iteration-cap yветки позвать
+`this.scheduleRetry()` или одну отложенную re-flush.
+
+**Ожидаемый результат**: Очередь доflush'ивается без внешнего триггера.
+
+---
+
+## 50. Mobile оптимистичный FSRS берёт `stability = 0, difficulty = 0` всегда
+
+**Проблема**: `apps/mobile/src/screens/StudyScreen.tsx:87` —
+```ts
+const localUpdate = recalcFsrs(rating, 0, 0, card.state);
+```
+`FullSessionSchema.cards` (`packages/shared/src/schemas/session.ts:58-70`)
+не включает `stability` / `difficulty` слова, поэтому UI-mock берёт 0.
+`newStability` далее только `console.log` (`:114`); UI не отражает новый
+due date → выглядит «сломанным», пока следующий `/sessions/start` не
+перетянет реальные данные.
+**Severity**: Medium.
+
+**Что исправить**:
+- В `FullSessionSchema.cards` добавить `stability: number` и
+  `difficulty: number` — сервер у `ProgressWithWord` их уже отдаёт.
+- `recalcFsrs(rating, card.stability, card.difficulty, card.state)` с
+  реальными значениями; применить `intervalDays` к новому `dueDate` для
+  мгновенной UI-обратной связи.
+
+**Ожидаемый результат**: Карточка после оценки реально меняется в UI.
+
+---
+
+## 51. WatermelonDB `PendingChange` — `@readonly @date('createdAt')` бросает на insert
+
+**Проблема**:
+- `apps/mobile/src/db/models.ts:89` — `@readonly @date('created_at') createdAt`.
+- `apps/mobile/src/db/WatermelonQueueStorage.ts:27` — внутри `create()`:
+  `row.createdAt = new Date(change.createdAt)` — ручной set
+  readonly-свойства.
+- WatermelonDB бросает `Error: [Watermelon] Attempted to set readonly
+  property "createdAt"` на первом же оффлайн-ответе.
+- Плюс `remove()` (`:51-59`) зовёт `markAsDeleted()`, который оставляет
+  запись (мягкое удаление, реально не purge'ится) — `pending_changes`
+  растёт безгранично при refuse'е сервера.
+**Severity**: Medium.
+
+**Что исправить**:
+- Убрать `@readonly` с `createdAt`, либо не задавать его вручную и
+  положиться на Watermelon-defолт.
+- `remove()` → `await row.destroyPermanently()` для реального удаления.
+
+**Ожидаемый результат**: Офлайн-ответы реально кладутся в очередь.
+
+---
+
+## 52. `AuthStore.setAccessToken` persist'ит через fire-and-forget dynamic import
+
+**Проблема**: `packages/mobile-sdk/src/auth/AuthStore.ts:50-60`:
+```ts
+setAccessToken: (accessToken) => {
+  getTokenStore().setAccessToken(accessToken);
+  if (accessToken) {
+    import('../storage/SecureStorage').then(({ getSecureStorage }) =>
+      getSecureStorage().setItem('hanzi:auth:access', accessToken));
+  }
+  set({ accessToken });
+}
+```
+`import(...).then(...)` не await'ится -> последующий
+`readPersistedAccessToken()` из `hydrateAuth` на перезапуске может
+прочитать старый token → ре-аутентификация лишний раз. На RN dynamic
+import может упасть; `.catch` нет → unhandled promise warning.
+**Severity**: Medium.
+
+**Что исправить**:
+- Либо await import (оборачивать в async/await + цепочку call-sites),
+  либо держать синхронную ссылку на adapter в module-load.
+- Добавить `.catch(console.error)`.
+
+**Ожидаемый результат**: Persist окончен до чтения persisted-токена.
+
+---
+
+## 53. `bootstrapNetInfoAdapter.subscribe` не заcевает initial state
+
+**Проблема**: `apps/mobile/src/bootstrap.ts:52-57` — `NetInfo.addEventListener`
+НЕ стреляет сразу с текущим состоянием (только на change). После фикса
+§44 кэшированный `cached` будет дефолт-`true`, пока не придет первый
+event. `SyncEngine.start()` зовёт `if (isOnline()) this.flush()` →
+flush на холодном старте может ошибиться в обе стороны (когда данные
+неактуальны).
+**Severity**: Low.
+
+**Что исправить**: В `start()` адаптера (или сразу при создании)
+дополнительно `NetInfo.fetch().then(s => { cached =
+Boolean(s.isConnected); });` — best-effort seed.
+
+**Ожидаемый результат**: Статус сети известен сразу после boot.
+
+---
+
+## 54. Mobile-app (apps/mobile) — `app.json` / `package.json` version/raw mismatches (TODO)
+
+ refining — needs manual check:
+
+**Проблема**: Per AGENTS.md блок `apps/mobile` — Expo SDK 51 / RN 0.74 /
+new arch on. Чтобы не остаться с latent-багом, проверить:
+- `apps/mobile/app.json` — `expo.runtimeVersion` / `updates.url` /
+  `splash.image` существуют?
+- `apps/mobile/package.json` — `expo` strictly `~51.0.x`, `react-native`
+  `0.74.x`, `react` `18.2.x`?
+- `expo` peer-зависимости HanZi-используемых пакетов (React Native Reanimated,
+  WatermelonDB 1.x, MMKV) совместимы с RN 0.74 (New Architecture)?
+- `EXPO_PUBLIC_API_URL` в `app.json#extra.apiUrl` дефолт ведёт на prod,
+  на dev-сборках — override через `app.json#extra.env` или .env-секцию?
+
+**Что проверить**: ручной read `apps/mobile/app.json` и
+`apps/mobile/package.json` и сравнение с указанным в AGENTS.md.
+
+**Severity**: Low (если всё сходится — отменить).
+
+**Ожидаемый результат**: Versions aligned, no known-bad combos.
+
+---
+
+# Рекомендуемая очерёдность выполнения
+
+### Приоритет 1 — Критичные баги (блокируют использование / безопасность):
+1. **§20** — `recordAnswer` IDOR (чужие сессии).
+2. **§44** — Mobile `isOnline()` всегда true (sync хаммерится).
+3. **§45** — Mobile дабл-процесс ответов (прогресс и XP расходятся).
+4. **§46** — FSRS difficulty `[0, 1]` vs формула `[1, 10]` (суть FSRS
+   теряется — алгоритм работает как «no-difficulty»).
+5. **§21** — Refresh-token rotation race (replay крадёт аккаунт).
+6. **§22** — Word CRUD без admin-auth (можно сломать словарь).
+7. **§23** — Decks IDOR (чужие приватные колоды).
+8. **§1** — «Ещё сессия» не работает (базовый UI-флоу сломан).
+
+### Приоритет 2 — High-severity:
+9. **§47** — Mobile refresh читает undefined → MMKV бросает, нельзя
+   держать сессию.
+10. **§48** — `/sync` без cursor — O(N) трафик на каждом sync.
+11. **§6** — SW кэширует `/api/*` — утечка данных на shared devices.
+12. **§5** — Logout не зовёт `/auth/logout` — залогинен после F5.
+13. **§7** — Reading tooltip уезжает в угол — unusable «Чтение».
+14. **§4** — В тестах пиньинь/перевод не над словом — непонятно, что
+    показано.
+15. **§2** — Верстка «Тестирование» прилипает к краям.
+16. **§35** — FSRS `computеRetrievability` всегда 0.9 (пересчёт не
+    зависит от elapsed).
+17. **§11** — TestQuestionCard CharacterAssembly удаляет все
+    одноимённые чипы — повторные иероглифы нерешаемы.
+
+### Приоритет 3 — Medium:
+18. **§24, §25** — Streak / heatmap UTC-timezone.
+19. **§26** — `recordAnswer` без транзакции.
+20. **§8** — Двойной `/sessions/start`.
+21. **§9** — Каскад-логаут при конкурентных 401.
+22. **§10** — HomeScreen офлайн-пакет тихо фейлит.
+23. **§12** — CharacterAssembly practice pool пересобирается.
+24. **§13** — ResetPasswordScreen redirect-таймер не чистится.
+25. **§27** — `buildCharacterPool` пропускает целевые char'ы в distractors.
+26. **§28** — `findClozeExample` сабстринг-матчи + первое вхождение.
+27. **§29** — Тесты без DB-изоляции (флакинг).
+28. **§30** — GCS audio upload не реализован.
+29. **§31** — TTS cost abuset.
+30. **§32** — CORS misconfig possible.
+31. **§40** — `SyncResponseSchema.serverChanges = z.any()`.
+32. **§41** — `newDifficulty` без границ в sync.
+33. **§49** — SyncEngine flush-loop iteration-limit без retry.
+34. **§50** — Mobile optimistic FSRS всегда 0/0.
+35. **§51** — WatermelonDB readonly createdAt бросает.
+36. **§52** — AuthStore fire-and-forget persist.
+
+### Приоритет 4 — Low (после аварийных):
+37. **§3** — Календарь месяцев слипаются.
+38. Остальные low (§14-19, §33-34, §36-39, §42-43, §53-54).
+
+---
+
+## Сводка изменений по пакетам
+
+| Пакет | Изменения |
+|---|---|
+| `apps/web` | §1-4 (UI-фиксы: SessionComplete, .test-screen padding, ActivityCalendar, TestQuestionCard layout). §5 logout → `/auth/logout`. §6 SW NetworkOnly для `/api/auth` `/api/stats` `/api/sessions`. §7 ReadingWord event-passing. §8 убрать ручной startNow в onStart. §9 общий refresh-promise в apiClient. §10 apiGet в HomeScreen download. §11 пул character-assembly по индексу. §12 lastBuiltKeyRef в CharacterAssemblyCard. §13-19 малые фиксы таймеров/effects/модалок. |
+| `apps/server` | §20 owner-check в recordAnswer. §21 CAS-ротация refresh. §22 `User.role` migration + admin guard. §23 decks auth + owner filter. §24-25 `User.timezone` + tz-bucket. §26 `$transaction` в recordAnswer. §27 `Set(Array.from(target.character))`. §28 regex с word-boundary для cloze. §29 per-file schema / transaction-rollback в vitest. §30 GCS upload или doc-dev-only. §31 TTS rate-limit / admin guard. §32 CORS_ORIGIN fine. §33 subquery `progress: { some }`. §34 `algorithms: ['HS256']`. §35-36 FSRS + resetPassword timing. §37 `lastActiveDate` в OAuth. §38 dedupe distractors. §39 `INSUFFICIENT_WORDS` при `allWords.length < MIN`. |
+| `packages/shared` | §40 `SyncResponseSchema.serverChanges` → `ServerChangeSchema`. §41 `SyncResultSchema.newDifficulty.min(0).max(1)`. §42 `ProgressRecordSchema.difficulty` bound + решить [0,1] vs [1,10]. §43 унификация `PracticeType`/`TestQuestionType` (helper + unit-тест). §46 обновить `progress.ts`-схемы под выбранную шкалу difficulty. §50 расширить `FullSessionSchema.cards` полями `stability` / `difficulty`. §31 шynchronous-crestт TTS contract. Убедиться, что `AuthResponseSchema` (`§47`) либо добавляет `refreshToken` либо документирует mobile-флоу. |
+| `apps/mobile` | §44 cached NetInfo adapter (+ seed в `start`). §45 only-queue OR only-live в StudyScreen ответах. §47 читать только валидные поля (перейти на новый контракт `AuthResponseSchema`). §51 fix readonly `createdAt` (убрать `@readonly` или не задавать вручную) + `destroyPermanently()`. §53 `NetInfo.fetch().then(seed)` при boot. §54 проверить версии Expo/RN/Watermelon/MMKV. |
+| `packages/mobile-sdk` | §46 FSRS difficulty clamp `[1, 10]` (или формула под `[0,1]`). §35 (same root) `computeRetrievability(stability, elapsedDays)`. §48 cursor в `SyncRequestSchema` (`sinceTimestamp`). §49 `scheduleRetry()` в iteration-cap. §52 await persist в `AuthStore.setAccessToken`. |
