@@ -59,6 +59,40 @@ React Native (Expo SDK 51) + WatermelonDB, FSRS v5, hanzi-writer, Google Cloud T
 **Ожидаемый результат**: Ровные отступы слева/справа; карточки не касаются
 краёв ни на десктопе, ни на мобильном.
 
+**Статус**: ✅ Выполнено
+
+**Что сделано**:
+- `apps/web/src/styles/global.css:4328-4349` — `.test-screen`:
+  - `padding: 20px 24px 40px` (было `20px 0 40px`)
+  - `max-width: 720px; margin: 0 auto; width: 100%;` для центрирования на широких экранах
+  - `@media (max-width: 640px)` → `padding: 16px 16px 32px`
+  - `@media (max-width: 360px)` → `padding: 12px`
+  - Добавлен `box-sizing: border-box`, чтобы padding не раздувал ширину
+- Проверено: `.test-screen-in-progress` (`max-width: 640px; margin: 0 auto;`) и `.test-screen-results` (`max-width: 720px; margin: 0 auto;`) — обе фазы уже были отцентрированы и теперь наследуют корректные горизонтальные отступы от базового `.test-screen`.
+- Вложенные `.test-screen-header`, `.test-levels`, `.test-history` — без `width: 100vw` и отрицательных отступов (проверено grep по `100vw|100vh|width:\s*100|negative|margin-(left|right):\s*-`).
+- Prettier прошёл; dev-сервер Vite отдаёт обновлённый CSS (HTTP 200, `/src/styles/global.css` содержит новые правила).
+
+**Запись для коммита**:
+```
+fix(test): add horizontal padding to .test-screen
+
+Карточки выбора HSK-уровня и кнопка «Назад» прижимались к левому
+и правому краю viewport на экране TestScreen. У .test-screen был
+`padding: 20px 0 40px` — нулевой горизонтальный отступ.
+
+Что изменено:
+- desktop: padding 20px 24px 40px, max-width 720px, margin 0 auto
+- <= 640px: padding 16px 16px 32px
+- < 360px: padding 12px
+- добавлен box-sizing: border-box
+
+Одинаковые горизонтальные отступы применяются ко всем 3 фазам
+(level-select / in-progress / results) — последние две наследуют
+padding от базового .test-screen, сохраняя собственные max-width
+640/720px для центрирования. Вложенные header/levels/history
+`width: 100vw` и отрицательных отступов не имеют.
+```
+
 ---
 
 ## 3. Календарь активности — месяцы слеплены вместе
