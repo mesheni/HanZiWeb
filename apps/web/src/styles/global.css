@@ -16,6 +16,7 @@
   /* Borders */
   --border-default: rgba(255, 255, 255, 0.06);
   --border-hover: rgba(255, 255, 255, 0.12);
+  --border-subtle: #2a2a2a;
   --border-accent: rgba(220, 38, 38, 0.3);
 
   /* Text */
@@ -68,6 +69,7 @@
   /* Borders */
   --border-default: rgba(15, 17, 24, 0.08);
   --border-hover: rgba(15, 17, 24, 0.16);
+  --border-subtle: #e5e7eb;
   --border-accent: rgba(220, 38, 38, 0.35);
 
   /* Text */
@@ -4326,6 +4328,152 @@ input {
   .study-map-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ===== Activity calendar (PLAN_Features_v0.4 §3) =====
+   GitHub-style heatmap на вкладке «Итоги». Месяцы разделены
+   вертикальной линией `--border-subtle` на первой неделе каждого
+   месяца; метки месяцев — uppercase 12px над первой колонкой. */
+
+.activity-calendar {
+  position: relative;
+}
+
+.activity-calendar-scroll {
+  overflow-x: auto;
+}
+
+.activity-calendar-layout {
+  display: flex;
+  flex-direction: column;
+  min-width: max-content;
+}
+
+.activity-calendar-month-header {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
+.activity-calendar-month-header-spacer {
+  width: 24px;
+  flex-shrink: 0;
+}
+
+.activity-calendar-month-cols {
+  display: flex;
+  gap: 3px;
+}
+
+.activity-calendar-month-col {
+  width: 12px;
+  position: relative;
+  height: 16px;
+}
+
+.activity-calendar-month-col-start {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.activity-calendar-month-label {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  line-height: 16px;
+}
+
+.activity-calendar-grid {
+  display: flex;
+  gap: 3px;
+}
+
+.activity-calendar-dow-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.activity-calendar-dow-label {
+  font-size: 8px;
+  color: var(--text-dim);
+  height: 12px;
+  line-height: 12px;
+  text-align: right;
+  padding-right: 4px;
+  width: 20px;
+}
+
+.activity-calendar-week-cols {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  overflow-x: visible;
+}
+
+.activity-calendar-week-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.activity-calendar-week-col-odd {
+  background: var(--bg-hover);
+  border-radius: 3px;
+}
+
+.activity-calendar-week-col-month-start {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.activity-calendar-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  transition: all 0.1s;
+  border: 1px solid transparent;
+}
+
+.activity-calendar-cell-today {
+  border-color: var(--accent);
+}
+
+.activity-calendar-tooltip {
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-primary);
+  pointer-events: none;
+  z-index: 100;
+  white-space: nowrap;
+  transform: translate(-50%, -100%);
+}
+
+.activity-calendar-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+
+.activity-calendar-legend-label {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.activity-calendar-legend-cell {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
 }
 
 /* ===== Test screen (PLAN_Features_v0.3 §6) ===== */

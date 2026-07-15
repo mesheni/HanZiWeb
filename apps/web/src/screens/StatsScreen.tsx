@@ -25,11 +25,9 @@ import {
 import { useAchievements } from '../queries/achievements';
 import StudyMapCard from '../components/StudyMapCard';
 import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
+import { cn } from '../utils/cn';
 
-const ACHIEVEMENT_ICONS: Record<
-  AchievementType,
-  typeof Flame
-> = {
+const ACHIEVEMENT_ICONS: Record<AchievementType, typeof Flame> = {
   streak_7: Flame,
   words_100: BookCheck,
   hsk1_complete: GraduationCap,
@@ -118,129 +116,145 @@ function ActivityCalendar({
     };
 
     return (
-      <div style={{ position: 'relative' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 'max-content' }}>
+      <div className="activity-calendar">
+        <div className="activity-calendar-scroll">
+          <div className="activity-calendar-layout">
             {/* Month labels */}
-            <div style={styles.monthHeader}>
-              <div style={styles.monthHeaderSpacer} />
-              <div style={styles.monthHeaderCols}>
+            <div className="activity-calendar-month-header">
+              <div className="activity-calendar-month-header-spacer" />
+              <div className="activity-calendar-month-cols">
                 {weeks.map((_, wi) => {
                   const month = monthStartMap.get(wi);
                   const isMonthStart = month !== undefined;
                   return (
                     <div
                       key={wi}
-                      style={{
-                        ...styles.monthHeaderCol,
-                        ...(isMonthStart && wi > 0 ? styles.monthHeaderColStart : undefined),
-                      }}
+                      className={cn(
+                        'activity-calendar-month-col',
+                        isMonthStart && wi > 0 ? 'activity-calendar-month-col-start' : undefined,
+                      )}
                     >
-                      {isMonthStart && <span style={styles.monthLabel}>{MONTHS[month]}</span>}
+                      {isMonthStart && (
+                        <span className="activity-calendar-month-label">{MONTHS[month]}</span>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
-            <div style={styles.calendarGrid}>
-          {/* DOW labels */}
-          <div style={styles.dowCol}>
-            {DOW.map((d) => (
-              <span key={d} style={styles.dowLabel}>{d}</span>
-            ))}
-          </div>
-          {/* Week columns */}
-          <div style={{ ...styles.weekCols, overflowX: 'visible' }}>
-            {weeks.map((week, wi) => {
-              const weekMonth = getWeekMonth(week);
-              const isMonthStart = monthStartMap.has(wi);
-              return (
-                <div
-                  key={wi}
-                  style={{
-                    ...styles.weekCol,
-                    ...(weekMonth % 2 === 1 ? styles.weekColOdd : undefined),
-                    ...(isMonthStart && wi > 0 ? styles.weekColMonthStart : undefined),
-                  }}
-                >
-                  {week.map((dayNum, di) => {
-                    if (dayNum === null) return <div key={di} style={{ ...styles.cell, background: INTENSITY_COLORS[0] }} />;
-                    const dateObj = new Date(year, 0, dayNum);
-                    const dateStr = dateObj.toISOString().slice(0, 10);
-                    const count = activityMap.get(dateStr) ?? 0;
-                    const intensity = getIntensity(count);
-                    const isToday = dateStr === todayStr;
-                    return (
-                      <div
-                        key={di}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`${dateStr}: ${count} повторений`}
-                        style={{
-                          ...styles.cell,
-                          background: INTENSITY_COLORS[intensity],
-                          border: isToday ? '1px solid var(--accent)' : '1px solid transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          const rect = (e.target as HTMLElement).getBoundingClientRect();
-                          setTooltip({
-                            date: dateStr,
-                            count,
-                            x: rect.left + rect.width / 2,
-                            y: rect.top - 8,
-                          });
-                        }}
-                        onMouseLeave={() => setTooltip(null)}
-                        onClick={(e) => {
-                          const rect = (e.target as HTMLElement).getBoundingClientRect();
-                          setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            const rect = (e.target as HTMLElement).getBoundingClientRect();
-                            setTooltip((prev) => (prev?.date === dateStr ? null : { date: dateStr, count, x: rect.left + rect.width / 2, y: rect.top - 8 }));
-                          }
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              );
-            })}
+            <div className="activity-calendar-grid">
+              {/* DOW labels */}
+              <div className="activity-calendar-dow-col">
+                {DOW.map((d) => (
+                  <span key={d} className="activity-calendar-dow-label">
+                    {d}
+                  </span>
+                ))}
+              </div>
+              {/* Week columns */}
+              <div className="activity-calendar-week-cols">
+                {weeks.map((week, wi) => {
+                  const weekMonth = getWeekMonth(week);
+                  const isMonthStart = monthStartMap.has(wi);
+                  return (
+                    <div
+                      key={wi}
+                      className={cn(
+                        'activity-calendar-week-col',
+                        weekMonth % 2 === 1 ? 'activity-calendar-week-col-odd' : undefined,
+                        isMonthStart && wi > 0
+                          ? 'activity-calendar-week-col-month-start'
+                          : undefined,
+                      )}
+                    >
+                      {week.map((dayNum, di) => {
+                        if (dayNum === null) {
+                          return (
+                            <div
+                              key={di}
+                              className="activity-calendar-cell"
+                              style={{ background: INTENSITY_COLORS[0] }}
+                            />
+                          );
+                        }
+                        const dateObj = new Date(year, 0, dayNum);
+                        const dateStr = dateObj.toISOString().slice(0, 10);
+                        const count = activityMap.get(dateStr) ?? 0;
+                        const intensity = getIntensity(count);
+                        const isToday = dateStr === todayStr;
+                        return (
+                          <div
+                            key={di}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${dateStr}: ${count} повторений`}
+                            className={cn(
+                              'activity-calendar-cell',
+                              isToday ? 'activity-calendar-cell-today' : undefined,
+                            )}
+                            style={{ background: INTENSITY_COLORS[intensity] }}
+                            onMouseEnter={(e) => {
+                              const rect = (e.target as HTMLElement).getBoundingClientRect();
+                              setTooltip({
+                                date: dateStr,
+                                count,
+                                x: rect.left + rect.width / 2,
+                                y: rect.top - 8,
+                              });
+                            }}
+                            onMouseLeave={() => setTooltip(null)}
+                            onClick={(e) => {
+                              const rect = (e.target as HTMLElement).getBoundingClientRect();
+                              setTooltip((prev) =>
+                                prev?.date === dateStr
+                                  ? null
+                                  : {
+                                      date: dateStr,
+                                      count,
+                                      x: rect.left + rect.width / 2,
+                                      y: rect.top - 8,
+                                    },
+                              );
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                setTooltip((prev) =>
+                                  prev?.date === dateStr
+                                    ? null
+                                    : {
+                                        date: dateStr,
+                                        count,
+                                        x: rect.left + rect.width / 2,
+                                        y: rect.top - 8,
+                                      },
+                                );
+                              }
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-    {/* Tooltip */}
+        {/* Tooltip */}
         {tooltip && (
-          <div
-            style={{
-              position: 'fixed',
-              left: tooltip.x,
-              top: tooltip.y,
-              transform: 'translate(-50%, -100%)',
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 8,
-              padding: '6px 10px',
-              fontSize: 11,
-              color: 'var(--text-primary)',
-              pointerEvents: 'none',
-              zIndex: 100,
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <div className="activity-calendar-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
             {tooltip.date}: {tooltip.count} повторений
           </div>
         )}
         {/* Legend */}
-        <div style={styles.legend}>
-          <span style={{ fontSize: 10, color: 'var(--text-dim)', marginRight: 4 }}>Меньше</span>
+        <div className="activity-calendar-legend">
+          <span className="activity-calendar-legend-label">Меньше</span>
           {INTENSITY_COLORS.map((color, i) => (
-            <div key={i} style={{ ...styles.legendCell, background: color }} />
+            <div key={i} className="activity-calendar-legend-cell" style={{ background: color }} />
           ))}
-          <span style={{ fontSize: 10, color: 'var(--text-dim)', marginLeft: 4 }}>Больше</span>
+          <span className="activity-calendar-legend-label">Больше</span>
         </div>
       </div>
     );
@@ -248,7 +262,14 @@ function ActivityCalendar({
 }
 
 function LeaderboardRow({ entry, isMe }: { entry: LeaderboardEntry; isMe: boolean }) {
-  const rankClass = entry.rank === 1 ? 'rank-gold' : entry.rank === 2 ? 'rank-silver' : entry.rank === 3 ? 'rank-bronze' : 'rank-default';
+  const rankClass =
+    entry.rank === 1
+      ? 'rank-gold'
+      : entry.rank === 2
+        ? 'rank-silver'
+        : entry.rank === 3
+          ? 'rank-bronze'
+          : 'rank-default';
   return (
     <div className={`lb-row${isMe ? ' lb-row-me' : ''}`}>
       <div className={`lb-rank ${rankClass}`}>
@@ -301,7 +322,9 @@ function Leaderboard({
       ))}
       {currentUser && !meInTop && (
         <>
-          <div className="lb-divider" aria-hidden="true">· · ·</div>
+          <div className="lb-divider" aria-hidden="true">
+            · · ·
+          </div>
           <LeaderboardRow entry={currentUser} isMe />
         </>
       )}
@@ -474,11 +497,7 @@ export default function StatsScreen() {
         ) : (
           <div className="study-map-grid">
             {studyMap.decks.map((deck) => (
-              <StudyMapCard
-                key={deck.deckId}
-                deck={deck}
-                onClick={handleDeckClick}
-              />
+              <StudyMapCard key={deck.deckId} deck={deck} onClick={handleDeckClick} />
             ))}
           </div>
         )}
@@ -530,72 +549,35 @@ export default function StatsScreen() {
 
 const styles: Record<string, CSSProperties> = {
   statCard: {
-    background: 'var(--bg-card)', border: '1px solid var(--border-default)',
-    borderRadius: 12, padding: 12, textAlign: 'center',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 12,
+    padding: 12,
+    textAlign: 'center',
   },
   statNumber: { fontSize: 22, fontWeight: 600, lineHeight: 1 },
   statLabel: { fontSize: 9, color: 'var(--text-muted)', marginTop: 4 },
   yearSwitcher: {
-    display: 'flex', alignItems: 'center', gap: 4,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
   },
   yearBtn: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 24, height: 24, borderRadius: 6,
-    background: 'transparent', border: '1px solid var(--border-default)',
-    color: 'var(--text-secondary)', cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    background: 'transparent',
+    border: '1px solid var(--border-default)',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
   },
   yearLabel: {
-    fontSize: 13, fontWeight: 500, minWidth: 40, textAlign: 'center',
-  },
-  calendarGrid: {
-    display: 'flex', gap: 3,
-  },
-  monthHeader: {
-    display: 'flex', gap: 3, marginBottom: 4,
-  },
-  monthHeaderSpacer: {
-    width: 24, flexShrink: 0,
-  },
-  monthHeaderCols: {
-    display: 'flex', gap: 3,
-  },
-  monthHeaderCol: {
-    width: 12, position: 'relative', height: 14,
-  },
-  monthHeaderColStart: {
-    borderLeft: '1px solid var(--border-default)',
-  },
-  monthLabel: {
-    position: 'absolute', left: 2, top: 0,
-    fontSize: 9, color: 'var(--text-muted)', whiteSpace: 'nowrap', lineHeight: '14px',
-  },
-  dowCol: {
-    display: 'flex', flexDirection: 'column', gap: 3,
-  },
-  dowLabel: {
-    fontSize: 8, color: 'var(--text-dim)', height: 12, lineHeight: '12px', textAlign: 'right',
-    paddingRight: 4, width: 20,
-  },
-  weekCols: {
-    display: 'flex', gap: 3, flex: 1,
-  },
-  weekCol: {
-    display: 'flex', flexDirection: 'column', gap: 3,
-  },
-  weekColOdd: {
-    background: 'var(--bg-hover)', borderRadius: 3,
-  },
-  weekColMonthStart: {
-    borderLeft: '1px solid var(--border-default)',
-  },
-  cell: {
-    width: 12, height: 12, borderRadius: 3, transition: 'all 0.1s',
-  },
-  legend: {
-    display: 'flex', alignItems: 'center', gap: 3, marginTop: 10,
-    justifyContent: 'flex-end',
-  },
-  legendCell: {
-    width: 10, height: 10, borderRadius: 2,
+    fontSize: 13,
+    fontWeight: 500,
+    minWidth: 40,
+    textAlign: 'center',
   },
 };
