@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
@@ -32,7 +32,19 @@ export default function CharacterAssemblyCard({
   const [submitted, setSubmitted] = useState(false);
   const [dragOver, setDragOver] = useState<'answer' | 'pool' | null>(null);
 
+  // Ref отслеживает, для какого слова уже собран пул. Родитель может
+  // передавать новую ссылку `distractors` при несвязанных re-render'ах
+  // (например, при обновлении `isPlaying`/`isAvailable` в `useAudio` после
+  // нажатия кнопки озвучки, либо при финишировании загрузки через
+  // `useDistractorPool`), и без этой защиты useEffect перезапускал бы
+  // shuffle и сбрасывал `answer` прямо во время сборки пользователем —
+  // баг «CharacterAssembly в тренировке» (PLAN_Features_v0.4 §12).
+  const lastBuiltKeyRef = useRef<string>('');
+
   useEffect(() => {
+    const key = `${word.id}::${word.character}::${distractors.join(',')}`;
+    if (lastBuiltKeyRef.current === key) return;
+    lastBuiltKeyRef.current = key;
     const chars = [...correctCharacters, ...distractors];
     // Перемешиваем Fisher–Yates.
     for (let i = chars.length - 1; i > 0; i--) {
