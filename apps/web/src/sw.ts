@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, type PrecacheEntry } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
-import { NetworkFirst, CacheFirst } from 'workbox-strategies';
+import { NetworkFirst, NetworkOnly, CacheFirst } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
@@ -15,15 +15,33 @@ declare global {
 
 precacheAndRoute(self.__WB_MANIFEST);
 
+const API_CACHE = 'api-cache';
+
+// Кэшируем только публичный словарь и только анонимные запросы:
+// ответы /api/words* для залогиненных (Authorization: Bearer) содержат
+// userProgress — они обязаны идти мимо кэша (PLAN_Features_v0.4 §6).
 registerRoute(
-  /^\/api\/.*/i,
+  ({ url, request }) =>
+    (url.pathname === '/api/words' || url.pathname.startsWith('/api/words/')) &&
+    !request.headers.has('authorization'),
   new NetworkFirst({
-    cacheName: 'api-cache',
+    cacheName: API_CACHE,
     plugins: [
       new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 300 }),
     ],
   }),
 );
+
+// Приватные эндпоинты — всегда сеть, ответы не оседают в кэше SW.
+const PRIVATE_API =
+  /^\/api\/(auth|stats|sessions|tests|sync|decks|users|tags|achievements|reading|devices)(\/|$)/;
+registerRoute(({ url }) => PRIVATE_API.test(url.pathname), new NetworkOnly());
+
+// При смене версии SW сносим унаследованный api-cache — в старых версиях
+// туда могли попасть приватные ответы.
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  event.waitUntil(caches.delete(API_CACHE));
+});
 
 registerRoute(
   /\/audio\/.*/i,

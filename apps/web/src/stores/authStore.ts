@@ -39,6 +39,26 @@ interface AuthState {
 
 let hydratePromise: Promise<void> | null = null;
 
+/**
+ * Fire-and-forget уведомление сервера о выходе: `POST /auth/logout`
+ * инвалидирует refresh-токен и чистит httpOnly cookie. Без этого после
+ * «Выйти» `hydrateAuth()` тихо логинил бы пользователя обратно
+ * (PLAN_Features_v0.4 §5).
+ */
+async function notifyServerLogout(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch {
+    // Сеть недоступна — локальный logout всё равно состоится.
+  }
+}
+
+/** Сносит SW-кэш API, чтобы чужие ответы не пережили смену аккаунта. */
+function clearApiCache(): void {
+  if (typeof caches === 'undefined') return;
+  caches.delete('api-cache').catch(() => {});
+}
+
 async function doSilentRefresh(): Promise<{ user: User; accessToken: string } | null> {
   try {
     const res = await fetch('/api/auth/refresh', {
@@ -63,8 +83,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: (user, accessToken) =>
     set({ user, accessToken, isAuthenticated: true }),
 
-  logout: () =>
-    set({ user: null, accessToken: null, isAuthenticated: false }),
+  logout: () => {
+    void notifyServerLogout();
+    clearApiCache();
+    set({ user: null, accessToken: null, isAuthenticated: false });
+  },
 
   setAccessToken: (accessToken) => set({ accessToken }),
 
