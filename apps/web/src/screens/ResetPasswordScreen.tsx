@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Button, Input, Card } from '@/components/ui';
 import { useResetPassword } from '@/queries/auth';
@@ -48,6 +48,21 @@ export default function ResetPasswordScreen() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
+  // Ref на таймер редиректа после успешного сброса. Без cleanup при
+  // уходе со страницы (например, по ссылке «Запросить ссылку заново»)
+  // setTimeout всё равно сработал бы через 1.5 с и насильно кинул
+  // пользователя на /login — баг «ResetPasswordScreen» (PLAN_Features_v0.4 §13).
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current !== null) {
+        clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const strength = useMemo(() => passwordStrength(newPassword), [newPassword]);
 
   if (!token) {
@@ -92,7 +107,10 @@ export default function ResetPasswordScreen() {
     try {
       await reset.mutateAsync({ token, newPassword });
       setSuccess(true);
-      setTimeout(() => navigate('/login', { replace: true }), 1500);
+      redirectTimerRef.current = setTimeout(() => {
+        redirectTimerRef.current = null;
+        navigate('/login', { replace: true });
+      }, 1500);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Не удалось сбросить пароль';
       if (/INVALID_TOKEN|invalid or expired/i.test(message)) {
