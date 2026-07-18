@@ -74,10 +74,9 @@ export default function ReadingTextScreen() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  const handleWordClick = (token: ReadingToken, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleWordClick = (token: ReadingToken, position: { x: number; y: number }) => {
     setActiveToken(token);
-    setTooltipPos({ x: e.clientX + 12, y: e.clientY + 12 });
+    setTooltipPos(position);
   };
 
   const handleSpeak = (character: string) => {
@@ -171,12 +170,7 @@ export default function ReadingTextScreen() {
                   key={`w-${pIndex}-${token.position}`}
                   token={token}
                   showPinyin={showPinyin}
-                  onClick={(t) =>
-                    handleWordClick(t, {
-                      clientX: tooltipPos.x,
-                      clientY: tooltipPos.y,
-                    } as React.MouseEvent)
-                  }
+                  onClick={handleWordClick}
                 />,
               );
               cursor = localPos + token.length;

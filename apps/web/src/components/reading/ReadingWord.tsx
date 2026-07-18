@@ -4,7 +4,7 @@ import type { ReadingToken } from '@hanzi/shared';
 interface ReadingWordProps {
   token: ReadingToken;
   showPinyin: boolean;
-  onClick: (token: ReadingToken) => void;
+  onClick: (token: ReadingToken, position: { x: number; y: number }) => void;
 }
 
 export default function ReadingWord({ token, showPinyin, onClick }: ReadingWordProps) {
@@ -16,10 +16,22 @@ export default function ReadingWord({ token, showPinyin, onClick }: ReadingWordP
     token.state === 'graduated' ? ' reading-word--known' : ''
   }${token.isPriority ? ' reading-word--priority' : ''}`;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const getTooltipPosition = (target: EventTarget | null): { x: number; y: number } => {
+    if (target instanceof HTMLElement) {
+      const rect = target.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.bottom + 8 };
+    }
+    return { x: 0, y: 0 };
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLElement>) => {
+    onClick(token, getTooltipPosition(e.currentTarget));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onClick(token);
+      onClick(token, getTooltipPosition(e.currentTarget));
     }
   };
 
@@ -27,7 +39,7 @@ export default function ReadingWord({ token, showPinyin, onClick }: ReadingWordP
     return (
       <ruby
         className={className}
-        onClick={() => onClick(token)}
+        onClick={handleClick}
         onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
@@ -43,7 +55,7 @@ export default function ReadingWord({ token, showPinyin, onClick }: ReadingWordP
   return (
     <span
       className={className}
-      onClick={() => onClick(token)}
+      onClick={handleClick}
       onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
