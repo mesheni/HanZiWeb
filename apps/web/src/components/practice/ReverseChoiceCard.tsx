@@ -27,7 +27,7 @@ export default function ReverseChoiceCard({
 }: ReverseChoiceCardProps) {
   const options = useMemo(() => buildReverseChoiceOptions(word, pool, 4), [word, pool]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [states, setStates] = useState<Record<string, 'idle' | 'correct' | 'wrong'>>({});
+  const [states, setStates] = useState<Record<string, 'idle' | 'correct' | 'wrong' | 'revealed'>>({});
 
   useEffect(() => {
     setSelectedId(null);
@@ -40,7 +40,10 @@ export default function ReverseChoiceCard({
     setSelectedId(option.id);
     setStates({
       [option.id]: isCorrect ? 'correct' : 'wrong',
-      [word.id]: 'correct',
+      // 'revealed' — правильный ответ, который пользователь не выбрал
+      // (подсвечиваем рамкой, без зелёной заливки). Аналог фикса
+      // PLAN_Features_v0.4 §19 follow-up в MultipleChoiceCard.
+      [word.id]: isCorrect ? 'correct' : 'revealed',
     });
     onAnswer(isCorrect);
   };
@@ -77,7 +80,7 @@ export default function ReverseChoiceCard({
                 'practice-option practice-option--char',
                 state === 'correct' && 'practice-option-correct',
                 state === 'wrong' && 'practice-option-wrong',
-                state === 'idle' && selectedId && option.id === word.id && 'practice-option-revealed',
+                state === 'revealed' && 'practice-option-revealed',
               )}
               onClick={() => choose(option)}
               disabled={!!selectedId}

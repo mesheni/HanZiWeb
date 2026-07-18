@@ -14,7 +14,7 @@ interface MultipleChoiceCardProps {
   audioAvailable?: boolean;
 }
 
-type OptionState = 'idle' | 'selected' | 'correct' | 'wrong';
+type OptionState = 'idle' | 'selected' | 'correct' | 'wrong' | 'revealed';
 
 /**
  * Карточка multiple-choice: показываем иероглиф, пользователь выбирает
@@ -43,10 +43,14 @@ export default function MultipleChoiceCard({
     setSelectedId(option.id);
     setStates({
       [option.id]: isCorrect ? 'correct' : 'wrong',
-      // Правильный ответ всегда подсвечивается зелёным — независимо от того,
-      // выбрал его пользователь или нет. Раньше тут был копи-паста-тернарник
-      // `isCorrect ? 'correct' : 'correct'` (PLAN_Features_v0.4 §19).
-      [word.id]: 'correct',
+      // Правильный ответ:
+      //  - 'correct'   — когда пользователь угадал (это и есть его выбор);
+      //  - 'revealed'  — когда ошибся: подсвечиваем рамкой, но без зелёной
+      //                  заливки и без иконки Check. Раньше использовался
+      //                  хак `state === 'idle' && option.id === word.id`,
+      //                  который стал мёртвым после фикса #19
+      //                  (PLAN_Features_v0.4 §19 follow-up).
+      [word.id]: isCorrect ? 'correct' : 'revealed',
     });
     // Вызываем onAnswer сразу — StudyScreen покажет feedback и
     // дождётся нажатия "Продолжить" прежде чем rateCard.
@@ -85,7 +89,7 @@ export default function MultipleChoiceCard({
                 'practice-option',
                 state === 'correct' && 'practice-option-correct',
                 state === 'wrong' && 'practice-option-wrong',
-                state === 'idle' && selectedId && option.id === word.id && 'practice-option-revealed',
+                state === 'revealed' && 'practice-option-revealed',
               )}
               onClick={() => choose(option)}
               disabled={!!selectedId}
