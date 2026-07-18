@@ -30,11 +30,14 @@ function toDeckDto(deck: {
 }
 
 /**
- * Список всех колод с подсчётом слов.
+ * Список колод, доступных пользователю: все системные (HSK) + свои кастомные.
+ * Чужие приватные колоды не отдаются — это «isSystemDeck || ownerId === userId».
  * Сортировка: сначала системные, потом кастомные (свежие сверху).
+ * PLAN_Features_v0.4 §23.
  */
-export async function listDecks() {
+export async function listDecksForUser(userId: string) {
   const decks = await prisma.deck.findMany({
+    where: { OR: [{ isSystemDeck: true }, { ownerId: userId }] },
     include: { _count: { select: { words: true } } },
     orderBy: [{ isSystemDeck: 'desc' }, { createdAt: 'desc' }],
   });
@@ -43,6 +46,7 @@ export async function listDecks() {
 
 /**
  * Список только кастомных колод конкретного пользователя.
+ * Используется в профиле/конструкторе — без системных.
  */
 export async function listUserDecks(userId: string) {
   const decks = await prisma.deck.findMany({
@@ -54,21 +58,31 @@ export async function listUserDecks(userId: string) {
 }
 
 /**
- * Получить колоду с полным списком wordIds (используется конструктором).
- * В ответе — `wordIds[]`, отсортированные по дате добавления.
+ * Загружает колоду с проверкой доступа. Возвращает deck или null.
+ * null — если колоды нет ИЛИ она приватная и принадлежит другому
+ * юзеру. Намеренно «404-shaped» (а не 403) — чтобы не утекать
+ * существование чужой приватной колоды. PLAN_Features_v0.4 §23.
  */
-export async function getDeck(id: string) {
-  return prisma.deck.findUnique({
-    where: { id },
+async function loadDeckForUser(deckId: string, userId: string) {
+  const deck = await prisma.deck.findUnique({
+    where: { id: deckId },
     include: {
       words: { select: { wordId: true }, orderBy: { wordId: 'asc' } },
       _count: { select: { words: true } },
     },
   });
+  if (!deck) return null;
+  if (!deck.isSystemDeck && deck.ownerId !== userId) return null;
+  return deck;
 }
 
-export async function getDeckWithWords(id: string) {
-  const deck = await getDeck(id);
+/**
+ * Получить колоду с полным списком wordIds (используется конструктором).
+ * Доступ: системная — всем, кастомная — только владельцу.
+ * В ответе — `wordIds[]`, отсортированные по `wordId`.
+ */
+export async function getDeckWithWordsForUser(id: string, userId: string) {
+  const deck = await loadDeckForUser(id, userId);
   if (!deck) return null;
   return {
     ...toDeckDto(deck),
@@ -358,8 +372,29 @@ export async function subscribeByShareCode(userId: string, code: string) {
 /**
  * Подписка на колоду по её id (использовалось раньше).
  * Сейчас оставлено для совместимости.
+ *
+ * Доступ: системная — всем, кастомная — только владельцу. Чужая
+ * приватная колода → 403, иначе можно было бы импортировать чужие
+ * слова в свой прогресс, просто зная UUID. PLAN_Features_v0.4 §23.
  */
 export async function subscribeToDeck(userId: string, deckId: string) {
+  const deck = await prisma.deck.findUnique({
+    where: { id: deckId },
+    select: { isSystemDeck: true, ownerId: true },
+  });
+  if (!deck) {
+    throw Object.assign(new Error('Deck not found'), {
+      statusCode: 404,
+      code: 'NOT_FOUND',
+    });
+  }
+  if (!deck.isSystemDeck && deck.ownerId !== userId) {
+    throw Object.assign(new Error('Not allowed to subscribe to this deck'), {
+      statusCode: 403,
+      code: 'FORBIDDEN',
+    });
+  }
+
   const deckWords = await prisma.deckWord.findMany({
     where: { deckId },
     select: { wordId: true },

@@ -827,6 +827,14 @@ ownerId === userId`); `GET /:id` под auth + проверка; `subscribeToDec
 
 **Ожидаемый результат**: Чужие приватные колоды невидимы/недоступны.
 
+**Статус**: ✅ Исправлено — `decks.routes.ts:17-49` (preHandler +
+pass userId), `decks.service.ts:32-93` (`listDecksForUser` + `loadDeckForUser` +
+`getDeckWithWordsForUser`, 404-shaped для не-доступа), `decks.service.ts:419-432`
+(subscribeToDeck — 403 для non-system non-owner). Чужие приватные колоды
+больше не возвращаются через `GET /`, `GET /:id` и `POST /:id/subscribe`.
+Покрыто `decks.idor.test.ts` (13 тестов): list-фильтрация, 404 на чужой
+id, 403 на чужой subscribe, 401 без токена, regression для system/own.
+
 ---
 
 ## 24. Стрик и daily-goal считаются по UTC-полуночи, без timezone пользователя
@@ -844,6 +852,19 @@ ownerId === userId`); `GET /:id` под auth + проверка; `subscribeToDec
 `pg TIMEZONE`-выражениями.
 
 **Ожидаемый результат**:斯特 keeps по локальному дню.
+
+**Статус**: ✅ Исправлено — `schema.prisma:32-37` (добавлено `User.timezone String?`,
+миграция `20260719000000_add_user_timezone`), `stats.service.ts:249-345`
+(чистые хелперы `getLocalDayKey` через `Intl.DateTimeFormat`, `tzOffsetMsAt`,
+`localMidnightUtc`; `getTodayUtcRange` принимает `timezone` с UTC fast path),
+`stats.service.ts:357-371` (`countTodayReviews` грузит `User.timezone`),
+`stats.service.ts:577-639` (`getUserStreak` сравнивает через `daysBetweenKeys`
+по локальным дням, теперь с `now: Date` параметром для тестируемости).
+Учёба в 23:30Z 15 июля для Москвы даёт 16-е как «сегодня», и стрик
+идёт по локальному календарю. Backward-compat: `timezone='UTC'` —
+прежнее поведение, существующий тест `getTodayUtcRange` остаётся
+зелёным. Покрыто `stats.service.test.ts` (12 новых pure-тестов) и
+`stats.streak.test.ts` (7 интеграционных: UTC, Москва, переходы).
 
 ---
 

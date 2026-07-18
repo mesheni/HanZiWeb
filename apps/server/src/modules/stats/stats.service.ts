@@ -247,23 +247,168 @@ export async function getOverview(userId: string) {
 }
 
 /**
- * Возвращает [start, end) UTC для текущего календарного дня.
- * Чистая функция — покрыта юнит-тестами.
+ * Возвращает ключ локального дня (YYYY-MM-DD) для `date` в IANA `timezone`.
+ * Чистая функция — покрыта юнит-тестами. Использует `Intl.DateTimeFormat`
+ * (встроен в Node, корректно обрабатывает DST).
+ *
+ * Примеры (2026-07-15T23:30:00.000Z):
+ *   getLocalDayKey(d, 'UTC')         === '2026-07-15'
+ *   getLocalDayKey(d, 'Europe/Moscow') === '2026-07-16'  (UTC+3)
+ *   getLocalDayKey(d, 'America/Los_Angeles') === '2026-07-15' (UTC-7, DST)
  */
-export function getTodayUtcRange(now: Date = new Date()): { start: Date; end: Date } {
-  const start = new Date(now);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
+export function getLocalDayKey(date: Date, timezone: string = 'UTC'): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+/**
+ * Считает разницу в календарных днях между двумя ключами YYYY-MM-DD.
+ * `b - a`, может быть отрицательной. Чистая функция.
+ *
+ * Парсим как UTC-даты, потому что нас интересует РАЗНИЦА календарных
+ * дней, а не длительность (24 vs 23/25 часов физического времени при
+ * DST). Используется в `getUserStreak` для сравнения локальных дней.
+ */
+/**
+ * Считает разницу в календарных днях между двумя ключами YYYY-MM-DD.
+ * `b - a`, может быть отрицательной. Чистая функция, экспортируется
+ * для тестов.
+ *
+ * Парсим как UTC-даты, потому что нас интересует РАЗНИЦА календарных
+ * дней, а не длительность (24 vs 23/25 часов физического времени при
+ * DST). Используется в `getUserStreak` для сравнения локальных дней.
+ */
+export function daysBetweenKeys(a: string, b: string): number {
+  const pa = a.split('-');
+  const pb = b.split('-');
+  if (pa.length !== 3 || pb.length !== 3) {
+    throw new Error(`Invalid day key: ${a} / ${b}`);
+  }
+  const ya = Number(pa[0]);
+  const ma = Number(pa[1]);
+  const da = Number(pa[2]);
+  const yb = Number(pb[0]);
+  const mb = Number(pb[1]);
+  const db = Number(pb[2]);
+  return Math.round(
+    (Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86_400_000,
+  );
+}
+
+/**
+ * Возвращает смещение в мс для `timezone` в момент `utc`.
+ * Положительное = tz впереди UTC. Чистая функция.
+ * Используется для перевода «локальная полночь YYYY-MM-DD» в UTC Date.
+ */
+function tzOffsetMsAt(utc: Date, timezone: string): number {
+  if (timezone === 'UTC') return 0;
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts: Record<string, string> = {};
+  for (const p of dtf.formatToParts(utc)) parts[p.type] = p.value;
+  const get = (t: string): number => {
+    const raw = parts[t];
+    if (raw === undefined) throw new Error(`Intl.DateTimeFormat: missing part ${t}`);
+    return Number(raw);
+  };
+  // `Intl` отдаёт '24' для полуночи в режиме hour12=false — нормализуем.
+  const hour = parts.hour === '24' ? 0 : get('hour');
+  const asLocalUtc = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    hour,
+    get('minute'),
+    get('second'),
+  );
+  return asLocalUtc - utc.getTime();
+}
+
+/**
+ * Возвращает UTC Date, соответствующий локальной полуночи того дня,
+ * в котором находится `date` в `timezone`. Чистая функция.
+ *
+ * Пример (date = 2026-07-15T20:00:00.000Z):
+ *   localMidnightUtc(d, 'Europe/Moscow') === Date('2026-07-15T21:00:00.000Z')
+ *     // 00:00 в Москве = 21:00 UTC предыдущего дня (логически того же)
+ *   localMidnightUtc(d, 'UTC')           === Date('2026-07-15T00:00:00.000Z')
+ */
+function localMidnightUtc(date: Date, timezone: string): Date {
+  if (timezone === 'UTC') {
+    const out = new Date(date);
+    out.setUTCHours(0, 0, 0, 0);
+    return out;
+  }
+  const dayKey = getLocalDayKey(date, timezone);
+  const ymd = dayKey.split('-');
+  if (ymd.length !== 3) {
+    throw new Error(`Invalid day key from Intl: ${dayKey}`);
+  }
+  const y = Number(ymd[0]);
+  const m = Number(ymd[1]);
+  const d = Number(ymd[2]);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    throw new Error(`Invalid day key from Intl: ${dayKey}`);
+  }
+  const guess = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  // tz-offset в точке guess — аппроксимация для offset в точке localMidnight.
+  // Корректно для всех случаев кроме самого момента DST-перехода
+  // (когда смещение меняется на ±1ч). В этом случае оффсет
+  // переключается в 02:00–03:00 локального времени, что не задевает
+  // локальную полночь (00:00).
+  const offset = tzOffsetMsAt(new Date(guess), timezone);
+  return new Date(guess - offset);
+}
+
+/**
+ * Возвращает [start, end) UTC для текущего календарного дня в `timezone`.
+ * Чистая функция — покрыта юнит-тестами. Backward-compat: при `timezone='UTC'`
+ * поведение идентично прежнему (для уже существующих тестов).
+ *
+ * Используется daily-статистикой (`countTodayReviews`, getUserStreak) и
+ * теперь учитывает локальный календарь пользователя вместо UTC
+ * (PLAN_Features_v0.4 §24).
+ */
+export function getTodayUtcRange(
+  now: Date = new Date(),
+  timezone: string = 'UTC',
+): { start: Date; end: Date } {
+  if (timezone === 'UTC') {
+    const start = new Date(now);
+    start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { start, end };
+  }
+  const start = localMidnightUtc(now, timezone);
+  const end = new Date(start.getTime() + 86_400_000);
   return { start, end };
 }
 
 /**
- * Считает количество ответов пользователя за текущий календарный день (UTC).
- * Используется в `getDashboard` для кольцевого прогресса ежедневной цели.
+ * Считает количество ответов пользователя за текущий локальный календарный
+ * день (в timezone пользователя). Используется в `getDashboard` для
+ * кольцевого прогресса ежедневной цели. PLAN_Features_v0.4 §24.
  */
 export async function countTodayReviews(userId: string, now: Date = new Date()): Promise<number> {
-  const { start, end } = getTodayUtcRange(now);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const tz = user?.timezone ?? 'UTC';
+  const { start, end } = getTodayUtcRange(now, tz);
   return prisma.sessionAnswer.count({
     where: {
       session: { userId },
@@ -491,52 +636,52 @@ export async function getStudyMap(userId: string): Promise<StudyMapResponse> {
  * - today === lastActiveDate + 1 (consecutive)  → streak = currentStreak + 1
  * - gap > 1 day (streak broken)                 → streak = 1 (new streak)
  */
-export async function getUserStreak(userId: string) {
+export async function getUserStreak(userId: string, now: Date = new Date()) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { currentStreak: true, lastActiveDate: true },
+    select: { currentStreak: true, lastActiveDate: true, timezone: true },
   });
 
   const currentStreak = user?.currentStreak ?? 0;
   const rawLastActive = user?.lastActiveDate ?? null;
+  const tz = user?.timezone ?? 'UTC';
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  // Бакетируем через локальный день пользователя, а не UTC-полночь.
+  // PLAN_Features_v0.4 §24: для не-UTC юзеров прежняя логика сдвигала
+  // «сегодня» на часы и ломала ожидаемый «consecutive local days».
+  const todayKey = getLocalDayKey(now, tz);
+  const lastKey = rawLastActive ? getLocalDayKey(rawLastActive, tz) : null;
 
-  let newStreak = currentStreak;
-  let lastActiveDay: Date | null = rawLastActive ? new Date(rawLastActive) : null;
-  if (lastActiveDay) lastActiveDay.setUTCHours(0, 0, 0, 0);
-
-  const MS_PER_DAY = 86_400_000;
-
-  if (!lastActiveDay) {
-    // Never active before — start streak at 1
-    newStreak = 1;
-  } else {
-    const diffDays = Math.floor((today.getTime() - lastActiveDay.getTime()) / MS_PER_DAY);
-
-    if (diffDays === 0) {
-      // Already counted today — no change, no update
-      return { currentStreak: newStreak, lastActiveDate: rawLastActive };
-    } else if (diffDays === 1) {
-      // Consecutive day — increment streak
-      newStreak = currentStreak + 1;
-    } else {
-      // Gap > 1 day — streak broken, start new one
-      newStreak = 1;
-    }
+  if (lastKey === todayKey) {
+    // Уже засчитан сегодня — без апдейта.
+    return { currentStreak, lastActiveDate: rawLastActive };
   }
 
-  // Persist the updated streak and lastActiveDate
+  let newStreak: number;
+  if (!lastKey) {
+    // Никогда не был активен — начинаем с 1.
+    newStreak = 1;
+  } else {
+    // Разница в локальных днях (а не UTC-днях). Парсим ключи и считаем
+    // календарные дни — корректно даже если между двумя днями есть
+    // DST-переход (24 vs 23/25 часов физического времени).
+    const dayDiff = daysBetweenKeys(lastKey, todayKey);
+    newStreak = dayDiff === 1 ? currentStreak + 1 : 1;
+  }
+
+  // Сохраняем локальную полночь в tz как UTC — это якорь, привязанный
+  // к календарному дню, и при смене tz пользователем старые данные
+  // остаются консистентными (сравнение идёт по ключам).
+  const persistedDate = localMidnightUtc(now, tz);
   await prisma.user.update({
     where: { id: userId },
     data: {
       currentStreak: newStreak,
-      lastActiveDate: today,
+      lastActiveDate: persistedDate,
     },
   });
 
-  return { currentStreak: newStreak, lastActiveDate: today.toISOString() };
+  return { currentStreak: newStreak, lastActiveDate: persistedDate.toISOString() };
 }
 
 // ═══════════════════════════════════════════════════════════════════

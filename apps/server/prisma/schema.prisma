@@ -35,6 +35,12 @@ model User {
 /// Ежедневная цель по ревью (количество ответов в день).
 /// См. PLAN_Features_v0.2 §9.
 dailyGoal             Int       @default(20)
+/// IANA timezone пользователя, например "Europe/Moscow".
+/// Используется для группировки daily-статистики (стрик, кол-во
+/// ревью за сегодня) по локальному календарю. NULL означает UTC —
+/// backward-compat для существующих юзеров.
+/// См. PLAN_Features_v0.4 §24.
+timezone              String?
 /// Роль пользователя: `USER` по умолчанию, `ADMIN` — для модерации
 /// словаря (POST/PUT/DELETE /api/words). Продакшн-юзеров повышать
 /// руками через SQL (`UPDATE "User" SET role = 'ADMIN' WHERE email = '...';`).

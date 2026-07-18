@@ -13,23 +13,38 @@ const DeckIdParamSchema = z.object({
 });
 
 export async function decksRoutes(app: FastifyInstance) {
-  /** GET / — list all decks (system + own custom) */
-  app.get('/', async (_request, reply) => {
-    const decks = await decksService.listDecks();
-    return reply.send({ success: true, data: decks });
-  });
+  /** GET / — list all decks (system + own custom).
+   *  Auth обязателен: раньше возвращались ВСЕ колоды, включая
+   *  приватные других юзеров. PLAN_Features_v0.4 §23. */
+  app.get(
+    '/',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const decks = await decksService.listDecksForUser(request.userId);
+      return reply.send({ success: true, data: decks });
+    },
+  );
 
-  /** GET /:id — deck details with word list */
-  app.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
-    const deck = await decksService.getDeckWithWords(request.params.id);
-    if (!deck) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'NOT_FOUND', message: 'Deck not found' },
-      });
-    }
-    return reply.send({ success: true, data: deck });
-  });
+  /** GET /:id — deck details with word list.
+   *  Auth + проверка доступа: чужая приватная колода → 404 (а не 403,
+   *  чтобы не утекало существование). PLAN_Features_v0.4 §23. */
+  app.get<{ Params: { id: string } }>(
+    '/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const deck = await decksService.getDeckWithWordsForUser(
+        request.params.id,
+        request.userId,
+      );
+      if (!deck) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Deck not found' },
+        });
+      }
+      return reply.send({ success: true, data: deck });
+    },
+  );
 
   /** POST / — create custom deck (auth required) */
   app.post(

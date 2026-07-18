@@ -7,6 +7,7 @@ import {
   computeRank,
   escapeCsvField,
   getCurrentWeekWindow,
+  getLocalDayKey,
   getTodayUtcRange,
   maskEmail,
   parseProgressCsv,
@@ -180,6 +181,93 @@ describe('getTodayUtcRange', () => {
     const { start, end } = getTodayUtcRange(last);
     expect(start.toISOString()).toBe('2026-07-31T00:00:00.000Z');
     expect(end.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+  });
+});
+
+// ─── Timezone-aware day bucketing (PLAN_Features_v0.4 §24) ─────────────
+
+describe('getLocalDayKey', () => {
+  it('UTC = текущая дата в ISO', () => {
+    const d = new Date('2026-07-15T12:00:00.000Z');
+    expect(getLocalDayKey(d, 'UTC')).toBe('2026-07-15');
+  });
+
+  it('Europe/Moscow (UTC+3, без DST) — 23:30Z уже в следующем дне', () => {
+    // 2026-07-15T23:30:00.000Z = 2026-07-16T02:30:00 в Москве.
+    const d = new Date('2026-07-15T23:30:00.000Z');
+    expect(getLocalDayKey(d, 'Europe/Moscow')).toBe('2026-07-16');
+  });
+
+  it('Europe/Moscow — 21:30Z ещё в текущем дне', () => {
+    // 2026-07-15T21:30:00.000Z = 2026-07-16T00:30:00 в Москве.
+    const d = new Date('2026-07-15T21:30:00.000Z');
+    expect(getLocalDayKey(d, 'Europe/Moscow')).toBe('2026-07-16');
+  });
+
+  it('Europe/Moscow — 20:59Z ещё предыдущий день', () => {
+    // 2026-07-15T20:59:00.000Z = 2026-07-15T23:59:00 в Москве.
+    const d = new Date('2026-07-15T20:59:00.000Z');
+    expect(getLocalDayKey(d, 'Europe/Moscow')).toBe('2026-07-15');
+  });
+
+  it('America/Los_Angeles (UTC-7 с DST) — UTC-полночь уже вчера', () => {
+    // 2026-07-15T07:00:00.000Z = 2026-07-15T00:00:00 в LA.
+    const d = new Date('2026-07-15T07:00:00.000Z');
+    expect(getLocalDayKey(d, 'America/Los_Angeles')).toBe('2026-07-15');
+  });
+
+  it('default timezone = UTC (backward-compat)', () => {
+    const d = new Date('2026-07-15T12:00:00.000Z');
+    expect(getLocalDayKey(d)).toBe('2026-07-15');
+  });
+});
+
+describe('getTodayUtcRange с timezone', () => {
+  it('UTC = то же что и раньше (fast path)', () => {
+    const d = new Date('2026-07-15T15:30:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'UTC');
+    expect(start.toISOString()).toBe('2026-07-15T00:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-16T00:00:00.000Z');
+  });
+
+  it('Europe/Moscow: 23:30Z уже 16-е — окно сдвинуто на 21:00Z', () => {
+    // 2026-07-15T23:30:00Z → в Москве это 2026-07-16T02:30:00.
+    // Местная полночь 16-го = 2026-07-15T21:00:00Z. Конец = +24ч.
+    const d = new Date('2026-07-15T23:30:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'Europe/Moscow');
+    expect(start.toISOString()).toBe('2026-07-15T21:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-16T21:00:00.000Z');
+  });
+
+  it('Europe/Moscow: 21:00Z — граница полуночи', () => {
+    // 2026-07-15T21:00:00Z = 2026-07-16T00:00:00 в Москве.
+    const d = new Date('2026-07-15T21:00:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'Europe/Moscow');
+    expect(start.toISOString()).toBe('2026-07-15T21:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-16T21:00:00.000Z');
+  });
+
+  it('Europe/Moscow: 20:59Z — последняя секунда предыдущего дня', () => {
+    // 2026-07-15T20:59:00Z = 2026-07-15T23:59:00 в Москве.
+    const d = new Date('2026-07-15T20:59:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'Europe/Moscow');
+    expect(start.toISOString()).toBe('2026-07-14T21:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-15T21:00:00.000Z');
+  });
+
+  it('America/Los_Angeles: 00:00Z — это ещё предыдущий локальный день', () => {
+    // 2026-07-15T00:00:00Z = 2026-07-14T17:00:00 в LA (DST → UTC-7).
+    // Значит «сегодня» в LA = 14-е. Окно: 2026-07-14T07:00:00Z → 2026-07-15T07:00:00Z.
+    const d = new Date('2026-07-15T00:00:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'America/Los_Angeles');
+    expect(start.toISOString()).toBe('2026-07-14T07:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-07-15T07:00:00.000Z');
+  });
+
+  it('окно всегда ровно 24 часа (для фиксированной tz, без DST-перехода на границе)', () => {
+    const d = new Date('2026-07-15T15:30:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'Europe/Moscow');
+    expect(end.getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000);
   });
 });
 
