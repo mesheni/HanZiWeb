@@ -315,10 +315,10 @@ function CharacterAssemblyBody({
   const totalSlots = question.correctAnswer.length;
   const finished = answer.length === totalSlots;
 
-  const moveToAnswer = (ch: string) => {
+  const moveToAnswer = (ch: string, poolIdx: number) => {
     if (finished) return;
     setAnswer((a) => [...a, ch]);
-    setPool((p) => p.filter((c) => c !== ch || p.indexOf(c) !== p.indexOf(ch)));
+    setPool((p) => p.filter((_, i) => i !== poolIdx));
   };
 
   const moveToPool = (ch: string, fromIndex: number) => {
@@ -372,7 +372,7 @@ function CharacterAssemblyBody({
             key={`p-${i}-${ch}`}
             type="button"
             className="test-question-char-chip"
-            onClick={() => moveToAnswer(ch)}
+            onClick={() => moveToAnswer(ch, i)}
           >
             {ch}
           </button>
