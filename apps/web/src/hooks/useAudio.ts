@@ -36,6 +36,11 @@ export function useAudio(wordId: string | null | undefined) {
     setCharacter('');
     setIsAvailable(false);
     setIsPlaying(false);
+    // Сбрасываем сразу при смене wordId — даже если новый wordId === null
+    // (конец сессии), иначе isLoading зависнет в true, потому что IIFE
+    // ниже не запустится и его finally не вызовется — баг
+    // «useAudio не сбрасывает isLoading» (PLAN_Features_v0.4 §14).
+    setIsLoading(false);
 
     if (!wordId) return;
 
