@@ -8,6 +8,15 @@ interface ModalProps {
   children: ReactNode;
 }
 
+/**
+ * Module-level счётчик одновременно открытых Modal'ов.
+ * Сбрасываем `body.overflow` только когда счётчик доходит до нуля —
+ * иначе при вложенных модалках (например, WordDetailModal внутри
+ * DeckBuilderModal) закрытие внутренней реактивировало бы scroll,
+ * хотя внешняя ещё открыта. См. PLAN_Features_v0.4 §18.
+ */
+let openModalCount = 0;
+
 export default function Modal({ open, onClose, title, children }: ModalProps) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -17,13 +26,18 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
   );
 
   useEffect(() => {
-    if (open) {
-      document.addEventListener('keydown', handleKeyDown);
+    if (!open) return undefined;
+    if (openModalCount === 0) {
       document.body.style.overflow = 'hidden';
     }
+    openModalCount += 1;
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
+      openModalCount -= 1;
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
+      if (openModalCount === 0) {
+        document.body.style.overflow = '';
+      }
     };
   }, [open, handleKeyDown]);
 
