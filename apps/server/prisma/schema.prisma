@@ -32,11 +32,16 @@ model User {
   notificationEnabled   Boolean   @default(false)
   notificationTime      String    @default("morning")
   notificationFrequency Int       @default(1)
-  /// Ежедневная цель по ревью (количество ответов в день).
-  /// См. PLAN_Features_v0.2 §9.
-  dailyGoal             Int       @default(20)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+/// Ежедневная цель по ревью (количество ответов в день).
+/// См. PLAN_Features_v0.2 §9.
+dailyGoal             Int       @default(20)
+/// Роль пользователя: `USER` по умолчанию, `ADMIN` — для модерации
+/// словаря (POST/PUT/DELETE /api/words). Продакшн-юзеров повышать
+/// руками через SQL (`UPDATE "User" SET role = 'ADMIN' WHERE email = '...';`).
+/// См. PLAN_Features_v0.4 §22.
+role                  UserRole  @default(USER)
+createdAt             DateTime  @default(now())
+updatedAt             DateTime  @updatedAt
 
   progress      UserWordProgress[]
   sessions      Session[]
@@ -204,6 +209,12 @@ enum WordState {
   learning
   review
   graduated
+}
+
+/// Роль пользователя. См. PLAN_Features_v0.4 §22.
+enum UserRole {
+  USER
+  ADMIN
 }
 
 model UserWordProgress {

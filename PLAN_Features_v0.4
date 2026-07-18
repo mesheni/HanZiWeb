@@ -735,6 +735,13 @@ if (!session) throw new NotFoundError('SESSION_NOT_FOUND_OR_FORBIDDEN');
 
 **Ожидаемый результат**: Чужая сессия недоступна.
 
+**Статус**: ✅ Исправлено — `apps/server/src/modules/sessions/sessions.service.ts:304-415`
+(`prisma.session.findUnique({ where: { id } })` → `findFirst({ where: { id, userId } })`;
+чужая сессия теперь = `null` = 404 NOT_FOUND, инкремент `cardsCompleted` и
+создание `SessionAnswer` не происходят).
+Покрыто тестом `apps/server/src/modules/sessions/sessions.idor.test.ts`
+(4 кейса: чужой id → 404, своя сессия работает, чужой не трогает `cardsCompleted`).
+
 ---
 
 ## 21. Ротация refresh-токена не атомарна — replay обходит single-use
@@ -760,6 +767,15 @@ if (r.count === 0) throw new UnauthorizedError('REFRESH_TOKEN_REUSE');
 
 **Ожидаемый результат**: Повторное использование refresh-токена детектится.
 
+**Статус**: ✅ Исправлено — `apps/server/src/modules/auth/auth.service.ts:208-260`
+(`findUnique` + `update({ tokenVersion: increment })` → один атомарный
+`updateMany({ where: { id, tokenVersion: payload.tokenVersion }, data: { tokenVersion: { increment: 1 } } })`;
+если `count === 0` → 401 `REFRESH_TOKEN_REUSE`. Параллельные запросы
+с одним украденным токеном: один побеждает, второй — 401.
+`tokenVersion` инкрементится ровно один раз).
+Покрыто тестом `apps/server/src/modules/auth/refresh.cas.test.ts`
+(4 кейса: последовательный повтор, несуществующий user, валидный refresh после rotate, параллельный replay — гарантия ровно одного успеха).
+
 ---
 
 ## 22. Word CRUD: нет админ-Authorization — любой юзер меняет словарь
@@ -775,6 +791,20 @@ if (r.count === 0) throw new UnauthorizedError('REFRESH_TOKEN_REUSE');
 access-token-payload; проверять на каждом /words write-эндпоинте.
 
 **Ожидаемый результат**: Мутации словаря доступны только админу.
+
+**Статус**: ✅ Исправлено — добавлены:
+- `enum UserRole { USER, ADMIN }` + колонка `User.role` (default `USER`)
+  в `apps/server/prisma/schema.prisma:37-41, 209-213` и миграция
+  `apps/server/prisma/migrations/20260718232342_add_user_role/`;
+- декораторы `app.requireAdmin` и `request.userRole` в
+  `apps/server/src/plugins/auth.ts` (роль подгружается из БД в
+  `authenticate` вместе с `passwordVersion` — без лишнего запроса);
+- гард `app.requireAdmin` добавлен в `preHandler` для POST/PUT/DELETE
+  в `apps/server/src/modules/words/words.routes.ts:46-79`; USER-роль
+  получает 403 `FORBIDDEN`, ADMIN — 200.
+Покрыто тестом `apps/server/src/modules/words/words.admin.test.ts`
+(4 кейса: USER→403, ADMIN→200, PUT/DELETE также под гардом, без токена→401).
+Промоут в админы — руками: `UPDATE "User" SET role = 'ADMIN' WHERE email = '…';`.
 
 ---
 

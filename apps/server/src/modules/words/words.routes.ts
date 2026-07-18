@@ -42,23 +42,35 @@ export async function wordsRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: word });
   });
 
-  /** POST /words — создание слова */
-  app.post('/', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const body = CreateWordSchema.parse(request.body);
-    const word = await wordsService.createWord(body);
-    return reply.status(201).send({ success: true, data: word });
-  });
+  /** POST /words — создание слова (только ADMIN, см. PLAN_Features_v0.4 §22) */
+  app.post(
+    '/',
+    { preHandler: [app.authenticate, app.requireAdmin] },
+    async (request, reply) => {
+      const body = CreateWordSchema.parse(request.body);
+      const word = await wordsService.createWord(body);
+      return reply.status(201).send({ success: true, data: word });
+    },
+  );
 
-  /** PUT /words/:id — обновление */
-  app.put<{ Params: { id: string } }>('/:id', { preHandler: [app.authenticate] }, async (request, reply) => {
-    const body = UpdateWordSchema.parse(request.body);
-    const word = await wordsService.updateWord(request.params.id, body);
-    return reply.send({ success: true, data: word });
-  });
+  /** PUT /words/:id — обновление (только ADMIN, см. PLAN_Features_v0.4 §22) */
+  app.put<{ Params: { id: string } }>(
+    '/:id',
+    { preHandler: [app.authenticate, app.requireAdmin] },
+    async (request, reply) => {
+      const body = UpdateWordSchema.parse(request.body);
+      const word = await wordsService.updateWord(request.params.id, body);
+      return reply.send({ success: true, data: word });
+    },
+  );
 
-  /** DELETE /words/:id — удаление */
-  app.delete<{ Params: { id: string } }>('/:id', { preHandler: [app.authenticate] }, async (request, reply) => {
-    await wordsService.deleteWord(request.params.id);
-    return reply.send({ success: true });
-  });
+  /** DELETE /words/:id — удаление (только ADMIN, см. PLAN_Features_v0.4 §22) */
+  app.delete<{ Params: { id: string } }>(
+    '/:id',
+    { preHandler: [app.authenticate, app.requireAdmin] },
+    async (request, reply) => {
+      await wordsService.deleteWord(request.params.id);
+      return reply.send({ success: true });
+    },
+  );
 }

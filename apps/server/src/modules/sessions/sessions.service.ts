@@ -315,8 +315,14 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // в early-return ниже. Prisma хранит `practiceType` как `string`,
   // поэтому валидируем через Zod-схему — это даёт нам типизированный
   // `PracticeType` без `as`-кастов (PLAN_Features_v0.3 §20).
-  const session = await prisma.session.findUnique({
-    where: { id: input.sessionId },
+  //
+  // `findFirst` с фильтром по `userId` закрывает IDOR: до фикса
+  // `findUnique` грузил сессию только по id, и любой залогиненный
+  // юзер мог постить `cardsCompleted++` / `SessionAnswer` в чужую
+  // сессию, зная её UUID. Теперь чужая сессия = `null` = 404
+  // (PLAN_Features_v0.4 §20).
+  const session = await prisma.session.findFirst({
+    where: { id: input.sessionId, userId },
     select: { practiceType: true },
   });
   if (!session) {

@@ -7,10 +7,18 @@ import { prisma } from '../lib/prisma.js';
 declare module 'fastify' {
   interface FastifyRequest {
     userId: string;
+    /** Роль пользователя, загруженная из БД при `authenticate`. */
+    userRole: 'USER' | 'ADMIN';
   }
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     authenticateOptional: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /**
+     * Гард для admin-эндпоинтов. Должен идти ВТОРЫМ в `preHandler`
+     * после `authenticate` (иначе `request.userRole` будет дефолтным
+     * `USER` и любой запрос отклонится).
+     */
+    requireAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 
@@ -32,6 +40,7 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
   const config = loadConfig();
 
   fastify.decorateRequest('userId', '');
+  fastify.decorateRequest('userRole', 'USER');
 
   fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
     const authHeader = request.headers.authorization;
@@ -57,10 +66,15 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
     // (PLAN_Features_v0.3 §2). Считаем его pv=0; следующая смена
     // пароля у пользователя бампнет passwordVersion на 1 и инвалидирует
     // такие токены.
+    //
+    // Заодно подгружаем `role` — нужно для `requireAdmin`. Берём из БД,
+    // а не из JWT-claim'а, чтобы изменение роли вступило в силу
+    // немедленно (а не после refresh токена). Доп. расход — 1 лишнее
+    // поле в SELECT, не новый запрос (PLAN_Features_v0.4 §22).
     const tokenPv = payload.pv ?? 0;
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { passwordVersion: true },
+      select: { passwordVersion: true, role: true },
     });
     if (!user) {
       return reply.status(401).send({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
@@ -68,6 +82,7 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
     if (user.passwordVersion !== tokenPv) {
       return reply.status(401).send({ success: false, error: { code: 'TOKEN_EXPIRED', message: 'Password was changed — please sign in again' } });
     }
+    request.userRole = user.role;
   });
 
   fastify.decorate('authenticateOptional', async function (request: FastifyRequest, _reply: FastifyReply) {
@@ -83,6 +98,15 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
       request.userId = payload.userId;
     } catch {
       // token invalid or expired — proceed without userId
+    }
+  });
+
+  fastify.decorate('requireAdmin', async function (request: FastifyRequest, reply: FastifyReply) {
+    if (request.userRole !== 'ADMIN') {
+      return reply.status(403).send({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Admin role required' },
+      });
     }
   });
 }

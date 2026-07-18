@@ -214,23 +214,45 @@ export async function refreshTokens(token: string) {
     throw Object.assign(new Error('Invalid refresh token'), { statusCode: 401, code: 'INVALID_TOKEN' });
   }
 
-  const user = await prisma.user.findUnique({ where: { id: payload.userId } });
+  // CAS-rotate: один `updateMany` с условием `(id, tokenVersion)`.
+  // До фикса код сначала читал `user.tokenVersion`, потом делал
+  // `update({ tokenVersion: { increment: 1 } })` — между этими
+  // двумя запросами другой запрос с тем же украденным токеном
+  // мог прочитать тот же `tokenVersion` и тоже инкрементнуть,
+  // выпустив валидную новую пару. С CAS только один из параллельных
+  // вызовов найдёт строку с совпадающим `tokenVersion`; все
+  // остальные получат `count === 0` → 401 REFRESH_TOKEN_REUSE.
+  // (PLAN_Features_v0.4 §21.)
+  const rotated = await prisma.user.updateMany({
+    where: {
+      id: payload.userId,
+      tokenVersion: payload.tokenVersion,
+    },
+    data: { tokenVersion: { increment: 1 } },
+  });
+  if (rotated.count === 0) {
+    throw Object.assign(
+      new Error('Refresh token reuse detected'),
+      { statusCode: 401, code: 'REFRESH_TOKEN_REUSE' },
+    );
+  }
+  // Новое значение tokenVersion = было + 1; не нужно перечитывать
+  // пользователя, чтобы его узнать.
+  const newTokenVersion = payload.tokenVersion + 1;
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { id: true, email: true, xp: true, currentStreak: true, passwordVersion: true },
+  });
   if (!user) {
+    // Крайне редкий случай: пользователь удалён между CAS и
+    // findUnique. Инкремент уже закоммичен — «следующий» refresh
+    // получит count=0 и 401, безопасность не нарушена.
     throw Object.assign(new Error('User not found'), { statusCode: 401, code: 'USER_NOT_FOUND' });
   }
 
-  if (payload.tokenVersion !== user.tokenVersion) {
-    throw Object.assign(new Error('Token revoked'), { statusCode: 401, code: 'TOKEN_REVOKED' });
-  }
-
-  // Rotate: increment tokenVersion to invalidate the old refresh token
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { tokenVersion: { increment: 1 } },
-  });
-
   const accessToken = generateAccessToken(user.id, user.email, user.passwordVersion);
-  const refreshToken = generateRefreshToken(user.id, updated.tokenVersion);
+  const refreshToken = generateRefreshToken(user.id, newTokenVersion);
 
   return {
     user: { id: user.id, email: user.email, xp: user.xp, currentStreak: user.currentStreak },
