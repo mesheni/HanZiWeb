@@ -696,10 +696,22 @@ Modal открыт.
 
 **Ожидаемый результат**: Логика reveal-подсветки явная.
 
-**Статус**: ✅ Исправлено — `apps/web/src/components/practice/MultipleChoiceCard.tsx:40-54`
+**Статус**: ✅ Исправлено — `apps/web/src/components/practice/MultipleChoiceCard.tsx:17, 40-58, 88-93`
 (копи-паста `isCorrect ? 'correct' : 'correct'` заменена на безусловный
 `[word.id]: 'correct'` — правильный ответ всегда подсвечивается
 зелёным, независимо от выбора пользователя).
+
+**Follow-up**: чтобы мёртвый хак `state === 'idle' && selectedId &&
+option.id === word.id` для класса `practice-option-revealed` не копился
+в коде, добавлен явный стейт `'revealed'`
+(`MultipleChoiceCard.tsx:17, 53, 92` + `ReverseChoiceCard.tsx:30, 46, 83`):
+- `word.id` получает `'correct'`, если пользователь угадал (это и есть
+  его выбор);
+- `word.id` получает `'revealed'`, если пользователь ошибся
+  (правильный вариант, который не выбрали — рамка через
+  `.practice-option-revealed` уже была в CSS, но не достигалась).
+Класс `state === 'revealed' && 'practice-option-revealed'` —
+самодокументируемый, без догадок по `state === 'idle'`.
 
 ---
 
