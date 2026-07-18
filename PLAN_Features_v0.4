@@ -475,6 +475,28 @@ credentials: 'include' })` (строка 68), а не auth-aware `apiGet`. Fasti
 **Ожидаемый результат**: Офлайн-пакет либо реально скачивается, либо даёт
 читаемую ошибку.
 
+**Статус**: ✅ Выполнено
+
+**Что сделано**:
+- `apps/web/src/screens/HomeScreen.tsx:6,11,55-56,66,70-85,87,103-107` —
+  `handleDownloadOffline` заменил сырой `fetch('/api/words?...', { credentials: 'include' })`
+  на `apiGet<PaginatedResponse<WordListItem>>('/words?limit=...&offset=...')`.
+  `apiGet` автоматически прикрепляет `Authorization: Bearer` и при 401
+  делает прозрачный refresh/retry (см. фикс #9 в `client.ts`). Раньше
+  refresh-кука сама по себе не авторизовала Fastify, все страницы
+  возвращали 401, `json.data ?? []` давал `[]`, цикл сразу `break`ал,
+  `setDlState('done')` показывал «Готово» — тихий фейл.
+- `dlState` расширен до `'idle' | 'loading' | 'done' | 'error'`. На
+  неудаче `try/catch` ловит ошибку из `apiGet` (не-200, сетевая, или
+  провалившийся refresh), `setDlState('error')` + `addToast('Ошибка
+  загрузки: ...', 'error')` через `useToastStore` (как в
+  `DeckBuilderModal`). Через 4s состояние сбрасывается в `'idle'`, чтобы
+  кнопка снова стала кликабельной.
+- Лейбл кнопки (line 272) теперь имеет 4 ветки: добавилась
+  «Ошибка — нажмите, чтобы повторить» для `error`-стейта.
+- `disabled` остался только на `'loading'` — в `error` кнопка снова
+  активна и при клике повторяет попытку.
+
 ---
 
 ## 11. CharacterAssembly в тесте: клик по чипу удаляет ВСЕ одноимённые чипы
