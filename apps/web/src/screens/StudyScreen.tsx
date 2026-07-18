@@ -147,7 +147,6 @@ export default function StudyScreen() {
     isSessionComplete,
     rateCard,
     retrySession,
-    startNow,
     showFeedback,
     lastAnswerCorrect,
     submitAnswer,
@@ -381,7 +380,6 @@ export default function StudyScreen() {
             params.set('practice', t);
             navigate(`/study?${params.toString()}`, { replace: true });
             setHasStarted(true);
-            startNow(activeFilters);
           }}
           onCancel={() => navigate('/')}
         />
