@@ -947,6 +947,60 @@ distractors). Для single-char слов случайно работает.
 
 **Ожидаемый результат**: В пуле сборки — только настоящие distractors.
 
+**Статус**: ✅ Исправлено — `tests.service.ts:101`. `Set([target.character])`
+→ `Set<string>(Array.from(target.character))` — каждый иероглиф
+многосложного слова попадает в `seen` отдельно, и `seen.has(ch)`
+корректно исключает его из candidates. До фикса «你好» как цель
+позволяло «你» и «好» утекать в pool → character_assembly для
+двухсложных слов был тривиален (правильный ответ уже в пуле).
+Покрыто `tests.service.test.ts` (6 тестов на `buildCharacterPool`):
+multi-char цель исключает оба иероглифа; single-char цель исключается;
+общий char с целью исключён, остальные chars того же слова
+остаются; дубль target в pool; срез до `CHARACTER_POOL_EXTRA=3`; pool
+содержит только distractors.
+
+---
+
+## 28. `findClozeExample` сабстринг- maternity + только первое вхождение
+
+**Проблема**: `src/modules/tests/tests.service.ts:97-105` —
+`ex.chinese.includes(word.character)` succeed'ит, даже если цель
+внутренний сабстринг большего слова (`"大"` в `"大学"`), а
+`ex.chinese.replace(word.character, '____')` (string-pattern) заменяет
+**только первое** вхождение. Для нескольких вхождений — blank'ается
+первое, даже если семантически не то.
+**Severity**: Medium.
+
+**Что исправить**: Regex с `u`-флагом и word-boundary (или
+pre-tokenized позиции из `ReadingTextWord`); заменять все вхождения или
+выбирать корректное смещение.
+
+**Ожидаемый результат**: Cloze blank'ает ровно целевое вхождение.
+
+**Статус**: ✅ Исправлено — `tests.service.ts:115-138`. Многосимвольная
+цель: `new RegExp(escapeRegex(target), 'gu')` — точное посимвольное
+совпадение всей последовательности; `replace` с флагом `g` blank'ает
+ВСЕ вхождения, а не только первое. Одиночный символ: добавляем
+lookbehind/lookahead для CJK-диапазона
+(`(?<![\u4e00-\u9fff\u3400-\u4dbf])X(?![\u4e00-\u9fff\u3400-\u4dbf])`),
+чтобы исключить ложные срабатывания на подстроках внутри больших
+иероглифных слов — «大» в «大学» не blank'ается. Защита: `escapeRegex`
+экранирует regex-метасимволы (`.*+?^${}()|[]\\`); пустая цель →
+`null` (защита от `replace('', x)` который вставил бы «____» между
+каждым символом). Trade-off: консервативный CJK-boundary отвергает
+некоторые валидные случаи (например, «好» в «他好» — слева CJK, не
+матчит). Это документировано в тесте; для полного решения
+понадобится pre-tokenized позиции из `ReadingTextWord` (будущий refactor,
+вне scope §28). Покрыто `tests.service.test.ts` (13 тестов на
+`findClozeExample`): multi-char точная последовательность;
+multi-char blank-ает все вхождения; single-char внутри CJK-слова
+не матчит (главный регресс-кейс); standalone at start матчит;
+между CJK не матчит (документированный trade-off); смешанный текст
+blank-ает только standalone; пропуск examples с substring;
+первый матч в порядке итерации; target отсутствует → null;
+пустая цель → null; regex-special chars экранируются; multi-char
+как префикс длинного слова blank-ает только префикс.
+
 ---
 
 ## 28. `findClozeExample` сабстринг- maternity + только первое вхождение

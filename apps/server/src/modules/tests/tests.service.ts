@@ -17,7 +17,13 @@ import { prisma } from '../../lib/prisma.js';
 import { getRedis } from '../../lib/redis.js';
 import { computeBreakdown, detectTone, gradeAnswer } from './tests.grading.js';
 
-export { computeBreakdown, detectTone, gradeAnswer, isAnswerCorrect, normalizePinyinAnswer } from './tests.grading.js';
+export {
+  computeBreakdown,
+  detectTone,
+  gradeAnswer,
+  isAnswerCorrect,
+  normalizePinyinAnswer,
+} from './tests.grading.js';
 
 const TEST_SESSION_TTL_SECONDS = 2 * 60 * 60; // 2 часа
 const TEST_SESSION_KEY = (id: string): string => `test:session:${id}`;
@@ -41,7 +47,14 @@ const QUESTION_TYPES: readonly TestQuestionType[] = [
   'cloze',
 ];
 
-interface WordRow {
+/**
+ * Диапазоны CJK ideographs: базовый блок U+4E00..U+9FFF и расширение A
+ * U+3400..U+4DBF. Используется как «word boundary» для одиночных
+ * иероглифов: чтобы не матчить одиночный «大» внутри «大学».
+ */
+const CJK_RANGE = '[\\u4e00-\\u9fff\\u3400-\\u4dbf]';
+
+export interface WordRow {
   id: string;
   character: string;
   pinyin: string;
@@ -78,8 +91,14 @@ function pickNUnique<T>(pool: readonly T[], exclude: ReadonlySet<unknown>, n: nu
 }
 
 /** Собрать иероглифы-дистракторы из других слов уровня. */
-function buildCharacterPool(target: WordRow, pool: readonly WordRow[]): string[] {
-  const seen = new Set<string>([target.character]);
+export function buildCharacterPool(target: WordRow, pool: readonly WordRow[]): string[] {
+  // `Array.from` разбивает target.character посимвольно, чтобы каждый
+  // иероглиф многосложного слова попал в `seen` отдельно. До фикса
+  // `Set([target.character])` хранил всю строку как ОДИН элемент, и
+  // `seen.has("你")` всегда возвращал false → целевые иероглифы
+  // утекали в пул distractors и тривиализировали character_assembly
+  // (PLAN_Features_v0.4 §27).
+  const seen = new Set<string>(Array.from(target.character));
   const candidates: string[] = [];
   for (const w of pool) {
     if (w.id === target.id) continue;
@@ -94,14 +113,37 @@ function buildCharacterPool(target: WordRow, pool: readonly WordRow[]): string[]
 }
 
 /** Найти в примерах предложение, содержащее иероглиф целиком. */
-function findClozeExample(word: WordRow): { exampleId: string; clozeSentence: string } | null {
+export function findClozeExample(word: WordRow): { exampleId: string; clozeSentence: string } | null {
+  const target = word.character;
+  if (Array.from(target).length === 0) return null;
+
+  // Многосимвольная цель: точное посимвольное совпадение всей
+  // последовательности (`new RegExp(escaped, 'gu')`); такой шаблон
+  // матчит каждое вхождение целиком и не тривиально путается с
+  // подстроками других слов. `replace` с флагом `g` blank'ает ВСЕ
+  // вхождения, а не только первое.
+  // Одиночный символ: добавляем CJK-lookbehind/lookahead, чтобы
+  // исключить ложные срабатывания на подстроках внутри больших
+  // иероглифных слов (`"大"` НЕ blank'ается в `"大学"`).
+  const escaped = escapeRegex(target);
+  const pattern =
+    Array.from(target).length === 1
+      ? `(?<!${CJK_RANGE})${escaped}(?!${CJK_RANGE})`
+      : escaped;
+  const re = new RegExp(pattern, 'gu');
+
   for (const ex of word.examples) {
-    if (ex.chinese.includes(word.character)) {
-      const clozeSentence = ex.chinese.replace(word.character, '____');
+    if (re.test(ex.chinese)) {
+      const clozeSentence = ex.chinese.replace(re, '____');
       return { exampleId: ex.id, clozeSentence };
     }
   }
   return null;
+}
+
+/** Экранирует спец-символы regex-литерала в `s`. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** Сгенерировать один вопрос по типу. Если тип неприменим (например, нет примера для cloze),
