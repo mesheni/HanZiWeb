@@ -2,11 +2,13 @@ import { useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download } from 'lucide-react';
-import type { WordListItem } from '@hanzi/shared';
+import type { PaginatedResponse, WordListItem } from '@hanzi/shared';
+import { apiGet } from '../api/client';
 import { useDashboard } from '../queries/stats';
 import { useRecentWords } from '../queries/words';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { getDb } from '../db/database';
+import { useToastStore } from '../stores/toastStore';
 import Badge from '../components/ui/Badge';
 import { PinyinDisplay } from '../utils/toneColors';
 
@@ -50,7 +52,8 @@ export default function HomeScreen() {
   // подтянутся автоматически.
   const { data: recentWordsData } = useRecentWords(5);
   const recentWords: WordListItem[] = recentWordsData ?? [];
-  const [dlState, setDlState] = useState<'idle' | 'loading' | 'done'>('idle');
+  const [dlState, setDlState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const addToast = useToastStore((s) => s.addToast);
 
   const handleDownloadOffline = async () => {
     setDlState('loading');
@@ -60,29 +63,28 @@ export default function HomeScreen() {
         setDlState('idle');
         return;
       }
-      const words: any[] = [];
+      const words: WordListItem[] = [];
       let offset = 0;
       const limit = 100;
 
       while (true) {
-        const res = await fetch(`/api/words?limit=${limit}&offset=${offset}`, {
-          credentials: 'include',
-        });
-        const json = await res.json();
-        const pageWords = json.data ?? [];
+        const result = await apiGet<PaginatedResponse<WordListItem>>(
+          `/words?limit=${limit}&offset=${offset}`,
+        );
+        const pageWords = result.data;
         words.push(...pageWords);
 
-        if (pageWords.length < limit || !json.pagination?.total) {
+        if (pageWords.length < limit || !result.pagination.total) {
           break;
         }
 
         offset += limit;
-        if (offset >= json.pagination.total) {
+        if (offset >= result.pagination.total) {
           break;
         }
       }
 
-      for (const w of words) {
+      for (const w of words as any[]) {
         await db.words.upsert({
           id: w.id,
           character: w.character,
@@ -98,8 +100,11 @@ export default function HomeScreen() {
       }
       setDlState('done');
       setTimeout(() => setDlState('idle'), 3000);
-    } catch {
-      setDlState('idle');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Не удалось скачать офлайн-пакет';
+      setDlState('error');
+      addToast(`Ошибка загрузки: ${message}`, 'error');
+      setTimeout(() => setDlState('idle'), 4000);
     }
   };
 
@@ -264,6 +269,7 @@ export default function HomeScreen() {
           {dlState === 'idle' && 'Скачать офлайн-пакет'}
           {dlState === 'loading' && 'Загрузка...'}
           {dlState === 'done' && 'Готово'}
+          {dlState === 'error' && 'Ошибка — нажмите, чтобы повторить'}
         </button>
       )}
 
