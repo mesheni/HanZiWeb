@@ -43,7 +43,10 @@ export default function MultipleChoiceCard({
     setSelectedId(option.id);
     setStates({
       [option.id]: isCorrect ? 'correct' : 'wrong',
-      [word.id]: isCorrect ? 'correct' : 'correct',
+      // Правильный ответ всегда подсвечивается зелёным — независимо от того,
+      // выбрал его пользователь или нет. Раньше тут был копи-паста-тернарник
+      // `isCorrect ? 'correct' : 'correct'` (PLAN_Features_v0.4 §19).
+      [word.id]: 'correct',
     });
     // Вызываем onAnswer сразу — StudyScreen покажет feedback и
     // дождётся нажатия "Продолжить" прежде чем rateCard.
