@@ -169,12 +169,15 @@ export default function Flashcard({
             </div>
           )}
 
-          {/* Кнопка "Потренировать написание" */}
+          {/* Кнопка "Потренировать написание".
+              Используем displayedWord (замороженное на back-face), а не word —
+              иначе во время flip-анимации пользователь увидит перевод старого
+              слова, а URL поведёт на иероглиф нового. См. PLAN_Features_v0.4 §15. */}
           <button
             className="flashcard-practice-btn"
             onClick={(e) => {
               e.stopPropagation();
-              const path = `/handwriting?char=${encodeURIComponent(word.character)}&pinyin=${encodeURIComponent(word.pinyin)}&translation=${encodeURIComponent(word.translation)}`;
+              const path = `/handwriting?char=${encodeURIComponent(displayedWord.character)}&pinyin=${encodeURIComponent(displayedWord.pinyin)}&translation=${encodeURIComponent(displayedWord.translation)}`;
               navigate(path);
             }}
             aria-label="Потренировать написание"
