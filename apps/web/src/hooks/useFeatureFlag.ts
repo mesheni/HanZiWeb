@@ -80,13 +80,20 @@ export function usePracticeTypes(): PracticeTypeInfo[] {
   // Один exposure-событие на flagKey за время жизни компонента.
   // Используем useEffect, чтобы не дёргать `track(...)` во время рендера
   // (важно для React.StrictMode: effect'ы вызываются после коммита).
+  //
+  // Deps: только `[evaluated, isLoading]`. `visible` намеренно НЕ в deps —
+  // это новый array ref каждый рендер (см. PLAN_Features_v0.4 §17).
+  // Внутри итерируем стабильный `PRACTICE_TYPES` и проверяем `enabled`
+  // тем же выражением, что формирует `visible`.
   const exposedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (isLoading || !evaluated) return;
-    for (const p of visible) {
+    for (const p of PRACTICE_TYPES) {
       const flagKey = practiceFlagKey(p.id);
       if (exposedRef.current.has(flagKey)) continue;
       const evaluation = evaluated[flagKey];
+      const enabled = evaluation?.enabled ?? true;
+      if (!enabled) continue;
       trackExperimentExposed({
         flagKey,
         enabled: true,
@@ -94,7 +101,7 @@ export function usePracticeTypes(): PracticeTypeInfo[] {
       });
       exposedRef.current.add(flagKey);
     }
-  }, [visible, evaluated, isLoading]);
+  }, [evaluated, isLoading]);
 
   return visible;
 }
