@@ -6,6 +6,34 @@ interface RequestOptions extends Omit<RequestInit, 'headers'> {
   headers?: Record<string, string>;
 }
 
+// Сериализует вызовы /api/auth/refresh при N конкурентных 401
+// (PLAN_Features_v0.4 #9). Без этого каждый запрос независимо шлёт
+// refresh, сервер ротирует refresh-куку, успевает только первый —
+// остальные падают в onSessionExpired → каскадный logout.
+let refreshPromise: Promise<string | null> | null = null;
+
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    const doRefresh = async (): Promise<string | null> => {
+      const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!refreshRes.ok) return null;
+      const data = await refreshRes.json();
+      const newToken: string | undefined = data.data?.accessToken;
+      if (newToken) {
+        useAuthStore.getState().setAccessToken(newToken);
+      }
+      return newToken ?? null;
+    };
+    refreshPromise = doRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
 /**
  * API-клиент: обёртка над fetch с авто-прикреплением токена
  * и обработкой 401 (refresh → retry). Если refresh не помог —
@@ -13,7 +41,7 @@ interface RequestOptions extends Omit<RequestInit, 'headers'> {
  * попытку silent refresh перед logout (PLAN_Features_v0.3 §15).
  */
 export async function apiClient<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { accessToken, setAccessToken, onSessionExpired } = useAuthStore.getState();
+  const { accessToken, onSessionExpired } = useAuthStore.getState();
 
   const headers: Record<string, string> = {
     ...options.headers,
@@ -33,27 +61,17 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
 
   let res = await doFetch();
 
-  // 401 → пробуем refresh
   if (res.status === 401 && accessToken) {
-    const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-
-    if (refreshRes.ok) {
-      const data = await refreshRes.json();
-      const newToken = data.data?.accessToken;
-      if (newToken) {
-        setAccessToken(newToken);
-        headers['Authorization'] = `Bearer ${newToken}`;
-        res = await doFetch();
-      }
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      res = await doFetch();
     } else {
       const recovered = await onSessionExpired();
       if (recovered) {
-        const newToken = useAuthStore.getState().accessToken;
-        if (newToken) {
-          headers['Authorization'] = `Bearer ${newToken}`;
+        const recoveredToken = useAuthStore.getState().accessToken;
+        if (recoveredToken) {
+          headers['Authorization'] = `Bearer ${recoveredToken}`;
           res = await doFetch();
         }
       }
@@ -124,7 +142,7 @@ export function apiDelete<T>(path: string): Promise<T> {
  * (PLAN_Features_v0.3 §15).
  */
 export async function apiGetBlob(path: string): Promise<Blob> {
-  const { accessToken, setAccessToken, onSessionExpired } = useAuthStore.getState();
+  const { accessToken, onSessionExpired } = useAuthStore.getState();
 
   const headers: Record<string, string> = {};
   if (accessToken) {
@@ -137,24 +155,16 @@ export async function apiGetBlob(path: string): Promise<Blob> {
   let res = await doFetch();
 
   if (res.status === 401 && accessToken) {
-    const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    if (refreshRes.ok) {
-      const data = await refreshRes.json();
-      const newToken = data.data?.accessToken;
-      if (newToken) {
-        setAccessToken(newToken);
-        headers['Authorization'] = `Bearer ${newToken}`;
-        res = await doFetch();
-      }
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers['Authorization'] = `Bearer ${newToken}`;
+      res = await doFetch();
     } else {
       const recovered = await onSessionExpired();
       if (recovered) {
-        const newToken = useAuthStore.getState().accessToken;
-        if (newToken) {
-          headers['Authorization'] = `Bearer ${newToken}`;
+        const recoveredToken = useAuthStore.getState().accessToken;
+        if (recoveredToken) {
+          headers['Authorization'] = `Bearer ${recoveredToken}`;
           res = await doFetch();
         }
       }
