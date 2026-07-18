@@ -42,9 +42,7 @@ export default function TestQuestionCard({
         <span className="test-question-type">{typeLabel(question.type)}</span>
       </div>
 
-      <div className="test-question-body">
-        {renderBody(question, onAnswer)}
-      </div>
+      <div className="test-question-body">{renderBody(question, onAnswer)}</div>
     </div>
   );
 }
@@ -66,10 +64,7 @@ function typeLabel(type: TestQuestion['type']): string {
   }
 }
 
-function renderBody(
-  question: TestQuestion,
-  onAnswer: (answer: string) => void,
-): JSX.Element {
+function renderBody(question: TestQuestion, onAnswer: (answer: string) => void): JSX.Element {
   switch (question.type) {
     case 'multiple-choice-translation':
       return <MultipleChoiceBody question={question} onAnswer={onAnswer} />;
@@ -95,7 +90,16 @@ function MultipleChoiceBody({
   return (
     <>
       <div className="test-question-cue">Выбери правильный перевод</div>
-      <div className="practice-card-character">{question.wordCharacter}</div>
+      <div className="test-question-character-wrap">
+        <div className="test-question-pinyin">{question.wordPinyin}</div>
+        <div className="test-question-translation">{question.wordTranslation}</div>
+        <div
+          className="test-question-character"
+          title={`${question.wordPinyin} — ${question.wordTranslation}`}
+        >
+          {question.wordCharacter}
+        </div>
+      </div>
       <div className="test-question-options">
         {question.options.map((opt) => (
           <button
@@ -121,7 +125,16 @@ function ReverseChoiceBody({
   return (
     <>
       <div className="test-question-cue">Выбери правильный иероглиф</div>
-      <div className="practice-card-translation">{question.wordTranslation}</div>
+      <div className="test-question-character-wrap">
+        <div className="test-question-pinyin">{question.wordPinyin}</div>
+        <div
+          className="test-question-character"
+          title={`${question.wordPinyin} — ${question.wordTranslation}`}
+        >
+          {question.wordCharacter}
+        </div>
+        <div className="test-question-translation">{question.wordTranslation}</div>
+      </div>
       <div className="test-question-options test-question-options--chars">
         {question.options.map((opt) => (
           <button
@@ -161,8 +174,16 @@ function PinyinInputBody({
   return (
     <>
       <div className="test-question-cue">Набери пиньинь</div>
-      <div className="practice-card-character">{question.wordCharacter}</div>
-      <div className="practice-card-hint">{question.wordTranslation}</div>
+      <div className="test-question-character-wrap">
+        <div className="test-question-pinyin">{question.wordPinyin}</div>
+        <div
+          className="test-question-character"
+          title={`${question.wordPinyin} — ${question.wordTranslation}`}
+        >
+          {question.wordCharacter}
+        </div>
+        <div className="test-question-translation">{question.wordTranslation}</div>
+      </div>
       <div className="practice-input-wrap">
         <input
           ref={inputRef}
@@ -182,12 +203,7 @@ function PinyinInputBody({
             }
           }}
         />
-        <button
-          type="button"
-          className="practice-submit"
-          onClick={submit}
-          disabled={!value.trim()}
-        >
+        <button type="button" className="practice-submit" onClick={submit} disabled={!value.trim()}>
           Дальше
         </button>
       </div>
@@ -228,6 +244,15 @@ function ToneRecognitionBody({
   return (
     <>
       <div className="test-question-cue">Какой тон?</div>
+      <div className="test-question-character-wrap">
+        <div className="test-question-pinyin">{question.wordPinyin}</div>
+        <div
+          className="test-question-character"
+          title={`${question.wordPinyin} — ${question.wordTranslation}`}
+        >
+          {question.wordCharacter}
+        </div>
+      </div>
       <button
         type="button"
         className="practice-tone-audio"
@@ -248,13 +273,21 @@ function ToneRecognitionBody({
               onClick={() => choose(tone as 1 | 2 | 3 | 4)}
               disabled={selected !== null}
               style={{
-                borderColor: isPicked ? TONE_COLORS[tone as 1 | 2 | 3 | 4] : `${TONE_COLORS[tone as 1 | 2 | 3 | 4]}55`,
+                borderColor: isPicked
+                  ? TONE_COLORS[tone as 1 | 2 | 3 | 4]
+                  : `${TONE_COLORS[tone as 1 | 2 | 3 | 4]}55`,
               }}
             >
-              <span className="practice-tone-number" style={{ color: TONE_COLORS[tone as 1 | 2 | 3 | 4] }}>
+              <span
+                className="practice-tone-number"
+                style={{ color: TONE_COLORS[tone as 1 | 2 | 3 | 4] }}
+              >
                 {tone}
               </span>
-              <span className="practice-tone-mark" style={{ color: TONE_COLORS[tone as 1 | 2 | 3 | 4] }}>
+              <span
+                className="practice-tone-mark"
+                style={{ color: TONE_COLORS[tone as 1 | 2 | 3 | 4] }}
+              >
                 {(['ā', 'á', 'ǎ', 'à'] as const)[tone - 1]}
               </span>
             </button>
@@ -306,7 +339,15 @@ function CharacterAssemblyBody({
   return (
     <>
       <div className="test-question-cue">Собери иероглифы в правильном порядке</div>
-      <div className="practice-card-translation">{question.wordTranslation}</div>
+      <div className="test-question-character-wrap">
+        <div className="test-question-pinyin">{question.wordPinyin}</div>
+        <div
+          className="test-question-translation"
+          title={`${question.wordPinyin} — ${question.wordTranslation}`}
+        >
+          {question.wordTranslation}
+        </div>
+      </div>
 
       <div className="test-question-slots">
         {Array.from({ length: totalSlots }).map((_, i) => {
@@ -338,12 +379,7 @@ function CharacterAssemblyBody({
         ))}
       </div>
 
-      <button
-        type="button"
-        className="practice-submit"
-        onClick={submit}
-        disabled={!finished}
-      >
+      <button type="button" className="practice-submit" onClick={submit} disabled={!finished}>
         Дальше
       </button>
     </>
@@ -352,16 +388,22 @@ function CharacterAssemblyBody({
 
 /* ─── Cloze (вставка пропуска выбором) ──────────────────────────────── */
 
-function ClozeBody({
-  question,
-  onAnswer,
-}: Pick<TestQuestionCardProps, 'question' | 'onAnswer'>) {
+function ClozeBody({ question, onAnswer }: Pick<TestQuestionCardProps, 'question' | 'onAnswer'>) {
   const sentence = question.clozeSentence ?? '';
   const parts = sentence.split('____');
 
   return (
     <>
       <div className="test-question-cue">Вставь пропущенное слово</div>
+      <div className="test-question-character-wrap">
+        <div className="test-question-pinyin">{question.wordPinyin}</div>
+        <div
+          className="test-question-translation"
+          title={`${question.wordPinyin} — ${question.wordTranslation}`}
+        >
+          {question.wordTranslation}
+        </div>
+      </div>
       <div className="cloze-sentence">
         <span>{parts[0]}</span>
         <span className="cloze-blank">____</span>
