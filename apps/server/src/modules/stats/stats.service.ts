@@ -489,23 +489,39 @@ export async function resetProgress(userId: string) {
 }
 
 export async function getActivityData(userId: string, year: number, month?: number) {
-  const startDate = new Date(Date.UTC(year, 0, 1));
-  const endDate = month
-    ? new Date(Date.UTC(year, month, 0, 23, 59, 59))
-    : new Date(Date.UTC(year, 11, 31, 23, 59, 59));
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { timezone: true },
+  });
+  const timezone = user?.timezone ?? 'UTC';
+
+  // Окно выборки строим по локальному календарю пользователя. Для
+  // пользователя в Europe/Moscow год 2026 начинается в 2025-12-31T21:00Z
+  // и заканчивается в 2027-01-01T00:00Z — фиксированный «календарный»
+  // год в UTC обрезал бы ответы за 00:00..02:59 локального 1 января
+  // (PLAN_Features_v0.4 §25). Аналогично для месяца: конец июля = 1 августа.
+  const startLocal = new Date(Date.UTC(year, 0, 1));
+  const endLocalYear = month ? year : year + 1;
+  // month=7 → конец июля = 1 августа → endLocalMonth=8. Date.UTC
+  // нормализует month=12 → январь следующего года, так что переполнение
+  // через 12 безопасно.
+  const endLocalMonth = month ? month + 1 : 1;
+  const endLocal = new Date(Date.UTC(endLocalYear, endLocalMonth - 1, 1));
+  const startDate = localMidnightUtc(startLocal, timezone);
+  const endDate = localMidnightUtc(endLocal, timezone);
 
   const answers = await prisma.sessionAnswer.findMany({
     where: {
       session: { userId },
-      answeredAt: { gte: startDate, lte: endDate },
+      answeredAt: { gte: startDate, lt: endDate },
     },
     select: { answeredAt: true },
   });
 
-  // Группируем по дням
+  // Группируем по локальным дням пользователя (а не UTC).
   const activityMap = new Map<string, number>();
   for (const a of answers) {
-    const date = a.answeredAt.toISOString().slice(0, 10);
+    const date = getLocalDayKey(a.answeredAt, timezone);
     activityMap.set(date, (activityMap.get(date) ?? 0) + 1);
   }
 

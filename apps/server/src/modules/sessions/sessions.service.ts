@@ -361,32 +361,38 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   const newDueDate = new Date();
   newDueDate.setDate(newDueDate.getDate() + intervalDays);
 
-  // Обновляем прогресс
-  await prisma.userWordProgress.update({
-    where: { userId_wordId: { userId, wordId: input.wordId } },
-    data: {
-      state: newState,
-      stability: newStability,
-      difficulty: newDifficulty,
-      reps: { increment: 1 },
-      dueDate: newDueDate,
-      lastReviewDate: new Date(),
-    },
-  });
+  // Шаги 1-3 (прогресс слова + ответ в сессии + счётчик сессии)
+  // обязаны коммититься атомарно. До фикса это были четыре независимых
+  // `await`: падение `sessionAnswer.create` оставляло `UserWordProgress`
+  // уже изменённым, а `Session.cardsCompleted` — без записи ответа
+  // (PLAN_Features_v0.4 §26). `xp` (User.update) оставлен вне — он
+  // инкрементный, идемпотентный на уровне строки, и при сбое основной
+  // транзакции его отсутствие лишь «не награждает» пользователя.
+  await prisma.$transaction(async (tx) => {
+    await tx.userWordProgress.update({
+      where: { userId_wordId: { userId, wordId: input.wordId } },
+      data: {
+        state: newState,
+        stability: newStability,
+        difficulty: newDifficulty,
+        reps: { increment: 1 },
+        dueDate: newDueDate,
+        lastReviewDate: new Date(),
+      },
+    });
 
-  // Записываем ответ в сессию
-  await prisma.sessionAnswer.create({
-    data: {
-      sessionId: input.sessionId,
-      wordId: input.wordId,
-      rating: input.rating,
-    },
-  });
+    await tx.sessionAnswer.create({
+      data: {
+        sessionId: input.sessionId,
+        wordId: input.wordId,
+        rating: input.rating,
+      },
+    });
 
-  // Обновляем прогресс сессии
-  await prisma.session.update({
-    where: { id: input.sessionId },
-    data: { cardsCompleted: { increment: 1 } },
+    await tx.session.update({
+      where: { id: input.sessionId },
+      data: { cardsCompleted: { increment: 1 } },
+    });
   });
 
   // Начисляем XP
