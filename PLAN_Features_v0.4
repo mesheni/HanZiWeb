@@ -436,6 +436,25 @@ function getRefreshedToken() {
 
 **Ожидаемый результат**: Конкурентные 401 делают ровно один refresh.
 
+**Статус**: ✅ Выполнено
+
+**Что сделано**:
+- `apps/web/src/api/client.ts:13-35` — модульный singleton `refreshPromise`
+  и хелпер `refreshAccessToken()`. Первый вызов создаёт in-flight
+  `Promise<string | null>` через `doRefresh()`; все последующие вызовы
+  до его резолва ждут тот же промис. После резолва (успех/ошибка)
+  `finally` сбрасывает `refreshPromise = null`, чтобы следующий
+  раунд 401 мог инициировать новый refresh.
+- `apps/web/src/api/client.ts:64-82` (`apiClient`) и `:157-175` (`apiGetBlob`)
+  — заменён инлайн `fetch('/api/auth/refresh')` на `await refreshAccessToken()`.
+  Дубликат логики в `apiGetBlob` (раньше копипастил refresh+retry) теперь
+  разделяет общий промис с `apiClient` — N конкурентных 401 шлют ровно
+  один `POST /api/auth/refresh`. Если он вернул токен — retry с новым
+  заголовком; иначе — старый fallback `onSessionExpired()` (silent refresh
+  → logout) по `PLAN_Features_v0.3 §15`.
+- `setAccessToken` убран из деструктуризации `useAuthStore` в обоих
+  функциях — теперь его вызывает `doRefresh()` внутри хелпера.
+
 ---
 
 ## 10. «Скачать офлайн-пакет» на HomeScreen тихо фейлит через 401
