@@ -17,9 +17,11 @@
         "backgroundColor": "#0C0E16"
       }
     },
-    "plugins": [
-      "expo-secure-store"
-    ],
+    "plugins": ["expo-secure-store"],
+    "splash": {
+      "backgroundColor": "#0C0E16",
+      "resizeMode": "contain"
+    },
     "extra": {
       "apiUrl": "https://api.hanzi.example.com"
     }

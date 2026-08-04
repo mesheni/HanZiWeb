@@ -10,6 +10,7 @@
 import NetInfo from '@react-native-community/netinfo';
 import { MMKV } from 'react-native-mmkv';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 import {
   ApiClient,
   SyncEngine,
@@ -92,12 +93,19 @@ const tokenStore = createDefaultTokenStore();
 setTokenStore(tokenStore);
 
 /**
- * Base URL of the HanZiWeb REST API. Reads from `process.env.EXPO_PUBLIC_API_URL`
- * (set at build time by Expo's Metro bundler). Falls back to the
- * public production endpoint so the bundle is never broken in dev.
+ * Base URL of the HanZiWeb REST API. Resolution order (PLAN_Features_v0.4 §54):
+ * 1. `process.env.EXPO_PUBLIC_API_URL` — dev override через `.env`
+ *    (см. `apps/mobile/.env.example`), подставляется Metro'ом на
+ *    старте/сборке;
+ * 2. `app.json#extra.apiUrl` — дефолт приложения (prod), читается через
+ *    `Constants.expoConfig`;
+ * 3. хардкод-фолбэк, чтобы бандл никогда не был без baseUrl.
+ * Раньше пункт 2 игнорировался — код дублировал хардкод вместо
+ * реального чтения `extra.apiUrl`.
  */
 const apiBaseUrl =
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ||
+  Constants.expoConfig?.extra?.apiUrl ||
   'https://api.hanzi.example.com';
 
 const doRefresh = async (): Promise<AuthResponse | null> => {
