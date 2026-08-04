@@ -6,6 +6,7 @@ import {
   getTokenStore,
   readPersistedAccessToken,
 } from './TokenStore';
+import { getSecureStorage } from '../storage/SecureStorage';
 
 export interface AuthUser {
   id: string;
@@ -52,9 +53,17 @@ export const createAuthStore = () =>
       if (accessToken) {
         // Mirror into SecureStorage so a hard reload can hydrate.
         // (applyAuthResponse does the same on the happy path.)
-        import('../storage/SecureStorage').then(({ getSecureStorage }) => {
+        //
+        // Persist СИНХРОННО: fire-and-forget dynamic import раньше не
+        // await'ился — следующий readPersistedAccessToken() (hydrateAuth
+        // на перезапуске) мог прочитать старый токен, а на RN
+        // динамический import мог упасть без catch
+        // (PLAN_Features_v0.4 §52).
+        try {
           getSecureStorage().setItem('hanzi:auth:access', accessToken);
-        });
+        } catch {
+          // Хранилище не зарегистрировано — токен живёт в памяти.
+        }
       }
       set({ accessToken });
     },

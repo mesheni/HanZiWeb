@@ -1853,6 +1853,19 @@ import может упасть; `.catch` нет → unhandled promise warning.
 
 **Ожидаемый результат**: Persist окончен до чтения persisted-токена.
 
+**Статус**: ✅ Исправлено — `packages/mobile-sdk/src/auth/AuthStore.ts`:
+fire-and-forget dynamic import заменён на статический импорт
+`getSecureStorage` (module-load ссылка) и **синхронный** persist внутри
+`setAccessToken` (try/catch — при незарегистрированном хранилище токен
+живёт в памяти). Гонка устранена: к моменту возврата из
+`setAccessToken`/`login` значение уже в SecureStorage, и
+`readPersistedAccessToken()` на следующем hydrateAuth не может прочитать
+старый токен. Unhandled promise rejection больше не возникает (нет
+promise). Покрытие: новый `AuthStore.test.ts` — «persists the access
+token synchronously on setAccessToken — no race with hydrateAuth» и
+«login persists the access token before returning» (getItem сразу после
+вызова = токен). mobile-sdk vitest 36/36.
+
 ---
 
 ## 53. `bootstrapNetInfoAdapter.subscribe` не заcевает initial state
@@ -1870,6 +1883,17 @@ flush на холодном старте может ошибиться в обе
 Boolean(s.isConnected); });` — best-effort seed.
 
 **Ожидаемый результат**: Статус сети известен сразу после boot.
+
+**Статус**: ✅ Исправлено — `apps/mobile/src/bootstrap.ts`:
+`subscribe()` адаптера дополнительно делает best-effort seed текущего
+состояния — `NetInfo.fetch().then(s => { cachedOnline =
+Boolean(s.isConnected); listener(cachedOnline); })` с `.catch(() => {})`
+при каждой подписке (SyncEngine.start() подписывается первым — кэш
+обновляется сразу). Повторный listener-вызов идемпотентен. Module-level
+seed из §44 (`NetInfo.fetch()` при создании адаптера) сохранён для
+случаев, когда isOnline() читается до подписки. Между boot и первым
+событием по-прежнему считаем «онлайн» (безопаснее для flush при живом
+коннекте).
 
 ---
 

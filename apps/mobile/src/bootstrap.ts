@@ -61,6 +61,17 @@ const netInfoAdapter: NetworkAdapter = {
       cachedOnline = Boolean(state.isConnected);
       listener(cachedOnline);
     });
+    // Best-effort seed текущего состояния (PLAN_Features_v0.4 §53):
+    // некоторые версии NetInfo не стреляют addEventListener сразу с
+    // актуальным состоянием, а SyncEngine.start() читает isOnline()
+    // в момент подписки. Дёргаем fetch при подписке — кэш обновляется
+    // как можно раньше; повторный listener-вызов идемпотентен.
+    NetInfo.fetch()
+      .then((s) => {
+        cachedOnline = Boolean(s.isConnected);
+        listener(cachedOnline);
+      })
+      .catch(() => {});
     return () => sub();
   },
 };
