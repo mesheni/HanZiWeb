@@ -1133,6 +1133,19 @@ cross-origin, но Safari/старые могут пропустить, и ст�
 
 **Ожидаемый результат**: Misconfig ловится на старте.
 
+**Статус**: ✅ Исправлено — `config.ts` + `index.ts`. В `envSchema`
+`CORS_ORIGIN` получил `.refine((v) => v.trim() !== '*', 'CORS_ORIGIN
+cannot be * with credentials: true')` — misconfig падает в `loadConfig`
+на старте (схема экспортирована для тестов). Регистрация CORS
+переведена на function-form: `origin: (origin, cb) => !origin ?
+cb(null, true) : cb(null, allowedOrigins.includes(origin))`, где
+`allowedOrigins = getAllowedOrigins(config)` — новый helper, парсящий
+comma-separated `CORS_ORIGIN` (trim + отброс пустых, по аналогии с
+`getAllowedEmailTlds`). Запросы без Origin (mobile SDK ApiClient, curl)
+пропускаются — это не CORS-сценарий и раньше не блокировались.
+Покрыто `config.test.ts` (5 тестов): reject `*` и ` * `, accept
+одиночный origin и список, парсинг списка в `getAllowedOrigins`.
+
 ---
 
 ## 33. `startSession` грузит ВСЕ `UserWordProgress` юзера каждый запрос
@@ -1151,6 +1164,18 @@ Word.findMany({ where: { NOT: { progress: { some: { userId } } } }, ... })
 ```
 
 **Ожидаемый результат**: Старт сессии не зависит от размера прогресса.
+
+**Статус**: ✅ Исправлено — `sessions.service.ts` (`startSession`).
+Блок `existingWordIds`/`excludeIds` (полная выгрузка `wordId` всех
+прогрессов юзера + `notIn`-массив) заменён на коррелированный
+subquery в `Word.findMany`:
+`NOT: { progress: { some: { userId } } }` — Postgres сам исключает
+слова с записью прогресса, память и query-plan не зависят от размера
+колоды. Приоритетные слова исключаются тем же путём: `loadPriorityCards`
+создаёт им прогресс до этого запроса. Покрыто `sessions.fresh.test.ts`
+(1 тест): слово с прогрессом не возвращается в learn-сессии, слово
+без прогресса (второе по `createdAt` того же HSK-уровня) попадает;
+существующие `sessions.priority.test.ts` (2) зелёные без изменений.
 
 ---
 

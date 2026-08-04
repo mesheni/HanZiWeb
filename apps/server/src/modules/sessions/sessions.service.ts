@@ -59,10 +59,7 @@ async function getUnlockedHskLevel(userId: string): Promise<number | null> {
   return null;
 }
 
-async function loadPriorityCards(
-  userId: string,
-  cardLimit: number,
-): Promise<ProgressWithWord[]> {
+async function loadPriorityCards(userId: string, cardLimit: number): Promise<ProgressWithWord[]> {
   const priorities = await prisma.userWordPriority.findMany({
     where: { userId },
     orderBy: { addedAt: 'asc' },
@@ -148,9 +145,7 @@ export async function startSession(userId: string, input: StartSession) {
 
   // Приоритетные слова из вкладки «Чтение» — идут первыми.
   const priorityCards =
-    input.includePriority !== false
-      ? await loadPriorityCards(userId, input.cardLimit)
-      : [];
+    input.includePriority !== false ? await loadPriorityCards(userId, input.cardLimit) : [];
   const priorityWordIds = new Set(priorityCards.map((p) => p.wordId));
   const remainingLimit = Math.max(0, input.cardLimit - priorityCards.length);
 
@@ -186,25 +181,20 @@ export async function startSession(userId: string, input: StartSession) {
   let newWords: ProgressWithWord[] = [];
 
   if (newWordsNeeded > 0 && (input.includeNew || mode === 'learn')) {
-    // Ищем слова, для которых у пользователя нет прогресса
-    const existingWordIds = await prisma.userWordProgress.findMany({
-      where: { userId },
-      select: { wordId: true },
-    });
-    const excludeIds = [
-      ...existingWordIds.map((p: { wordId: string }) => p.wordId),
-      ...priorityWordIds,
-    ];
-
     const wordWhere = intersectWordWithTagFilter(
       buildWordWhereForFilters(filters, deckWhere),
       tagFilteredWordIds,
     );
 
+    // Коррелированный subquery вместо загрузки ВСЕХ id прогресса юзера
+    // в память и `notIn`-массива из тысяч элементов (PLAN_Features_v0.4
+    // §33): Postgres сам исключает слова, у которых есть запись
+    // прогресса. Приоритетные слова уже имеют прогресс (создан в
+    // loadPriorityCards), поэтому попадают под то же исключение.
     const freshWords = await prisma.word.findMany({
       where: {
-        id: { notIn: excludeIds },
         ...wordWhere,
+        NOT: { progress: { some: { userId } } },
       },
       include: { examples: true, tags: { include: { tag: true } } },
       orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],

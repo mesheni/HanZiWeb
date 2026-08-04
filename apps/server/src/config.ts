@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const envSchema = z.object({
+export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
@@ -21,7 +21,14 @@ const envSchema = z.object({
   // Блокировка срабатывает на (MAX + 1)-й попытке, т.е. >3 за минуту.
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(3),
   LOGIN_RATE_LIMIT_WINDOW_SEC: z.coerce.number().int().positive().default(60),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  // CORS_ORIGIN может быть списком через запятую. `*` запрещён: сервер
+  // работает с credentials: true (refresh-токен в httpOnly cookie), а
+  // `Access-Control-Allow-Origin: *` + credentials браузеры отвергают —
+  // такой misconfig ловим на старте (PLAN_Features_v0.4 §32).
+  CORS_ORIGIN: z
+    .string()
+    .refine((v) => v.trim() !== '*', 'CORS_ORIGIN cannot be * with credentials: true')
+    .default('http://localhost:5173'),
   // Публичный origin web-клиента (для редиректа после OAuth).
   // По умолчанию совпадает с CORS_ORIGIN.
   WEB_PUBLIC_URL: z.string().optional(),
@@ -97,6 +104,19 @@ export function loadConfig(): Config {
 /** Публичный origin web-клиента для редиректов после OAuth. */
 export function getWebPublicUrl(cfg: Config = loadConfig()): string {
   return cfg.WEB_PUBLIC_URL ?? cfg.CORS_ORIGIN;
+}
+
+/**
+ * Список разрешённых CORS-ориджинов (PLAN_Features_v0.4 §32).
+ * Парсит comma-separated `CORS_ORIGIN`, тримит пробелы, отбрасывает пустые.
+ * Используется в function-form `origin` @fastify/cors: браузерный запрос
+ * пропускается, только если его Origin есть в списке; запросы без Origin
+ * (mobile SDK, curl) — не CORS-сценарий и пропускаются.
+ */
+export function getAllowedOrigins(cfg: Config = loadConfig()): string[] {
+  return cfg.CORS_ORIGIN.split(',')
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0);
 }
 
 /**
