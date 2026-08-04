@@ -45,15 +45,24 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
   fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
     const authHeader = request.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
-      return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing access token' } });
+      return reply
+        .status(401)
+        .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing access token' } });
     }
 
     const token = authHeader.slice(7);
     let payload: JwtPayload;
     try {
-      payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as JwtPayload;
+      payload = jwt.verify(token, config.JWT_ACCESS_SECRET, {
+        algorithms: ['HS256'],
+      }) as JwtPayload;
     } catch {
-      return reply.status(401).send({ success: false, error: { code: 'TOKEN_EXPIRED', message: 'Access token expired or invalid' } });
+      return reply
+        .status(401)
+        .send({
+          success: false,
+          error: { code: 'TOKEN_EXPIRED', message: 'Access token expired or invalid' },
+        });
     }
     request.userId = payload.userId;
 
@@ -77,29 +86,41 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
       select: { passwordVersion: true, role: true },
     });
     if (!user) {
-      return reply.status(401).send({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+      return reply
+        .status(401)
+        .send({ success: false, error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
     }
     if (user.passwordVersion !== tokenPv) {
-      return reply.status(401).send({ success: false, error: { code: 'TOKEN_EXPIRED', message: 'Password was changed — please sign in again' } });
+      return reply
+        .status(401)
+        .send({
+          success: false,
+          error: { code: 'TOKEN_EXPIRED', message: 'Password was changed — please sign in again' },
+        });
     }
     request.userRole = user.role;
   });
 
-  fastify.decorate('authenticateOptional', async function (request: FastifyRequest, _reply: FastifyReply) {
-    const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) return;
+  fastify.decorate(
+    'authenticateOptional',
+    async function (request: FastifyRequest, _reply: FastifyReply) {
+      const authHeader = request.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return;
 
-    const token = authHeader.slice(7);
-    try {
-      const payload = jwt.verify(token, config.JWT_ACCESS_SECRET) as JwtPayload;
-      // Для optional-варианта pv-проверку не делаем: если токен
-      // просрочен по pv, мы просто оставляем request.userId = ''
-      // и не считаем пользователя залогиненным.
-      request.userId = payload.userId;
-    } catch {
-      // token invalid or expired — proceed without userId
-    }
-  });
+      const token = authHeader.slice(7);
+      try {
+        const payload = jwt.verify(token, config.JWT_ACCESS_SECRET, {
+          algorithms: ['HS256'],
+        }) as JwtPayload;
+        // Для optional-варианта pv-проверку не делаем: если токен
+        // просрочен по pv, мы просто оставляем request.userId = ''
+        // и не считаем пользователя залогиненным.
+        request.userId = payload.userId;
+      } catch {
+        // token invalid or expired — proceed without userId
+      }
+    },
+  );
 
   fastify.decorate('requireAdmin', async function (request: FastifyRequest, reply: FastifyReply) {
     if (request.userRole !== 'ADMIN') {

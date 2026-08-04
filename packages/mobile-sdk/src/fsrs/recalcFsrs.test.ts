@@ -44,6 +44,18 @@ describe('recalcFsrs', () => {
     expect(out.newStability).toBeGreaterThanOrEqual(0.01);
   });
 
+  it('elapsed days change retrievability: late reviews grow stability more (PLAN_Features_v0.4 §35)', () => {
+    const onTime = recalcFsrs(3, 10, 0.5, 'review', 10);
+    const late = recalcFsrs(3, 10, 0.5, 'review', 20);
+    expect(late.newStability).toBeGreaterThan(onTime.newStability);
+  });
+
+  it('default elapsed = stability keeps legacy behavior (R = 0.9)', () => {
+    const legacy = recalcFsrs(3, 10, 0.5, 'review');
+    const onTime = recalcFsrs(3, 10, 0.5, 'review', 10);
+    expect(legacy.newStability).toBe(onTime.newStability);
+  });
+
   it('RATING_XP matches the server-side constant', () => {
     expect(RATING_XP).toEqual({ 1: 0, 2: 1, 3: 3, 4: 5 });
   });

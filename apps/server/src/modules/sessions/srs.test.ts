@@ -153,6 +153,39 @@ describe('FSRS recalcFsrs (v5)', () => {
     });
   });
 
+  // ── Retrievability / elapsed days (PLAN_Features_v0.4 §35) ────────
+
+  describe('retrievability depends on elapsed days', () => {
+    it('on-time review (elapsed = stability) keeps R = 0.9 — same as legacy default', () => {
+      const onTime = recalcFsrs(good, 10, 0.5, 'review', 10);
+      const legacy = recalcFsrs(good, 10, 0.5, 'review');
+      expect(onTime.newStability).toBe(legacy.newStability);
+    });
+
+    it('late review (elapsed > stability) lowers R and boosts stability growth', () => {
+      const onTime = recalcFsrs(good, 10, 0.5, 'review', 10);
+      const late = recalcFsrs(good, 10, 0.5, 'review', 20);
+      expect(late.newStability).toBeGreaterThan(onTime.newStability);
+    });
+
+    it('early review (elapsed < stability) raises R and reduces stability growth', () => {
+      const onTime = recalcFsrs(good, 10, 0.5, 'review', 10);
+      const early = recalcFsrs(good, 10, 0.5, 'review', 3);
+      expect(early.newStability).toBeLessThan(onTime.newStability);
+    });
+
+    it('late failure (Again) also depends on elapsed', () => {
+      const onTime = recalcFsrs(again, 10, 0.5, 'review', 10);
+      const late = recalcFsrs(again, 10, 0.5, 'review', 20);
+      expect(late.newStability).toBeGreaterThan(onTime.newStability);
+    });
+
+    it('new card with elapsed = 0 keeps initial stability (R = 1)', () => {
+      const out = recalcFsrs(good, 0, 0, 'new', 0);
+      expect(out.newStability).toBe(2.4);
+    });
+  });
+
   // ── Difficulty bounds ─────────────────────────────────────────────
 
   describe('difficulty bounds', () => {

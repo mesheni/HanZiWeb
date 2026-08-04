@@ -74,20 +74,19 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
 
   // Обработчик успешного старта сессии — вызывается из трёх мест
   // (useEffect, startNow, retrySession), чтобы не дублировать код.
-  const handleStartSuccess = (gen: number) =>
-    (session: { id: string; cards: unknown[] }) => {
-      if (gen !== generationRef.current) return;
-      startSession(session.cards as never, session.id, { mode, practiceType });
-      setFeedback(null);
-      // Аналитика: пользователь начал сессию.
-      trackSessionStarted({
-        sessionId: session.id,
-        mode,
-        practiceType,
-        cardCount: session.cards.length,
-        deckId: deckId ?? null,
-      });
-    };
+  const handleStartSuccess = (gen: number) => (session: { id: string; cards: unknown[] }) => {
+    if (gen !== generationRef.current) return;
+    startSession(session.cards as never, session.id, { mode, practiceType });
+    setFeedback(null);
+    // Аналитика: пользователь начал сессию.
+    trackSessionStarted({
+      sessionId: session.id,
+      mode,
+      practiceType,
+      cardCount: session.cards.length,
+      deckId: deckId ?? null,
+    });
+  };
 
   // Запуск сессии при смене deckId/mode/practiceType/filters, но только если хук
   // включён (enabled = true). Это нужно, чтобы экран выбора типа практики
@@ -165,7 +164,12 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
   };
 
   const rateCard = (rating: SrsRating) => {
-    const { cards, currentIndex, sessionId, practiceType: storePracticeType } = useStudyStore.getState();
+    const {
+      cards,
+      currentIndex,
+      sessionId,
+      practiceType: storePracticeType,
+    } = useStudyStore.getState();
 
     const card = cards[currentIndex];
     if (!card || !sessionId) return;
@@ -201,26 +205,41 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
 
     const db = getDb();
     if (db) {
-      db.progress.findOne({ selector: { wordId: card.word.id } }).exec().then((existing) => {
-        const currentState = (existing?.state as any) ?? 'new';
-        const currentStability = (existing?.stability as number) ?? 0;
-        const currentDifficulty = (existing?.difficulty as number) ?? 0;
-        let currentReps = (existing?.reps as number) ?? 0;
+      db.progress
+        .findOne({ selector: { wordId: card.word.id } })
+        .exec()
+        .then((existing) => {
+          const currentState = (existing?.state as any) ?? 'new';
+          const currentStability = (existing?.stability as number) ?? 0;
+          const currentDifficulty = (existing?.difficulty as number) ?? 0;
+          let currentReps = (existing?.reps as number) ?? 0;
 
-        const fsrs = recalcFsrsLocally(rating, currentStability, currentDifficulty, currentState);
+          // Elapsed с последнего повторения (PLAN_Features_v0.4 §35):
+          // опоздавшие ответы должны влиять на пересчёт stability так же,
+          // как на сервере.
+          const lastReviewMs = existing?.lastReviewDate ? Date.parse(existing.lastReviewDate) : 0;
+          const elapsedDays = lastReviewMs > 0 ? (Date.now() - lastReviewMs) / 86_400_000 : 0;
 
-        db.progress.upsert({
-          id: existing?.id ?? crypto.randomUUID(),
-          userId: '',
-          wordId: card.word.id,
-          state: fsrs.newState,
-          stability: fsrs.newStability,
-          difficulty: fsrs.newDifficulty,
-          reps: currentReps + 1,
-          dueDate: new Date(Date.now() + fsrs.intervalDays * 86400000).toISOString(),
-          lastReviewDate: new Date().toISOString(),
+          const fsrs = recalcFsrsLocally(
+            rating,
+            currentStability,
+            currentDifficulty,
+            currentState,
+            elapsedDays,
+          );
+
+          db.progress.upsert({
+            id: existing?.id ?? crypto.randomUUID(),
+            userId: '',
+            wordId: card.word.id,
+            state: fsrs.newState,
+            stability: fsrs.newStability,
+            difficulty: fsrs.newDifficulty,
+            reps: currentReps + 1,
+            dueDate: new Date(Date.now() + fsrs.intervalDays * 86400000).toISOString(),
+            lastReviewDate: new Date().toISOString(),
+          });
         });
-      });
 
       const sync = getSyncEngine();
       if (sync) {
@@ -241,7 +260,9 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         {
           onSuccess: (data) => {
             for (const ach of data.unlockedAchievements ?? []) {
-              const meta = ACHIEVEMENT_CATALOG.find((a) => a.type === (ach.type as AchievementType));
+              const meta = ACHIEVEMENT_CATALOG.find(
+                (a) => a.type === (ach.type as AchievementType),
+              );
               const title = meta?.title ?? ach.type;
               addToast(`🏆 Достижение: ${title}`, 'success');
             }
@@ -273,8 +294,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     }
   };
 
-  const isSessionComplete =
-    cardsCount > 0 && currentIndex >= cardsCount;
+  const isSessionComplete = cardsCount > 0 && currentIndex >= cardsCount;
 
   const submitAnswer = (correct: boolean) => {
     if (feedback !== null) return;

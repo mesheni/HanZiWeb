@@ -1193,6 +1193,13 @@ RSA public key (классический CVE-2017-11428).
 
 **Ожидаемый результат**: Алгоритмический confusion невозможен.
 
+**Статус**: ✅ Исправлено — `plugins/auth.ts:54` (`authenticate`),
+`plugins/auth.ts:94` (`authenticateOptional`),
+`auth.service.ts:212` (`refreshTokens`). Во все три `jwt.verify`
+добавлен пин `{ algorithms: ['HS256'] }`. Если в будущем секрет
+заменят на RSA-ключ, верификация HS256-подделки с public key
+(классический CVE-2017-11428) будет отклонена с `JsonWebTokenError`.
+
 ---
 
 ## 35. `computeRetrievability` всегда возвращает 0.9 — игнорируется elapsed time (FSRS-баг)
@@ -1216,6 +1223,24 @@ elapsed_days / stability )`. Без elapsed опоздавшие/ранние о
 - Применить ОБА в server `srs.ts` и sdk `recalcFsrs.ts`.
 
 **Ожидаемый результат**: Опоздавшие ответы влияют на пересчёт stability.
+
+**Статус**: ✅ Исправлено. `computeRetrievability(stability, elapsedDays)`
+теперь считает FSRS-5 формулу `R = exp(ln(FACTOR) * elapsedDays /
+stability)` (stability <= 0 или elapsed <= 0 → R = 1). Параметр
+`elapsedDays` добавлен в `recalcFsrs`/`recalcFsrsLocally` с дефолтом
+`currentStability` — on-time ответы дают прежнее R = 0.9, все
+существующие вызовы без изменения. Реальное время подставляется из
+`lastReviewDate` во всех трёх копиях алгоритма и их вызовах:
+- server `srs.ts` + `sessions.service.ts:recordAnswer` и `sync.service.ts`
+  (офлайн-ответы с опозданием тоже влияют);
+- sdk `packages/mobile-sdk/src/fsrs/recalcFsrs.ts`;
+- web-копия `apps/web/src/db/fsrs.ts` + `useStudySession.ts` — чтобы
+  офлайн-клиент давал те же числа, что сервер.
+
+Покрыто тестами: `srs.test.ts` +5 (on-time = legacy-дефолт; late Good →
+stability выше; early Good → ниже; late Again → выше; new с elapsed=0 →
+R=1, initial stability), `recalcFsrs.test.ts` (sdk) +2 (late > on-time,
+дефолт = legacy). Итого +7 тестов.
 
 ---
 

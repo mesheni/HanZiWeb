@@ -26,6 +26,8 @@ type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
 
 const HSK_LEVELS = [1, 2, 3, 4, 5, 6] as const;
 const HSK_LEVEL_LIST = [...HSK_LEVELS];
+/** Мс в сутках — для elapsed-времени в FSRS (PLAN_Features_v0.4 §35). */
+const MS_PER_DAY = 86_400_000;
 
 function shuffle<T>(arr: readonly T[]): T[] {
   const a = [...arr];
@@ -340,12 +342,18 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
     };
   }
 
-  // Пересчёт по FSRS
+  // Пересчёт по FSRS. `elapsedDays` — реальное время с последнего
+  // повторения (PLAN_Features_v0.4 §35): опоздавшие ответы снижают
+  // retrievability R и меняют пересчёт stability. Для новой карточки
+  // (lastReviewDate нет) elapsed = 0 → R = 1.
+  const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
+  const elapsedDays = lastReviewMs > 0 ? (Date.now() - lastReviewMs) / MS_PER_DAY : 0;
   const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
     input.rating,
     progress.stability,
     progress.difficulty,
     progress.state,
+    elapsedDays,
   );
 
   const newDueDate = new Date();

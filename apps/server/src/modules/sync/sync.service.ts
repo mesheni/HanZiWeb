@@ -2,6 +2,9 @@ import { prisma } from '../../lib/prisma.js';
 import { recalcFsrs } from '../sessions/srs.js';
 import type { SyncRequest, SyncResponse, SyncResult } from '@hanzi/shared';
 
+/** Мс в сутках — для elapsed-времени в FSRS (PLAN_Features_v0.4 §35). */
+const MS_PER_DAY = 86_400_000;
+
 export async function processSync(userId: string, input: SyncRequest): Promise<SyncResponse> {
   const results: SyncResult[] = [];
 
@@ -24,11 +27,17 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
         continue;
       }
 
+      // Elapsed с последнего повторения (PLAN_Features_v0.4 §35):
+      // офлайн-ответ может прийти с опозданием — это должно влиять
+      // на retrievability и пересчёт stability.
+      const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
+      const elapsedDays = lastReviewMs > 0 ? (Date.now() - lastReviewMs) / MS_PER_DAY : 0;
       const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
         rating,
         progress.stability,
         progress.difficulty,
         progress.state,
+        elapsedDays,
       );
 
       const newDueDate = new Date();

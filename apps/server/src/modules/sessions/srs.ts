@@ -14,23 +14,23 @@ import type { SrsRating, WordState } from '@hanzi/shared';
 
 /** FSRS v5 hyperparameters (w0–w16) */
 const W = [
-  0.4,   // w0:  initial stability after rating Again
-  0.6,   // w1:  initial stability after rating Hard
-  2.4,   // w2:  initial stability after rating Good
-  5.8,   // w3:  initial stability after rating Easy
-  4.93,  // w4:  initial difficulty formula offset
-  0.94,  // w5:  initial difficulty formula exponent
-  0.86,  // w6:  difficulty delta per rating step
-  0.01,  // w7:  difficulty mean-reversion weight
-  1.49,  // w8:  stability increase factor coefficient
-  0.14,  // w9:  stability exponent for success
-  0.94,  // w10: retrievability impact for success
-  2.18,  // w11: post-failure stability coefficient
-  0.05,  // w12: post-failure stability exponent
-  0.34,  // w13: post-failure retrievability factor
-  1.26,  // w14: (reserved)
-  0.29,  // w15: Hard penalty multiplier on stability
-  2.61,  // w16: Easy bonus multiplier on stability
+  0.4, // w0:  initial stability after rating Again
+  0.6, // w1:  initial stability after rating Hard
+  2.4, // w2:  initial stability after rating Good
+  5.8, // w3:  initial stability after rating Easy
+  4.93, // w4:  initial difficulty formula offset
+  0.94, // w5:  initial difficulty formula exponent
+  0.86, // w6:  difficulty delta per rating step
+  0.01, // w7:  difficulty mean-reversion weight
+  1.49, // w8:  stability increase factor coefficient
+  0.14, // w9:  stability exponent for success
+  0.94, // w10: retrievability impact for success
+  2.18, // w11: post-failure stability coefficient
+  0.05, // w12: post-failure stability exponent
+  0.34, // w13: post-failure retrievability factor
+  1.26, // w14: (reserved)
+  0.29, // w15: Hard penalty multiplier on stability
+  2.61, // w16: Easy bonus multiplier on stability
 ] as const;
 
 /** Target retention (90%) */
@@ -53,17 +53,18 @@ const INTERVAL_MOD: Record<SrsRating, number> = {
 // ---- Private helpers -------------------------------------------------------
 
 /**
- * Estimate retrievability R = probability of recall.
+ * Estimate retrievability R = probability of recall (FSRS-5):
+ * R = exp(ln(target_retention) * elapsed_days / stability).
  *
- * Since we do not have the actual elapsed time since last review as a parameter,
- * we assume the review occurs exactly at the due date (elapsed ≈ stability).
- * This gives R = exp(ln(FACTOR)) = FACTOR for every card that has been reviewed
- * before.  For a brand-new card (stability = 0), retrievability is 1.
+ * `elapsedDays` — реальное время с последнего повторения. Опоздавшие
+ * ответы (elapsed > stability) дают R < 0.9 и сильнее влияют на
+ * пересчёт stability; ранние — R > 0.9. Если elapsed неизвестен
+ * (дефолт `currentStability`), R = FACTOR, как раньше.
+ * Для новых карточек (stability <= 0) или elapsed <= 0 → R = 1.
  */
-function computeRetrievability(stability: number): number {
-  if (stability <= 0) return 1;
-  // elapsed = stability  →  elapsed / stability = 1  →  R = FACTOR
-  return FACTOR;
+function computeRetrievability(stability: number, elapsedDays: number): number {
+  if (stability <= 0 || elapsedDays <= 0) return 1;
+  return Math.exp(Math.log(FACTOR) * (elapsedDays / stability));
 }
 
 /**
@@ -104,11 +105,7 @@ function stabilityAfterSuccess(
 
   // Core FSRS v5 stability-increase factor
   const sInc =
-    1 +
-    Math.exp(W[8]) *
-      (11 - difficulty) *
-      Math.pow(s, DECAY) *
-      (Math.exp((1 - r) * W[10]) - 1);
+    1 + Math.exp(W[8]) * (11 - difficulty) * Math.pow(s, DECAY) * (Math.exp((1 - r) * W[10]) - 1);
 
   const hardPenalty = rating === 2 ? W[15] : 1;
   const easyBonus = rating === 4 ? W[16] : 1;
@@ -134,6 +131,8 @@ function toInterval(stability: number, rating: SrsRating): number {
  * @param currentStability  Current memory stability (days)
  * @param currentDifficulty Current perceived difficulty (0..1)
  * @param currentState      Current word state (new | learning | review | graduated)
+ * @param elapsedDays       Days since the last review; default = stability
+ *                          (review on time → R = target retention)
  *
  * @returns Updated `{ newStability, newDifficulty, newState, intervalDays }`
  *          ready to be persisted into `UserWordProgress`.
@@ -143,6 +142,7 @@ export function recalcFsrs(
   currentStability: number,
   currentDifficulty: number,
   currentState: WordState,
+  elapsedDays: number = currentStability,
 ): {
   newStability: number;
   newDifficulty: number;
@@ -150,7 +150,7 @@ export function recalcFsrs(
   intervalDays: number;
 } {
   // ---- 1. Retrievability ------------------------------------------------
-  const retrievability = computeRetrievability(currentStability);
+  const retrievability = computeRetrievability(currentStability, elapsedDays);
 
   // ---- 2. Difficulty ----------------------------------------------------
   const newDifficulty = computeDifficulty(rating, currentDifficulty);
@@ -167,12 +167,7 @@ export function recalcFsrs(
     newStability = stabilityAfterFailure(currentStability, retrievability);
   } else {
     // Success (Hard / Good / Easy) on a previously reviewed card
-    newStability = stabilityAfterSuccess(
-      rating,
-      currentStability,
-      newDifficulty,
-      retrievability,
-    );
+    newStability = stabilityAfterSuccess(rating, currentStability, newDifficulty, retrievability);
   }
 
   newStability = Math.max(0.01, Math.min(MAX_INTERVAL, newStability));

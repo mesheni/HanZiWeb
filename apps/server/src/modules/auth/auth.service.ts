@@ -72,11 +72,9 @@ export function getRefreshTokenExpiresInSec(): number {
 /** Генерирует короткоживущий JWT (по умолчанию 1 час) для авторизации. */
 export function generateAccessToken(userId: string, email: string, pv: number): string {
   const config = loadConfig();
-  return jwt.sign(
-    { userId, email, pv } satisfies AccessTokenPayload,
-    config.JWT_ACCESS_SECRET,
-    { expiresIn: parseExpiryToSec(config.JWT_ACCESS_EXPIRY) },
-  );
+  return jwt.sign({ userId, email, pv } satisfies AccessTokenPayload, config.JWT_ACCESS_SECRET, {
+    expiresIn: parseExpiryToSec(config.JWT_ACCESS_EXPIRY),
+  });
 }
 
 /** Генерирует долгоживущий refresh-токен (по умолчанию 30 дней). */
@@ -111,10 +109,10 @@ export async function checkLoginRateLimit(email: string): Promise<void> {
     await redis.expire(key, config.LOGIN_RATE_LIMIT_WINDOW_SEC);
   }
   if (attempts > config.LOGIN_RATE_LIMIT_MAX) {
-    throw Object.assign(
-      new Error('Слишком много попыток. Подождите 1 минуту'),
-      { statusCode: 429, code: 'TOO_MANY_LOGIN_ATTEMPTS' },
-    );
+    throw Object.assign(new Error('Слишком много попыток. Подождите 1 минуту'), {
+      statusCode: 429,
+      code: 'TOO_MANY_LOGIN_ATTEMPTS',
+    });
   }
 }
 
@@ -142,7 +140,10 @@ export async function registerUser(input: Register) {
 
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
-    throw Object.assign(new Error('Email already registered'), { statusCode: 409, code: 'EMAIL_EXISTS' });
+    throw Object.assign(new Error('Email already registered'), {
+      statusCode: 409,
+      code: 'EMAIL_EXISTS',
+    });
   }
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
@@ -173,7 +174,10 @@ export async function loginUser(input: Login) {
 
   const user = await prisma.user.findUnique({ where: { email: input.email } });
   if (!user) {
-    throw Object.assign(new Error('Invalid credentials'), { statusCode: 401, code: 'INVALID_CREDENTIALS' });
+    throw Object.assign(new Error('Invalid credentials'), {
+      statusCode: 401,
+      code: 'INVALID_CREDENTIALS',
+    });
   }
 
   // Пользователь без пароля = зарегистрирован через OAuth.
@@ -186,7 +190,10 @@ export async function loginUser(input: Login) {
 
   const valid = await bcrypt.compare(input.password, user.passwordHash);
   if (!valid) {
-    throw Object.assign(new Error('Invalid credentials'), { statusCode: 401, code: 'INVALID_CREDENTIALS' });
+    throw Object.assign(new Error('Invalid credentials'), {
+      statusCode: 401,
+      code: 'INVALID_CREDENTIALS',
+    });
   }
 
   // Успешный вход — сбрасываем счётчик неудачных попыток.
@@ -209,9 +216,14 @@ export async function refreshTokens(token: string) {
   const config = loadConfig();
   let payload: RefreshTokenPayload;
   try {
-    payload = jwt.verify(token, config.JWT_REFRESH_SECRET) as RefreshTokenPayload;
+    payload = jwt.verify(token, config.JWT_REFRESH_SECRET, {
+      algorithms: ['HS256'],
+    }) as RefreshTokenPayload;
   } catch {
-    throw Object.assign(new Error('Invalid refresh token'), { statusCode: 401, code: 'INVALID_TOKEN' });
+    throw Object.assign(new Error('Invalid refresh token'), {
+      statusCode: 401,
+      code: 'INVALID_TOKEN',
+    });
   }
 
   // CAS-rotate: один `updateMany` с условием `(id, tokenVersion)`.
@@ -231,10 +243,10 @@ export async function refreshTokens(token: string) {
     data: { tokenVersion: { increment: 1 } },
   });
   if (rotated.count === 0) {
-    throw Object.assign(
-      new Error('Refresh token reuse detected'),
-      { statusCode: 401, code: 'REFRESH_TOKEN_REUSE' },
-    );
+    throw Object.assign(new Error('Refresh token reuse detected'), {
+      statusCode: 401,
+      code: 'REFRESH_TOKEN_REUSE',
+    });
   }
   // Новое значение tokenVersion = было + 1; не нужно перечитывать
   // пользователя, чтобы его узнать.
@@ -285,10 +297,7 @@ export async function logoutUser(userId: string) {
  * - `401 INVALID_PASSWORD` — `currentPassword` не совпал.
  * - `400 WEAK_PASSWORD` — `newPassword` не прошёл валидацию.
  */
-export async function changePassword(
-  userId: string,
-  input: ChangePassword,
-): Promise<void> {
+export async function changePassword(userId: string, input: ChangePassword): Promise<void> {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
     throw Object.assign(new Error('User not found'), {
@@ -379,9 +388,7 @@ export async function requestPasswordReset(input: ForgotPassword): Promise<void>
   // Отправка письма. Если SMTP не настроен — бросаем EmailNotConfiguredError,
   // роут вернёт 503, но токен останется валидным (пользователь сможет
   // запросить сброс повторно после настройки).
-  const { sendPasswordResetEmail, EmailNotConfiguredError } = await import(
-    '../../lib/email.js'
-  );
+  const { sendPasswordResetEmail, EmailNotConfiguredError } = await import('../../lib/email.js');
   const { getWebPublicUrl } = await import('../../config.js');
   const baseUrl = getWebPublicUrl();
   const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;

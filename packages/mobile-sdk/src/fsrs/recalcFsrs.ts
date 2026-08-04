@@ -1,8 +1,7 @@
 import type { SrsRating, WordState } from '@hanzi/shared';
 
 const W = [
-  0.4, 0.6, 2.4, 5.8, 4.93, 0.94, 0.86, 0.01, 1.49, 0.14,
-  0.94, 2.18, 0.05, 0.34, 1.26, 0.29, 2.61,
+  0.4, 0.6, 2.4, 5.8, 4.93, 0.94, 0.86, 0.01, 1.49, 0.14, 0.94, 2.18, 0.05, 0.34, 1.26, 0.29, 2.61,
 ] as const;
 
 const FACTOR = 0.9;
@@ -10,12 +9,15 @@ const DECAY = -0.5;
 const MAX_INTERVAL = 36500;
 
 const INTERVAL_MOD: Record<SrsRating, number> = {
-  1: 0, 2: 0.8, 3: 1.0, 4: 1.3,
+  1: 0,
+  2: 0.8,
+  3: 1.0,
+  4: 1.3,
 };
 
-function computeRetrievability(stability: number): number {
-  if (stability <= 0) return 1;
-  return FACTOR;
+function computeRetrievability(stability: number, elapsedDays: number): number {
+  if (stability <= 0 || elapsedDays <= 0) return 1;
+  return Math.exp(Math.log(FACTOR) * (elapsedDays / stability));
 }
 
 function computeDifficulty(rating: SrsRating, current: number): number {
@@ -36,8 +38,7 @@ function stabilityAfterSuccess(
 ): number {
   const s = Math.max(0.01, stability);
   const sInc =
-    1 +
-    Math.exp(W[8]) * (11 - difficulty) * Math.pow(s, DECAY) * (Math.exp((1 - r) * W[10]) - 1);
+    1 + Math.exp(W[8]) * (11 - difficulty) * Math.pow(s, DECAY) * (Math.exp((1 - r) * W[10]) - 1);
   const hardPenalty = rating === 2 ? W[15] : 1;
   const easyBonus = rating === 4 ? W[16] : 1;
   return s * sInc * hardPenalty * easyBonus;
@@ -59,14 +60,20 @@ export interface FsrsUpdate {
  * `apps/server/src/modules/sessions/srs.ts` and
  * `apps/web/src/db/fsrs.ts` so the offline client produces the exact
  * same stability / difficulty / due date as the server.
+ *
+ * @param elapsedDays Days since the last review; default = stability
+ *                    (review on time → R = target retention). Late
+ *                    answers (elapsed > stability) reduce R and thus
+ *                    change the stability recalc (PLAN_Features_v0.4 §35).
  */
 export function recalcFsrs(
   rating: SrsRating,
   currentStability: number,
   currentDifficulty: number,
   currentState: WordState,
+  elapsedDays: number = currentStability,
 ): FsrsUpdate {
-  const retrievability = computeRetrievability(currentStability);
+  const retrievability = computeRetrievability(currentStability, elapsedDays);
   const newDifficulty = computeDifficulty(rating, currentDifficulty);
 
   let newStability: number;
@@ -105,5 +112,8 @@ export function recalcFsrs(
 
 /** XP awarded for a given rating (matches `RATING_XP` on the server). */
 export const RATING_XP: Record<SrsRating, number> = {
-  1: 0, 2: 1, 3: 3, 4: 5,
+  1: 0,
+  2: 1,
+  3: 3,
+  4: 5,
 };
