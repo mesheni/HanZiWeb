@@ -211,7 +211,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         .then((existing) => {
           const currentState = (existing?.state as any) ?? 'new';
           const currentStability = (existing?.stability as number) ?? 0;
-          const currentDifficulty = (existing?.difficulty as number) ?? 0;
+          const currentDifficulty = (existing?.difficulty as number) ?? 5;
           let currentReps = (existing?.reps as number) ?? 0;
 
           // Elapsed с последнего повторения (PLAN_Features_v0.4 §35):

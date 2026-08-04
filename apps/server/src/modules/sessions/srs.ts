@@ -73,13 +73,14 @@ function computeRetrievability(stability: number, elapsedDays: number): number {
  * D' = D + w6 * (3 – rating)
  *
  * Difficulty increases when the user struggles (Again / Hard) and decreases
- * when they recall easily (Easy).  The raw result is clamped to [0, 1] to
- * match the application's internal representation.
+ * when they recall easily (Easy).  The raw result is clamped to the
+ * canonical FSRS-5 scale [1, 10] — the stability formula `(11 − D)` is
+ * designed for exactly this range (PLAN_Features_v0.4 §46).
  */
 function computeDifficulty(rating: SrsRating, current: number): number {
   const delta = W[6] * (3 - rating);
   const raw = current + delta;
-  return Math.max(0, Math.min(1, raw));
+  return Math.max(1, Math.min(10, raw));
 }
 
 /**
@@ -129,7 +130,7 @@ function toInterval(stability: number, rating: SrsRating): number {
  *
  * @param rating            User self-assessment (1=Again, 2=Hard, 3=Good, 4=Easy)
  * @param currentStability  Current memory stability (days)
- * @param currentDifficulty Current perceived difficulty (0..1)
+ * @param currentDifficulty Current perceived difficulty (1..10, canonical FSRS-5)
  * @param currentState      Current word state (new | learning | review | graduated)
  * @param elapsedDays       Days since the last review; default = stability
  *                          (review on time → R = target retention)

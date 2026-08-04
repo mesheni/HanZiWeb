@@ -1600,6 +1600,27 @@ typecheck mobile/sdk + SDK-тесты (RN-UI не покрыт юнитами).
 
 **Ожидаемый результат**: Сложность реально влияет на интервал.
 
+**Статус**: ✅ Исправлено — переход на каноническую FSRS-5 шкалу
+D ∈ [1, 10] во всех трёх копиях алгоритма:
+- `packages/mobile-sdk/src/fsrs/recalcFsrs.ts`, `apps/server/src/modules/
+  sessions/srs.ts`, `apps/web/src/db/fsrs.ts` — `computeDifficulty`
+  клампит `[1, 10]` (было `[0, 1]`), формула `(11 − D)` теперь даёт
+  множитель ∈ [1, 10], сложность реально влияет на stability/интервал.
+- `packages/shared/src/schemas/progress.ts` — `difficulty: min(1).max(10)`,
+  `default(5)` (нейтральная середина), `SrsRecalcResultSchema` `[1, 10]`.
+- `packages/shared/src/schemas/progressExport.ts` и `sync.ts`
+  (`ServerChangeSchema`, `SyncResultSchema`) — границы `[1, 10]`:
+  импорт/экспорт и serverChanges отклоняют старые значения `[0, 1]`.
+- `apps/server/prisma/schema.prisma` — `@default(5)`; миграция
+  `20260804234000_fsrs_difficulty_scale_1_10` нормализует существующие
+  строки single-pass: `UPDATE "UserWordProgress" SET difficulty =
+  GREATEST(1, LEAST(difficulty * 10, 10))` (0.35 → 3.5, 0 → 1) и меняет
+  default.
+- `apps/web/src/hooks/useStudySession.ts` — дефолт новой карточки `?? 5`.
+- Тесты обновлены: recalcFsrs/srs (bounds [1, 10]), progressExport
+  (принимает 1–10, отклоняет 0.5/0/11), sync.schemas, stats CSV,
+  SyncEngine-фикстуры. Покрытие: server vitest 395/395, mobile-sdk 32/32.
+
 ---
 
 ## 47. Mobile `doRefresh` читает `result.data.refreshToken`, которого нет в `AuthResponseSchema`
@@ -1628,6 +1649,32 @@ typecheck mobile/sdk + SDK-тесты (RN-UI не покрыт юнитами).
   `existing` refresh token (с серверной ротацией по другому каналу).
 
 **Ожидаемый результат**: Refresh на mobile работает, MMKV не бросает.
+
+**Статус**: ✅ Исправлено — контракт определён и сервер научен отдавать
+refresh-токен non-cookie клиентам:
+- `packages/shared/src/schemas/auth.ts` — в `AuthResponseSchema` добавлен
+  `refreshToken: z.string().optional()` (документировано: приходит только
+  mobile-клиентам).
+- `apps/server/src/modules/auth/auth.routes.ts` — `/register`, `/login`,
+  `/refresh`, `/oauth/exchange` отдают `refreshToken` в теле ТОЛЬКО при
+  заголовке `X-Client-Type: mobile`; web получает его как раньше через
+  HttpOnly cookie (refresh-токен больше не дублируется в JS-доступном
+  теле). Бонус: `/register` раньше вообще не ставил cookie и светил
+  refreshToken в теле всем — теперь единый контракт.
+- `packages/mobile-sdk/src/api/ApiClient.ts` — опция `clientType` → на
+  каждый запрос добавляется заголовок `X-Client-Type`.
+- `apps/mobile/src/bootstrap.ts` — `clientType: 'mobile'`; `doRefresh`
+  больше не расширяет тип вручную (`AuthResponse & { refreshToken:
+  string }` удалён) и сохраняет `result.data.refreshToken ?? refresh`
+  (fallback на прежний токен — сессия не теряется, даже если поле
+  отсутствует). `undefined` в MMKV больше не уходит — исключение не
+  бросается.
+- `apps/mobile/src/screens/LoginScreen.tsx` — `login(user, accessToken,
+  result.data.refreshToken ?? null)`: при логине refresh-токен теперь
+  реально сохраняется (раньше `undefined` молча не сохранялся, и сессия
+  не переживала перезапуск).
+- Покрытие: server vitest 395/395, mobile-sdk 32/32, typecheck всех
+  пакетов чистый (auth-роуты юнит-тестами не покрыты).
 
 ---
 

@@ -14,7 +14,7 @@ import { z } from 'zod';
  *        "wordId": "uuid",
  *        "state": "learning",
  *        "stability": 1.2,
- *        "difficulty": 0.5,
+ *        "difficulty": 5.5,
  *        "reps": 3,
  *        "dueDate": "2026-07-04T12:00:00.000Z",
  *        "lastReviewDate": "2026-07-03T12:00:00.000Z" | null
@@ -39,11 +39,11 @@ export const ProgressRecordSchema = z.object({
   wordId: z.string().uuid(),
   state: ProgressStateSchema,
   stability: z.number().nonnegative(),
-  // Внутренняя шкала difficulty — [0, 1] (как в progress.ts). Значение
-  // вне диапазона (например, FSRS-шкала [1, 10]) отклоняется на границе,
-  // чтобы импорт не испортил UserWordProgress.difficulty
-  // (PLAN_Features_v0.4 §42).
-  difficulty: z.number().min(0).max(1),
+  // Внутренняя шкала difficulty — каноническая FSRS-5, D ∈ [1, 10]
+  // (как в progress.ts, PLAN_Features_v0.4 §46). Значения старой шкалы
+  // [0, 1] (и любые вне [1, 10]) отклоняются на границе, чтобы импорт
+  // не испортил UserWordProgress.difficulty.
+  difficulty: z.number().min(1).max(10),
   reps: z.number().int().nonnegative(),
   /** ISO-строка даты (для совместимости с JSON). */
   dueDate: z.string().datetime(),

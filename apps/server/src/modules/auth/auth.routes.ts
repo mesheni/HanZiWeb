@@ -26,11 +26,34 @@ export async function authRoutes(app: FastifyInstance) {
     maxAge: refreshExpirySec,
   };
 
+  /**
+   * Non-cookie клиенты (React Native) получают refresh-токен в теле
+   * ответа; web — только через HttpOnly cookie, поэтому в JS-доступном
+   * теле он не дублируется (XSS-поверхность). Mobile SDK шлёт
+   * `X-Client-Type: mobile` на все запросы (PLAN_Features_v0.4 §47).
+   */
+  const isNonCookieClient = (request: FastifyRequest) =>
+    request.headers['x-client-type'] === 'mobile';
+
   /** POST /auth/register — создание аккаунта */
   app.post('/register', async (request, reply) => {
     const body = RegisterSchema.parse(request.body);
     const result = await authService.registerUser(body);
-    return reply.status(201).send({ success: true, data: result });
+    reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
+    const data: {
+      user: typeof result.user;
+      accessToken: string;
+      expiresIn: number;
+      refreshToken?: string;
+    } = {
+      user: result.user,
+      accessToken: result.accessToken,
+      expiresIn: accessExpirySec,
+    };
+    if (isNonCookieClient(request)) {
+      data.refreshToken = result.refreshToken;
+    }
+    return reply.status(201).send({ success: true, data });
   });
 
   /**
@@ -46,10 +69,20 @@ export async function authRoutes(app: FastifyInstance) {
     const result = await authService.loginUser(body);
     // Set refresh token as httpOnly cookie
     reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
-    return reply.send({
-      success: true,
-      data: { user: result.user, accessToken: result.accessToken, expiresIn: accessExpirySec },
-    });
+    const data: {
+      user: typeof result.user;
+      accessToken: string;
+      expiresIn: number;
+      refreshToken?: string;
+    } = {
+      user: result.user,
+      accessToken: result.accessToken,
+      expiresIn: accessExpirySec,
+    };
+    if (isNonCookieClient(request)) {
+      data.refreshToken = result.refreshToken;
+    }
+    return reply.send({ success: true, data });
   });
 
   /** POST /auth/refresh — обновление токенов */
@@ -61,8 +94,7 @@ export async function authRoutes(app: FastifyInstance) {
     const authHeader = request.headers.authorization;
     const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
 
-    const refreshToken =
-      request.cookies.refreshToken ?? body?.refreshToken ?? bearer;
+    const refreshToken = request.cookies.refreshToken ?? body?.refreshToken ?? bearer;
     if (!refreshToken) {
       return reply.status(401).send({
         success: false,
@@ -73,15 +105,20 @@ export async function authRoutes(app: FastifyInstance) {
     // Always rotate the HttpOnly cookie for web clients; mobile
     // clients read the new refresh token from the response body.
     reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
-    return reply.send({
-      success: true,
-      data: {
-        user: result.user,
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-        expiresIn: accessExpirySec,
-      },
-    });
+    const data: {
+      user: typeof result.user;
+      accessToken: string;
+      expiresIn: number;
+      refreshToken?: string;
+    } = {
+      user: result.user,
+      accessToken: result.accessToken,
+      expiresIn: accessExpirySec,
+    };
+    if (isNonCookieClient(request)) {
+      data.refreshToken = result.refreshToken;
+    }
+    return reply.send({ success: true, data });
   });
 
   /** POST /auth/logout — выход */
@@ -115,15 +152,11 @@ export async function authRoutes(app: FastifyInstance) {
    * (`tokenVersion++`). Текущая сессия сохраняется до окончания
    * access-токена; остальные устройства будут вынуждены перелогиниться.
    */
-  app.put(
-    '/change-password',
-    { preHandler: [app.authenticate] },
-    async (request, reply) => {
-      const body = ChangePasswordSchema.parse(request.body);
-      await authService.changePassword(request.userId, body);
-      return reply.send({ success: true });
-    },
-  );
+  app.put('/change-password', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const body = ChangePasswordSchema.parse(request.body);
+    await authService.changePassword(request.userId, body);
+    return reply.send({ success: true });
+  });
 
   // ════════════════════════════════════════════════════════════════
   // Password recovery (PLAN_Features_v0.3 §2)
@@ -211,10 +244,20 @@ export async function authRoutes(app: FastifyInstance) {
     }
     const result = await oauthService.issueTokensForUser(userId);
     reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
-    return reply.send({
-      success: true,
-      data: { user: result.user, accessToken: result.accessToken, expiresIn: accessExpirySec },
-    });
+    const data: {
+      user: typeof result.user;
+      accessToken: string;
+      expiresIn: number;
+      refreshToken?: string;
+    } = {
+      user: result.user,
+      accessToken: result.accessToken,
+      expiresIn: accessExpirySec,
+    };
+    if (isNonCookieClient(request)) {
+      data.refreshToken = result.refreshToken;
+    }
+    return reply.send({ success: true, data });
   });
 
   /**

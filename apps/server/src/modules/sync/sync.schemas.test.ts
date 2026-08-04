@@ -6,8 +6,9 @@ import {
   type ServerChange,
 } from '@hanzi/shared';
 
-// Контракт sync-ответа (PLAN_Features_v0.4 §40, §41):
-// serverChanges валидируется схемой, difficulty ограничена [0, 1].
+// Контракт sync-ответа (PLAN_Features_v0.4 §40, §41, §46):
+// serverChanges валидируется схемой, difficulty — каноническая
+// FSRS-5 шкала [1, 10].
 
 // `state?: string` намеренно шире типа — тест проверяет инвалидные
 // значения, которые схема должна отклонить.
@@ -18,7 +19,7 @@ function mkServerChange(
     wordId: 'w1',
     state: 'review',
     stability: 5,
-    difficulty: 0.3,
+    difficulty: 3,
     reps: 2,
     dueDate: new Date().toISOString(),
     lastReviewDate: null,
@@ -36,9 +37,10 @@ describe('ServerChangeSchema (PLAN_Features_v0.4 §40)', () => {
     expect(ServerChangeSchema.safeParse(mkServerChange({ state: 'bogus' })).success).toBe(false);
   });
 
-  it('rejects difficulty outside [0, 1]', () => {
-    expect(ServerChangeSchema.safeParse(mkServerChange({ difficulty: 5 })).success).toBe(false);
+  it('rejects difficulty outside the canonical FSRS-5 scale [1, 10]', () => {
+    expect(ServerChangeSchema.safeParse(mkServerChange({ difficulty: 0.5 })).success).toBe(false);
     expect(ServerChangeSchema.safeParse(mkServerChange({ difficulty: -0.1 })).success).toBe(false);
+    expect(ServerChangeSchema.safeParse(mkServerChange({ difficulty: 11 })).success).toBe(false);
   });
 
   it('rejects missing required fields', () => {
@@ -62,15 +64,16 @@ describe('SyncResultSchema difficulty bounds (PLAN_Features_v0.4 §41)', () => {
     xpGain: 0,
   };
 
-  it('accepts difficulty inside [0, 1]', () => {
-    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 0.5 }).success).toBe(true);
-    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 0 }).success).toBe(true);
+  it('accepts difficulty inside the canonical FSRS-5 scale [1, 10]', () => {
     expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 1 }).success).toBe(true);
+    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 5.5 }).success).toBe(true);
+    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 10 }).success).toBe(true);
   });
 
-  it('rejects difficulty outside [0, 1]', () => {
-    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 5 }).success).toBe(false);
-    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: -1 }).success).toBe(false);
+  it('rejects difficulty outside [1, 10] (incl. old [0, 1] scale)', () => {
+    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 0.5 }).success).toBe(false);
+    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 0 }).success).toBe(false);
+    expect(SyncResultSchema.safeParse({ ...base, newDifficulty: 11 }).success).toBe(false);
   });
 });
 
@@ -82,7 +85,7 @@ describe('SyncResponseSchema (PLAN_Features_v0.4 §40)', () => {
           changeId: 'c1',
           wordId: 'w1',
           newStability: 1,
-          newDifficulty: 0,
+          newDifficulty: 5,
           newState: 'learning',
           newDueDate: new Date().toISOString(),
           intervalDays: 0,

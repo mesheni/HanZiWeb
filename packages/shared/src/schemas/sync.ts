@@ -36,10 +36,11 @@ export const SyncResultSchema = z.object({
   changeId: z.string(),
   wordId: z.string(),
   newStability: z.number(),
-  // Difficulty ограничена [0, 1] — как во всех остальных схемах
-  // (progress.ts): значение вне диапазона не должно попадать в
-  // WatermelonDB и ломать следующий FSRS-вызов (PLAN_Features_v0.4 §41).
-  newDifficulty: z.number().min(0).max(1),
+  // Difficulty — каноническая FSRS-5 шкала [1, 10], как во всех
+  // остальных схемах (progress.ts): значение вне диапазона не должно
+  // попадать в WatermelonDB и ломать следующий FSRS-вызов
+  // (PLAN_Features_v0.4 §41, §46).
+  newDifficulty: z.number().min(1).max(10),
   newState: z.enum(['new', 'learning', 'review', 'graduated']),
   newDueDate: z.string(),
   intervalDays: z.number(),
@@ -57,7 +58,7 @@ export const ServerChangeSchema = z.object({
   wordId: z.string(),
   state: WordStateSchema,
   stability: z.number(),
-  difficulty: z.number().min(0).max(1),
+  difficulty: z.number().min(1).max(10),
   reps: z.number().int().min(0),
   dueDate: z.string(),
   lastReviewDate: z.string().nullable(),

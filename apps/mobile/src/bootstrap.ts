@@ -92,18 +92,22 @@ const apiBaseUrl =
 const doRefresh = async (): Promise<AuthResponse | null> => {
   const refresh = tokenStore.getRefreshToken();
   if (!refresh) return null;
-  const result = await api.post<AuthResponse & { refreshToken: string }>(
+  const result = await api.post<AuthResponse>(
     '/auth/refresh',
     { refreshToken: refresh },
     { withRefreshToken: true },
   );
   if (!result.ok || !result.data) return null;
-  tokenStore.setRefreshToken(result.data.refreshToken);
+  // Сервер ротирует refresh-токен и отдаёт его в теле для mobile
+  // (X-Client-Type: mobile, PLAN_Features_v0.4 §47). Если поле вдруг
+  // отсутствует — сохраняем прежний, чтобы не потерять сессию.
+  tokenStore.setRefreshToken(result.data.refreshToken ?? refresh);
   return result.data;
 };
 
 export const api = new ApiClient({
   baseUrl: apiBaseUrl,
+  clientType: 'mobile',
   refresh: doRefresh,
   onRefreshed: (response) => {
     tokenStore.setAccessToken(response.accessToken);

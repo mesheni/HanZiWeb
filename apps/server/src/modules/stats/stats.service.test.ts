@@ -357,7 +357,7 @@ describe('parseProgressCsv', () => {
         wordId: '22222222-2222-2222-2222-222222222222',
         state: 'new',
         stability: 0,
-        difficulty: 0,
+        difficulty: 1,
         reps: 0,
         dueDate: '2026-07-04T00:00:00.000Z',
         lastReviewDate: null,

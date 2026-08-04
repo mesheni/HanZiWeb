@@ -21,8 +21,10 @@ function computeRetrievability(stability: number, elapsedDays: number): number {
 }
 
 function computeDifficulty(rating: SrsRating, current: number): number {
+  // Каноническая FSRS-5 шкала D ∈ [1, 10] — формула stability-инкремента
+  // `(11 − difficulty)` рассчитана именно на неё (PLAN_Features_v0.4 §46).
   const delta = W[6] * (3 - rating);
-  return Math.max(0, Math.min(1, current + delta));
+  return Math.max(1, Math.min(10, current + delta));
 }
 
 function stabilityAfterFailure(stability: number, r: number): number {

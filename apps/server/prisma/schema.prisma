@@ -231,7 +231,9 @@ model UserWordProgress {
   word           Word      @relation(fields: [wordId], references: [id], onDelete: Cascade)
   state          WordState @default(new)
   stability      Float     @default(0)
-  difficulty     Float     @default(0)
+  // Каноническая FSRS-5 шкала D ∈ [1, 10] (PLAN_Features_v0.4 §46).
+  // 5 — нейтральная середина для новых карточек.
+  difficulty     Float     @default(5)
   reps           Int       @default(0)
   dueDate        DateTime  @default(now())
   lastReviewDate DateTime?

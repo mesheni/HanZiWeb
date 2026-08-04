@@ -26,6 +26,13 @@ export interface ApiClientOptions {
   onSessionExpired?: () => Promise<boolean> | boolean | void;
   /** Default `fetch` to use. Override in tests. */
   fetchImpl?: typeof fetch;
+  /**
+   * Client platform tag sent as `X-Client-Type` on every request.
+   * The auth server uses it to include `refreshToken` in the response
+   * body for non-cookie clients (mobile) while keeping it cookie-only
+   * for the web (PLAN_Features_v0.4 §47).
+   */
+  clientType?: string;
 }
 
 export interface RequestOptions extends Omit<RequestInit, 'body' | 'headers'> {
@@ -72,6 +79,7 @@ export class ApiClient {
   private onRefreshed?: (response: AuthResponse) => void;
   private onSessionExpired?: () => Promise<boolean> | boolean | void;
   private fetchImpl: typeof fetch;
+  private clientType?: string;
   private isRefreshing = false;
 
   constructor(options: ApiClientOptions) {
@@ -80,6 +88,7 @@ export class ApiClient {
     this.onRefreshed = options.onRefreshed;
     this.onSessionExpired = options.onSessionExpired;
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.clientType = options.clientType;
   }
 
   async request<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
@@ -89,19 +98,33 @@ export class ApiClient {
     return this.handleResponse<T>(res, path, options);
   }
 
-  async get<T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<ApiResult<T>> {
+  async get<T>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'body'> = {},
+  ): Promise<ApiResult<T>> {
     return this.request<T>(path, { ...options, method: 'GET' });
   }
 
-  async post<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<ApiResult<T>> {
+  async post<T>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'body'> = {},
+  ): Promise<ApiResult<T>> {
     return this.request<T>(path, { ...options, method: 'POST', body });
   }
 
-  async put<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<ApiResult<T>> {
+  async put<T>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, 'method' | 'body'> = {},
+  ): Promise<ApiResult<T>> {
     return this.request<T>(path, { ...options, method: 'PUT', body });
   }
 
-  async delete<T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<ApiResult<T>> {
+  async delete<T>(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'body'> = {},
+  ): Promise<ApiResult<T>> {
     return this.request<T>(path, { ...options, method: 'DELETE' });
   }
 
@@ -111,7 +134,10 @@ export class ApiClient {
    * Mirrors the 401 → refresh → `onSessionExpired` flow used by
    * {@link request} (PLAN_Features_v0.3 §15).
    */
-  async getBlob(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<Blob | null> {
+  async getBlob(
+    path: string,
+    options: Omit<RequestOptions, 'method' | 'body'> = {},
+  ): Promise<Blob | null> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
     const init = this.buildInit(options);
     let res = await this.fetchImpl(url, init);
@@ -136,6 +162,10 @@ export class ApiClient {
     const hasBody = options.body !== undefined && options.body !== null;
     if (hasBody && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    if (this.clientType && !headers['X-Client-Type']) {
+      headers['X-Client-Type'] = this.clientType;
     }
 
     const access = getTokenStore().getAccessToken();

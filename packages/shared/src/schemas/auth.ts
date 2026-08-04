@@ -23,7 +23,10 @@ export function isAllowedEmailTld(
 ): boolean {
   const atIndex = email.lastIndexOf('@');
   if (atIndex === -1) return false;
-  const domain = email.slice(atIndex + 1).toLowerCase().trim();
+  const domain = email
+    .slice(atIndex + 1)
+    .toLowerCase()
+    .trim();
   if (!domain || !domain.includes('.')) return false;
   const tld = domain.split('.').pop() ?? '';
   if (!tld) return false;
@@ -59,11 +62,18 @@ export const AuthResponseSchema = z.object({
     email: z.string().email(),
     xp: z.number().int().nonnegative(),
     currentStreak: z.number().int().nonnegative(),
-
   }),
   accessToken: z.string(),
   /** access-токен живёт 15 минут */
   expiresIn: z.number(),
+  /**
+   * Новый refresh-токен. Сервер отдаёт его в теле ТОЛЬКО non-cookie
+   * клиентам (заголовок `X-Client-Type: mobile`) — web получает его
+   * через HttpOnly cookie. Раньше mobile читал это поле, не объявленное
+   * в контракте: на `/auth/login` сервер его не отдавал, `undefined`
+   * уходил в MMKV и refresh-флоу падал (PLAN_Features_v0.4 §47).
+   */
+  refreshToken: z.string().optional(),
 });
 
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;

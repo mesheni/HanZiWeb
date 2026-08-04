@@ -28,15 +28,18 @@ export function LoginScreen(_props: Props): React.ReactElement {
     setSubmitting(true);
     try {
       const path = mode === 'login' ? '/auth/login' : '/auth/register';
-      const result = await api.post<AuthResponse & { refreshToken: string }>(
-        path,
-        { email, password },
-      );
+      const result = await api.post<AuthResponse>(path, { email, password });
       if (!result.ok) {
         setError(result.message);
         return;
       }
-      useAuthStore.getState().login(result.data.user, result.data.accessToken, result.data.refreshToken);
+      // Сервер отдаёт refreshToken в теле только mobile-клиентам
+      // (X-Client-Type: mobile, PLAN_Features_v0.4 §47); для
+      // устойчивости — fallback на null (сессия восстановится через
+      // refresh при следующем hydrateAuth).
+      useAuthStore
+        .getState()
+        .login(result.data.user, result.data.accessToken, result.data.refreshToken ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
     } finally {
@@ -99,9 +102,7 @@ export function LoginScreen(_props: Props): React.ReactElement {
         {submitting ? (
           <ActivityIndicator color="#0C0E16" />
         ) : (
-          <Text style={styles.submitText}>
-            {mode === 'login' ? 'Войти' : 'Создать аккаунт'}
-          </Text>
+          <Text style={styles.submitText}>{mode === 'login' ? 'Войти' : 'Создать аккаунт'}</Text>
         )}
       </Pressable>
     </KeyboardAvoidingView>

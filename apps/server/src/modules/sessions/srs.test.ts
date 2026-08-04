@@ -13,23 +13,23 @@ describe('FSRS recalcFsrs (v5)', () => {
 
   describe('interval direction', () => {
     it('returns interval 0 for Again rating (due_date resets)', () => {
-      const result = recalcFsrs(again, 10, 0.5, 'review');
+      const result = recalcFsrs(again, 10, 5, 'review');
       expect(result.intervalDays).toBe(0);
     });
 
     it('returns positive interval for Good rating on review state', () => {
-      const result = recalcFsrs(good, 10, 0.5, 'review');
+      const result = recalcFsrs(good, 10, 5, 'review');
       expect(result.intervalDays).toBeGreaterThan(0);
     });
 
     it('Easy rating produces larger interval than Good (same initial state)', () => {
-      const rGood = recalcFsrs(good, 10, 0.5, 'review');
-      const rEasy = recalcFsrs(easy, 10, 0.5, 'review');
+      const rGood = recalcFsrs(good, 10, 5, 'review');
+      const rEasy = recalcFsrs(easy, 10, 5, 'review');
       expect(rEasy.intervalDays).toBeGreaterThanOrEqual(rGood.intervalDays);
     });
 
     it('Hard rating produces non-zero interval', () => {
-      const result = recalcFsrs(hard, 10, 0.5, 'review');
+      const result = recalcFsrs(hard, 10, 5, 'review');
       expect(result.intervalDays).toBeGreaterThan(0);
     });
   });
@@ -38,30 +38,30 @@ describe('FSRS recalcFsrs (v5)', () => {
 
   describe('state transitions', () => {
     it('new + Good → learning (first successful review, interval=1)', () => {
-      const result = recalcFsrs(good, 0, 0, 'new');
+      const result = recalcFsrs(good, 0, 5, 'new');
       expect(result.newState).toBe('learning');
       expect(result.intervalDays).toBe(1);
     });
 
     it('new + Easy → learning (interval=1)', () => {
-      const result = recalcFsrs(easy, 0, 0, 'new');
+      const result = recalcFsrs(easy, 0, 5, 'new');
       expect(result.newState).toBe('learning');
       expect(result.intervalDays).toBe(1);
     });
 
     it('new + Hard → learning (interval=0 — show again today)', () => {
-      const result = recalcFsrs(hard, 0, 0, 'new');
+      const result = recalcFsrs(hard, 0, 5, 'new');
       expect(result.newState).toBe('learning');
       expect(result.intervalDays).toBe(0);
     });
 
     it('learning + Good → review (promoted after positive answer)', () => {
-      const result = recalcFsrs(good, 2.4, 0.5, 'learning');
+      const result = recalcFsrs(good, 2.4, 5, 'learning');
       expect(result.newState).toBe('review');
     });
 
     it('learning + Hard → stays learning (not promoted)', () => {
-      const result = recalcFsrs(hard, 0.6, 0.5, 'learning');
+      const result = recalcFsrs(hard, 0.6, 5, 'learning');
       expect(result.newState).toBe('learning');
     });
 
@@ -71,7 +71,7 @@ describe('FSRS recalcFsrs (v5)', () => {
     });
 
     it('review stays review on Good rating', () => {
-      const result = recalcFsrs(good, 10, 0.5, 'review');
+      const result = recalcFsrs(good, 10, 5, 'review');
       expect(result.newState).toBe('review');
     });
 
@@ -92,13 +92,13 @@ describe('FSRS recalcFsrs (v5)', () => {
     });
 
     it('Again + review → learning', () => {
-      const result = recalcFsrs(again, 10, 0.5, 'review');
+      const result = recalcFsrs(again, 10, 5, 'review');
       expect(result.newState).toBe('learning');
       expect(result.intervalDays).toBe(0);
     });
 
     it('Again + new → learning', () => {
-      const result = recalcFsrs(again, 0, 0, 'new');
+      const result = recalcFsrs(again, 0, 5, 'new');
       expect(result.newState).toBe('learning');
       expect(result.intervalDays).toBe(0);
     });
@@ -108,24 +108,24 @@ describe('FSRS recalcFsrs (v5)', () => {
 
   describe('difficulty direction', () => {
     it('increases difficulty on Again rating', () => {
-      const result = recalcFsrs(again, 10, 0.5, 'review');
-      expect(result.newDifficulty).toBeGreaterThan(0.5);
+      const result = recalcFsrs(again, 10, 5, 'review');
+      expect(result.newDifficulty).toBeGreaterThan(5);
     });
 
     it('increases difficulty on Hard rating', () => {
-      const result = recalcFsrs(hard, 10, 0.5, 'review');
-      expect(result.newDifficulty).toBeGreaterThan(0.5);
+      const result = recalcFsrs(hard, 10, 5, 'review');
+      expect(result.newDifficulty).toBeGreaterThan(5);
     });
 
     it('decreases difficulty on Easy rating', () => {
-      const result = recalcFsrs(easy, 10, 0.5, 'review');
-      expect(result.newDifficulty).toBeLessThan(0.5);
+      const result = recalcFsrs(easy, 10, 5, 'review');
+      expect(result.newDifficulty).toBeLessThan(5);
     });
 
     it('Good rating keeps difficulty unchanged (delta = 0)', () => {
-      const result = recalcFsrs(good, 10, 0.5, 'review');
-      // delta = 0.86 * (3 − 3) = 0 → difficulty stays at 0.5
-      expect(result.newDifficulty).toBe(0.5);
+      const result = recalcFsrs(good, 10, 5, 'review');
+      // delta = 0.86 * (3 − 3) = 0 → difficulty stays at 5
+      expect(result.newDifficulty).toBe(5);
     });
   });
 
@@ -133,22 +133,22 @@ describe('FSRS recalcFsrs (v5)', () => {
 
   describe('stability bounds', () => {
     it('stability is always at least 0.01 (floor after failure)', () => {
-      const result = recalcFsrs(again, 0.5, 0.5, 'review');
+      const result = recalcFsrs(again, 0.5, 5, 'review');
       expect(result.newStability).toBeGreaterThanOrEqual(0.01);
     });
 
     it('initial stability for Again on new card is 0.4 (w0)', () => {
-      const result = recalcFsrs(again, 0, 0, 'new');
+      const result = recalcFsrs(again, 0, 5, 'new');
       expect(result.newStability).toBe(0.4);
     });
 
     it('initial stability for Easy on new card is 5.8 (w3)', () => {
-      const result = recalcFsrs(easy, 0, 0, 'new');
+      const result = recalcFsrs(easy, 0, 5, 'new');
       expect(result.newStability).toBe(5.8);
     });
 
     it('stability grows on Good for a previously reviewed card', () => {
-      const result = recalcFsrs(good, 10, 0.5, 'review');
+      const result = recalcFsrs(good, 10, 5, 'review');
       expect(result.newStability).toBeGreaterThan(10);
     });
   });
@@ -157,50 +157,49 @@ describe('FSRS recalcFsrs (v5)', () => {
 
   describe('retrievability depends on elapsed days', () => {
     it('on-time review (elapsed = stability) keeps R = 0.9 — same as legacy default', () => {
-      const onTime = recalcFsrs(good, 10, 0.5, 'review', 10);
-      const legacy = recalcFsrs(good, 10, 0.5, 'review');
+      const onTime = recalcFsrs(good, 10, 5, 'review', 10);
+      const legacy = recalcFsrs(good, 10, 5, 'review');
       expect(onTime.newStability).toBe(legacy.newStability);
     });
 
     it('late review (elapsed > stability) lowers R and boosts stability growth', () => {
-      const onTime = recalcFsrs(good, 10, 0.5, 'review', 10);
-      const late = recalcFsrs(good, 10, 0.5, 'review', 20);
+      const onTime = recalcFsrs(good, 10, 5, 'review', 10);
+      const late = recalcFsrs(good, 10, 5, 'review', 20);
       expect(late.newStability).toBeGreaterThan(onTime.newStability);
     });
 
     it('early review (elapsed < stability) raises R and reduces stability growth', () => {
-      const onTime = recalcFsrs(good, 10, 0.5, 'review', 10);
-      const early = recalcFsrs(good, 10, 0.5, 'review', 3);
+      const onTime = recalcFsrs(good, 10, 5, 'review', 10);
+      const early = recalcFsrs(good, 10, 5, 'review', 3);
       expect(early.newStability).toBeLessThan(onTime.newStability);
     });
 
     it('late failure (Again) also depends on elapsed', () => {
-      const onTime = recalcFsrs(again, 10, 0.5, 'review', 10);
-      const late = recalcFsrs(again, 10, 0.5, 'review', 20);
+      const onTime = recalcFsrs(again, 10, 5, 'review', 10);
+      const late = recalcFsrs(again, 10, 5, 'review', 20);
       expect(late.newStability).toBeGreaterThan(onTime.newStability);
     });
 
     it('new card with elapsed = 0 keeps initial stability (R = 1)', () => {
-      const out = recalcFsrs(good, 0, 0, 'new', 0);
+      const out = recalcFsrs(good, 0, 5, 'new', 0);
       expect(out.newStability).toBe(2.4);
     });
   });
 
   // ── Difficulty bounds ─────────────────────────────────────────────
 
-  describe('difficulty bounds', () => {
-    it('difficulty clamped at lower bound (0)', () => {
+  describe('difficulty bounds (canonical FSRS-5 scale [1, 10], PLAN_Features_v0.4 §46)', () => {
+    it('difficulty clamped at lower bound (1)', () => {
       // Easy (delta −0.86) on already low difficulty
       const result = recalcFsrs(easy, 10, 0.01, 'review');
-      expect(result.newDifficulty).toBeGreaterThanOrEqual(0);
-      expect(result.newDifficulty).toBeLessThanOrEqual(1);
+      expect(result.newDifficulty).toBeGreaterThanOrEqual(1);
+      expect(result.newDifficulty).toBeLessThanOrEqual(10);
     });
 
-    it('difficulty clamped at upper bound (1)', () => {
+    it('difficulty clamped at upper bound (10)', () => {
       // Again (delta +1.72) on very high difficulty
-      const result = recalcFsrs(again, 10, 0.95, 'review');
-      expect(result.newDifficulty).toBeGreaterThanOrEqual(0);
-      expect(result.newDifficulty).toBeLessThanOrEqual(1);
+      const result = recalcFsrs(again, 10, 9.5, 'review');
+      expect(result.newDifficulty).toBe(10);
     });
   });
 
@@ -215,13 +214,13 @@ describe('FSRS recalcFsrs (v5)', () => {
     });
 
     it('new card + Easy gives initial stability = 5.8 (w3)', () => {
-      const result = recalcFsrs(easy, 0, 0, 'new');
+      const result = recalcFsrs(easy, 0, 5, 'new');
       expect(result.newStability).toBe(5.8);
       expect(result.newState).toBe('learning');
     });
 
     it('intervalDays is always an integer', () => {
-      const result = recalcFsrs(good, 3.7, 0.5, 'review');
+      const result = recalcFsrs(good, 3.7, 5, 'review');
       expect(Number.isInteger(result.intervalDays)).toBe(true);
     });
 
@@ -231,7 +230,7 @@ describe('FSRS recalcFsrs (v5)', () => {
 
       for (const state of states) {
         for (const rating of ratings) {
-          const result = recalcFsrs(rating, 5, 0.5, state);
+          const result = recalcFsrs(rating, 5, 5, state);
           expect(
             result.intervalDays,
             `intervalDays should be >= 0 for rating=${rating} state=${state}`,
@@ -246,7 +245,7 @@ describe('FSRS recalcFsrs (v5)', () => {
 
       for (const state of states) {
         for (const rating of [again, hard, good, easy] as const) {
-          const result = recalcFsrs(rating, 5, 0.5, state);
+          const result = recalcFsrs(rating, 5, 5, state);
           expect(
             validStates.has(result.newState),
             `invalid newState '${result.newState}' for rating=${rating} state=${state}`,

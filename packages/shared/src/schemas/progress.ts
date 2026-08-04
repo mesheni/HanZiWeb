@@ -32,7 +32,7 @@ export type SrsRating = z.infer<typeof SrsRatingSchema>;
  * Пример (слово "喜欢" у user X):
  *   state: "review"
  *   stability: 12.5
- *   difficulty: 0.35
+ *   difficulty: 5.5
  *   reps: 8
  *   dueDate: "2026-06-30T18:00:00.000Z"
  */
@@ -43,8 +43,13 @@ export const UserWordProgressSchema = z.object({
   state: WordStateSchema,
   /** Стабильность памяти (FSRS stability) — в днях */
   stability: z.number().nonnegative().default(0),
-  /** Сложность слова для пользователя (FSRS difficulty, 0..1) */
-  difficulty: z.number().min(0).max(1).default(0),
+  /**
+   * Сложность слова для пользователя — каноническая FSRS-5 шкала D ∈ [1, 10]
+   * (PLAN_Features_v0.4 §46). Формула `(11 − D)` в stability-инкременте
+   * рассчитана именно на неё: при D ∈ [0, 1] множитель был константой и
+   * сложность почти не влияла на планирование.
+   */
+  difficulty: z.number().min(1).max(10).default(5),
   /** Количество повторений */
   reps: z.number().int().nonnegative().default(0),
   /** Дата следующего показа */
@@ -70,7 +75,7 @@ export type RecordAnswer = z.infer<typeof RecordAnswerSchema>;
 export const SrsRecalcResultSchema = z.object({
   wordId: z.string().uuid(),
   newStability: z.number().nonnegative(),
-  newDifficulty: z.number().min(0).max(1),
+  newDifficulty: z.number().min(1).max(10),
   newState: WordStateSchema,
   newDueDate: z.string().datetime(),
   /** Интервал до следующего показа в днях */
