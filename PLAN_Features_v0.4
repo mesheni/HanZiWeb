@@ -1257,6 +1257,20 @@ R=1, initial stability), `recalcFsrs.test.ts` (sdk) +2 (late > on-time,
 
 **Ожидаемый результат**: Reset-token single-use гарантированно.
 
+**Статус**: ✅ Исправлено — `auth.service.ts` (`resetPassword`).
+`redis.get(key)` → … → `redis.del(key)` заменён на атомарный
+`redis.getdel(key)` (ioredis 5, Redis 7 в docker-compose): ключ
+забирается и удаляется одним вызовом, параллельный запрос с тем же
+токеном получает `null` → `400 INVALID_TOKEN`; висящие `del` в ветках
+USER_NOT_FOUND и в конце удалены (ключ уже удалён). `PASSWORD_RESET_PREFIX`
+экспортирован для тестов. Та же гонка найдена и исправлена в
+`oauth.service.ts:redeemExchangeCode` (одноразовый exchange-код —
+тот же паттерн get→del → теперь `getdel`). Покрыто
+`resetPassword.singleuse.test.ts` (3 теста, реальный Redis): два
+параллельных вызова с одним токеном — ровно один fulfilled, второй
+`INVALID_TOKEN`; последовательное повторное использование отклоняется;
+неизвестный токен отклоняется.
+
 ---
 
 ## 37. `findOrCreateOAuthUser` (ветка by-email) не обновляет `lastActiveDate`
@@ -1272,6 +1286,16 @@ email (стр. 126-134) зовётся `linkOAuthAccount`, но `User.lastActive
 where: { id: byEmail.id }, data: { lastActiveDate: new Date() } })`.
 
 **Ожидаемый результат**: Streak обновляется при любом логине.
+
+**Статус**: ✅ Исправлено — `oauth.service.ts` (`findOrCreateOAuthUser`).
+В by-email ветке после `linkOAuthAccount` добавлен
+`prisma.user.update({ where: { id: byEmail.id }, data: { lastActiveDate:
+new Date() } })` — OAuth auto-link по email теперь считается входом
+наравне с явными login-флоу, streak не получает фантомный разрыв.
+Покрыто `oauth.link.test.ts` (1 интеграционный тест): юзер со
+«вчерашним» lastActiveDate, вызов `findOrCreateOAuthUser` с
+verified-email → возвращается его id, `lastActiveDate` бампается,
+`UserAccount` создан.
 
 ---
 

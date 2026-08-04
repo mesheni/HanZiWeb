@@ -35,15 +35,14 @@ export async function issueExchangeCode(userId: string): Promise<string> {
 
 /**
  * Забирает и удаляет `userId`, привязанный к одноразовому коду.
+ * `GETDEL` атомарен (PLAN_Features_v0.4 §36): параллельный вызов
+ * с тем же кодом получит `null` — код нельзя использовать дважды.
  * Возвращает `null`, если код не найден / истёк.
  */
 export async function redeemExchangeCode(code: string): Promise<string | null> {
   const redis = getRedis();
   const key = `${OAUTH_CODE_PREFIX}${code}`;
-  const userId = await redis.get(key);
-  if (!userId) return null;
-  await redis.del(key);
-  return userId;
+  return redis.getdel(key);
 }
 
 /**
@@ -54,7 +53,9 @@ export async function redeemExchangeCode(code: string): Promise<string | null> {
  */
 export function buildOAuthRedirectUrl(
   baseUrl: string,
-  params: { provider: OAuthProvider } & ({ code: string; error?: undefined } | { code?: undefined; error: string }),
+  params: { provider: OAuthProvider } & (
+    { code: string; error?: undefined } | { code?: undefined; error: string }
+  ),
 ): string {
   const url = new URL('/auth/callback', baseUrl);
   url.searchParams.set('provider', params.provider);
@@ -73,10 +74,7 @@ export function buildOAuthRedirectUrl(
  * Защита от «замка»: пользователь обязан иметь хотя бы один
  * способ войти (либо пароль, либо ещё одну привязку).
  */
-export function computeCanUnlink(
-  accounts: { provider: string }[],
-  hasPassword: boolean,
-): boolean {
+export function computeCanUnlink(accounts: { provider: string }[], hasPassword: boolean): boolean {
   if (accounts.length > 1) return true;
   if (accounts.length === 1 && hasPassword) return true;
   return false;
@@ -130,6 +128,14 @@ export async function findOrCreateOAuthUser(profile: OAuthProfile): Promise<stri
     });
     if (byEmail) {
       await linkOAuthAccount(byEmail.id, profile);
+      // Auto-link по email — это тоже вход: бампаем lastActiveDate,
+      // иначе `getUserStreak` (считает от lastActiveDate) может
+      // зафиксировать фантомный разрыв streak для юзера, входящего
+      // только через OAuth (PLAN_Features_v0.4 §37).
+      await prisma.user.update({
+        where: { id: byEmail.id },
+        data: { lastActiveDate: new Date() },
+      });
       return byEmail.id;
     }
   }
@@ -197,10 +203,7 @@ export async function linkOAuthAccount(userId: string, profile: OAuthProfile): P
  * в роуте: `DELETE /auth/oauth/:provider` проверяет, что у
  * пользователя остаётся хотя бы один способ входа.
  */
-export async function unlinkOAuthAccount(
-  userId: string,
-  provider: OAuthProvider,
-): Promise<void> {
+export async function unlinkOAuthAccount(userId: string, provider: OAuthProvider): Promise<void> {
   await prisma.userAccount.deleteMany({
     where: { userId, provider },
   });

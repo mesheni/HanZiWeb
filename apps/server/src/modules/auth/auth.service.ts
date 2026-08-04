@@ -19,8 +19,8 @@ const SALT_ROUNDS = 12;
 /** TTL токена восстановления пароля (15 минут). */
 const PASSWORD_RESET_TTL_SEC = 15 * 60;
 
-/** Префикс ключа Redis для токенов сброса пароля. */
-const PASSWORD_RESET_PREFIX = 'pwreset:';
+/** Префикс ключа Redis для токенов сброса пароля. Экспортируется для тестов single-use. */
+export const PASSWORD_RESET_PREFIX = 'pwreset:';
 
 /** Префикс ключа Redis для счётчика неудачных попыток входа (PLAN_Features_v0.3 §15). */
 const LOGIN_ATTEMPTS_PREFIX = 'login-attempts:';
@@ -412,13 +412,16 @@ export async function requestPasswordReset(input: ForgotPassword): Promise<void>
 /**
  * Подтверждение сброса пароля (PLAN_Features_v0.3 §2, шаг 2).
  *
- * 1. Забирает `userId` из Redis по ключу `pwreset:<token>`. Если токен
- *    не найден / истёк → `400 INVALID_TOKEN`.
+ * 1. Атомарно забирает `userId` из Redis по ключу `pwreset:<token>`
+ *    через `GETDEL` (get+del одним вызовом, Redis 6.2+). Если токен
+ *    не найден / истёк → `400 INVALID_TOKEN`. Атомарность гарантирует
+ *    single-use: параллельный запрос с тем же токеном получит `null`
+ *    и упадёт с `INVALID_TOKEN`, а не дважды применит сброс
+ *    (PLAN_Features_v0.4 §36).
  * 2. Хеширует новый пароль, обновляет `User.passwordHash`.
  * 3. Инкрементит `tokenVersion` (refresh-токены на других устройствах
  *    становятся невалидны) и `passwordVersion` (claim `pv` в access-токене
  *    перестаёт совпадать → middleware вернёт 401).
- * 4. Удаляет токен из Redis, чтобы его нельзя было использовать повторно.
  *
  * @throws Error с `statusCode` и `code`:
  * - `400 INVALID_TOKEN` — токен не найден / истёк.
@@ -427,7 +430,7 @@ export async function requestPasswordReset(input: ForgotPassword): Promise<void>
 export async function resetPassword(input: ResetPassword): Promise<void> {
   const redis = getRedis();
   const key = `${PASSWORD_RESET_PREFIX}${input.token}`;
-  const userId = await redis.get(key);
+  const userId = await redis.getdel(key);
   if (!userId) {
     throw Object.assign(new Error('Invalid or expired reset token'), {
       statusCode: 400,
@@ -440,9 +443,7 @@ export async function resetPassword(input: ResetPassword): Promise<void> {
     select: { id: true },
   });
   if (!user) {
-    // Зачистим «висящий» токен и сообщим — не частая ситуация,
-    // но если пользователь удалён между запросом и подтверждением.
-    await redis.del(key);
+    // Ключ уже удалён атомарным GETDEL — чистить нечего.
     throw Object.assign(new Error('User not found'), {
       statusCode: 404,
       code: 'USER_NOT_FOUND',
@@ -458,6 +459,4 @@ export async function resetPassword(input: ResetPassword): Promise<void> {
       passwordVersion: { increment: 1 },
     },
   });
-  // Токен — одноразовый.
-  await redis.del(key);
 }
