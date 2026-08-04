@@ -2,6 +2,9 @@ import { apiPost } from '../api/client';
 import { getDb } from './database';
 import type { SyncResponse } from '@hanzi/shared';
 
+/** Курсор инкрементального sync (PLAN_Features_v0.4 §48). */
+const SYNC_CURSOR_KEY = 'hanzi:sync:last-sync-at';
+
 let engineInstance: SyncEngine | null = null;
 
 export class SyncEngine {
@@ -71,7 +74,12 @@ export class SyncEngine {
         payload: c.payload as Record<string, unknown>,
       }));
 
-      const response = await apiPost<SyncResponse>('/sync', { changes: payload });
+      const response = await apiPost<SyncResponse>('/sync', {
+        changes: payload,
+        // Инкрементальный sync: сервер отдаёт только изменения после
+        // курсора; без курсора (первый sync) — полный снапшот.
+        sinceTimestamp: localStorage.getItem(SYNC_CURSOR_KEY) ?? undefined,
+      });
 
       for (const result of response.results) {
         const change = changes.find((c) => c.id === result.changeId);
@@ -94,6 +102,17 @@ export class SyncEngine {
             await existing.patch(serverChange);
           }
         }
+      }
+
+      // Продвигаем курсор до максимального timestamp'а serverChanges —
+      // следующий sync получит только изменения после него.
+      let maxTs = Number(localStorage.getItem(SYNC_CURSOR_KEY) ?? 0);
+      for (const serverChange of response.serverChanges) {
+        const ts = new Date(serverChange.timestamp).getTime();
+        if (ts > maxTs) maxTs = ts;
+      }
+      if (maxTs > 0) {
+        localStorage.setItem(SYNC_CURSOR_KEY, new Date(maxTs).toISOString());
       }
 
       this.retryDelay = 1000;

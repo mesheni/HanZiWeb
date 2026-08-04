@@ -3,6 +3,10 @@ import type { ApiClient } from '../api/ApiClient';
 import type { PendingChange, PendingChangeType, ServerChange, SyncResponse } from '@hanzi/shared';
 import { SyncResponseSchema } from '@hanzi/shared';
 import type { QueueStorage } from './QueueStorage';
+import { getSecureStorage } from '../storage/SecureStorage';
+
+/** Ключ курсора инкрементального sync (PLAN_Features_v0.4 §48). */
+const SYNC_CURSOR_KEY = 'hanzi:sync:last-sync-at';
 
 export interface SyncEngineOptions {
   api: ApiClient;
@@ -50,6 +54,12 @@ export class SyncEngine {
   private isStarted = false;
   private isDestroyed = false;
   private onServerChange?: (change: ServerChange) => void;
+  /**
+   * Курсор инкрементального sync: ISO-время последнего успешного flush.
+   * Слается как `sinceTimestamp` — сервер отдаёт только прогресс,
+   * изменённый после него (PLAN_Features_v0.4 §48).
+   */
+  private lastSyncAt: string | null;
 
   constructor(options: SyncEngineOptions) {
     this.api = options.api;
@@ -58,6 +68,7 @@ export class SyncEngine {
     this.initialRetryDelay = options.initialRetryDelay ?? 1000;
     this.maxRetryDelay = options.maxRetryDelay ?? 30_000;
     this.retryDelay = this.initialRetryDelay;
+    this.lastSyncAt = readSyncCursor();
   }
 
   /** Subscribe to server-pushed changes (used to update local progress). */
@@ -155,6 +166,9 @@ export class SyncEngine {
 
         const response = await this.api.post<SyncResponse>('/sync', {
           changes: pending.map((c) => ({ id: c.id, type: c.type, payload: c.payload })),
+          // Инкрементальный sync: сервер отдаёт только изменения после
+          // курсора. Без курcора (первый sync) — полный снапшот.
+          sinceTimestamp: this.lastSyncAt ?? undefined,
         });
 
         if (!response.ok) {
@@ -180,11 +194,33 @@ export class SyncEngine {
           this.onServerChange?.(serverChange);
         }
 
+        // Продвигаем курсор до максимального timestamp'а полученных
+        // serverChanges. Если изменений не было — курсор остаётся.
+        let maxTs = this.lastSyncAt ? Date.parse(this.lastSyncAt) : 0;
+        for (const serverChange of data.serverChanges) {
+          const ts = Date.parse(serverChange.timestamp);
+          if (Number.isFinite(ts) && ts > maxTs) maxTs = ts;
+        }
+        if (maxTs > 0) {
+          this.lastSyncAt = new Date(maxTs).toISOString();
+          writeSyncCursor(this.lastSyncAt);
+        }
+
         this.retryDelay = this.initialRetryDelay;
         // Loop re-checks `pending` at the top, so new changes
         // enqueued during the iteration get picked up automatically.
       }
     } catch {
+      this.scheduleRetry();
+      return;
+    }
+
+    // Iteration-cap достигнут (PLAN_Features_v0.4 §49): раньше здесь был
+    // тихий return — оставшиеся pending-элементы ждали внешнего
+    // триггера (следующий enqueueChange или reconnect), и после
+    // офлайн-сессии часть прогресса «застревала» до следующего ответа.
+    // Теперь планируем отложенный re-flush — очередь дочищается сама.
+    if ((await this.storage.listPending()).length > 0) {
       this.scheduleRetry();
     }
   }
@@ -216,4 +252,25 @@ function generateId(): string {
     return globalThis.crypto.randomUUID();
   }
   return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Читает курсор инкрементального sync из SecureStorage. Если хранилище
+ * не зарегистрировано (юнит-тесты) — курсор остаётся в памяти.
+ */
+function readSyncCursor(): string | null {
+  try {
+    return getSecureStorage().getItem(SYNC_CURSOR_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Персистит курсор; при недоступном хранилище — молча пропускает. */
+function writeSyncCursor(value: string): void {
+  try {
+    getSecureStorage().setItem(SYNC_CURSOR_KEY, value);
+  } catch {
+    // SecureStorage не зарегистрирован — курсор живёт в памяти.
+  }
 }

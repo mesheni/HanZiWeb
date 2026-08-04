@@ -29,6 +29,15 @@ export const SyncChangeSchema = z.object({
 
 export const SyncRequestSchema = z.object({
   changes: z.array(SyncChangeSchema),
+  /**
+   * Курсор инкрементального sync (PLAN_Features_v0.4 §48): ISO-время
+   * последнего успешного sync клиента. Сервер отдаёт в `serverChanges`
+   * только прогресс, изменённый ПОСЛЕ этого момента (lastReviewDate >
+   * since, либо новые карточки с dueDate > since), — бандл линейный по
+   * изменённому, а не O(все записи). Первый sync — без курсора → полный
+   * снапшот.
+   */
+  sinceTimestamp: z.string().datetime().optional(),
 });
 export type SyncRequest = z.infer<typeof SyncRequestSchema>;
 

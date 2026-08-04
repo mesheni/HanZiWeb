@@ -1698,6 +1698,25 @@ since } }`. Mobile хранить `lastSyncAt` и кидать его.
 **Ожидаемый результат**: Бандл sync'а линейный по изменённому, не по
 всему.
 
+**Статус**: ✅ Исправлено — инкрементальный sync с курсором:
+- `packages/shared/src/schemas/sync.ts` — `SyncRequestSchema` получил
+  `sinceTimestamp: z.string().datetime().optional()`.
+- `apps/server/src/modules/sync/sync.service.ts` — дифф-фильтр:
+  `lastReviewDate > since` (изменённые после ответов) ИЛИ
+  `lastReviewDate IS NULL AND dueDate > since` (новые карточки,
+  созданные после курcора; без этого кейс «deck clone после первого
+  sync» не доезжал бы до клиента). Первый sync без курсора — полный
+  снапшот.
+- `packages/mobile-sdk/src/sync/SyncEngine.ts` — хранит `lastSyncAt`
+  (ключ `hanzi:sync:last-sync-at` в SecureStorage, fallback на память
+  если хранилище не зарегистрировано — юнит-тесты), слает его как
+  `sinceTimestamp` и продвигает до `max(timestamp)` полученных
+  `serverChanges` после каждого успешного flush.
+- `apps/web/src/db/sync.ts` — тот же курсор в localStorage.
+- Тесты: `sync.schemas.test.ts` (опциональный/валидный/невалидный
+  курсор), `SyncEngine.test.ts` (первый sync без курсора, второй — с
+  продвинутым). Покрытие: server vitest 398/398, mobile-sdk 34/34.
+
 ---
 
 ## 49. `SyncEngine.runFlushLoop` выходит на `MAX_ITERATIONS=10` без retry
@@ -1715,6 +1734,16 @@ Iteration-cap ветвь тихо return'ит — новые pending элеме�
 `this.scheduleRetry()` или одну отложенную re-flush.
 
 **Ожидаемый результат**: Очередь доflush'ивается без внешнего триггера.
+
+**Статус**: ✅ Исправлено — `packages/mobile-sdk/src/sync/SyncEngine.ts`
+(`runFlushLoop`): после выхода из цикла по iteration-cap проверяется
+очередь; если `listPending()` не пуст — зовётся `scheduleRetry()`
+(отложенный re-flush с бэкоффом) вместо тихого return. Очередь теперь
+дочищается сама: юзер учит оффлайн → выходит в сеть → первый flush
+обрабатывает до 10 батчей, остаток догоняет retry без «пинка» внешним
+событием. Покрытие: тест «re-flushes after the iteration cap without an
+external trigger» (12 pending, сервер не ack'ает → после первого flush
+вызовов ≥ 10, после паузы на retry — больше). mobile-sdk vitest 34/34.
 
 ---
 

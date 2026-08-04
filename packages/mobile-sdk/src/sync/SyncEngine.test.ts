@@ -356,6 +356,98 @@ describe('SyncEngine', () => {
     await second;
   });
 
+  it('sends sinceTimestamp on the second sync after a successful first flush (PLAN_Features_v0.4 §48)', async () => {
+    const serverChange: ServerChange = {
+      wordId: 'w1',
+      state: 'review',
+      stability: 5,
+      difficulty: 3,
+      reps: 2,
+      dueDate: new Date().toISOString(),
+      lastReviewDate: new Date().toISOString(),
+      timestamp: '2026-07-01T00:00:00.000Z',
+    };
+    let first = true;
+    const api = makeApiMock(async (body) => {
+      const changes = body.changes as Array<{ id: string }>;
+      const isFirst = first;
+      first = false;
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          results: changes.map((c) => ({
+            changeId: c.id,
+            wordId: 'w1',
+            newStability: 1,
+            newDifficulty: 5,
+            newState: 'learning',
+            newDueDate: new Date().toISOString(),
+            intervalDays: 0,
+            xpGain: 0,
+          })),
+          serverChanges: isFirst ? [serverChange] : [],
+        },
+      };
+    });
+
+    const engine = new SyncEngine({ api, storage, idFactory });
+    engine.start();
+    await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
+    await engine.flush();
+    // Первый sync — без курсора (полный снапшот).
+    expect(api.post.mock.calls[0]?.[1]).toMatchObject({ sinceTimestamp: undefined });
+
+    // Второй sync — курсор продвинут до max(timestamp) serverChanges.
+    await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
+    await engine.flush();
+    expect(api.post.mock.calls[1]?.[1]).toMatchObject({
+      sinceTimestamp: '2026-07-01T00:00:00.000Z',
+    });
+    engine.destroy();
+  });
+
+  it('re-flushes after the iteration cap without an external trigger (PLAN_Features_v0.4 §49)', async () => {
+    // Сервер никогда не ack'ает изменения → очередь не пуста, каждый
+    // flush упирается в MAX_ITERATIONS=10. Раньше после cap был тихий
+    // return и pending-элементы ждали внешнего триггера.
+    const api = makeApiMock(async () => ({
+      ok: true,
+      status: 200,
+      data: { results: [], serverChanges: [] },
+    }));
+
+    const engine = new SyncEngine({
+      api,
+      storage,
+      idFactory,
+      initialRetryDelay: 1,
+      maxRetryDelay: 4,
+    });
+    for (let i = 0; i < 12; i += 1) {
+      await storage.insert({
+        id: `c${i}`,
+        type: 'study_answer',
+        payload: { wordId: 'w1', rating: 3, timestamp: new Date().toISOString() },
+        isSynced: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    engine.start();
+
+    const callsAfterFirstFlush = api.post.mock.calls.length;
+    // Первый flush: 10 итераций → cap.
+    await engine.flush();
+    expect(api.post.mock.calls.length).toBeGreaterThanOrEqual(callsAfterFirstFlush + 10);
+
+    // Без внешнего триггера scheduleRetry (1ms) должен запустить
+    // ещё один flush — вызовов станет больше.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(api.post.mock.calls.length).toBeGreaterThan(callsAfterFirstFlush + 10);
+
+    engine.destroy();
+  });
+
   it('destroy() removes the network subscription and clears the retry timer', () => {
     const api = makeApiMock(async () => ({
       ok: true,

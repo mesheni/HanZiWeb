@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ServerChangeSchema,
+  SyncRequestSchema,
   SyncResultSchema,
   SyncResponseSchema,
   type ServerChange,
@@ -50,6 +51,25 @@ describe('ServerChangeSchema (PLAN_Features_v0.4 §40)', () => {
 
   it('rejects non-integer reps', () => {
     expect(ServerChangeSchema.safeParse(mkServerChange({ reps: 2.5 })).success).toBe(false);
+  });
+});
+
+describe('SyncRequestSchema sinceTimestamp (incremental sync cursor, PLAN_Features_v0.4 §48)', () => {
+  it('accepts a request without a cursor (first sync = full snapshot)', () => {
+    expect(SyncRequestSchema.safeParse({ changes: [] }).success).toBe(true);
+  });
+
+  it('accepts a valid ISO sinceTimestamp', () => {
+    expect(
+      SyncRequestSchema.safeParse({ changes: [], sinceTimestamp: new Date().toISOString() })
+        .success,
+    ).toBe(true);
+  });
+
+  it('rejects a malformed sinceTimestamp', () => {
+    expect(SyncRequestSchema.safeParse({ changes: [], sinceTimestamp: 'not-a-date' }).success).toBe(
+      false,
+    );
   });
 });
 

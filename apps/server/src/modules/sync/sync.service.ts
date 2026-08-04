@@ -76,8 +76,24 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
     }
   }
 
+  // Инкрементальный sync (PLAN_Features_v0.4 §48): при наличии курсора
+  // отдаём только прогресс, изменённый после него — lastReviewDate
+  // обновляется при каждом ответе, а новые карточки (lastReviewDate
+  // null) сигнализируют о себе через dueDate = момент создания.
+  // Без курсора (первый sync) — полный снапшот.
+  const since = input.sinceTimestamp ? new Date(input.sinceTimestamp) : undefined;
   const allProgress = await prisma.userWordProgress.findMany({
-    where: { userId },
+    where: {
+      userId,
+      ...(since
+        ? {
+            OR: [
+              { lastReviewDate: { gt: since } },
+              { lastReviewDate: null, dueDate: { gt: since } },
+            ],
+          }
+        : {}),
+    },
   });
 
   const serverChanges = allProgress.map((p) => ({
