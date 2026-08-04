@@ -1440,6 +1440,16 @@ WatermelonDB `progress.difficulty`, и следующий FSRS-вызов пол
 
 **Ожидаемый результат**: Единая шкала difficulty.
 
+**Статус**: ✅ Исправлено — `packages/shared/src/schemas/progressExport.ts`.
+`ProgressRecordSchema.difficulty` теперь `z.number().min(0).max(1)` —
+внутренняя шкала `[0, 1]`, единая со всеми остальными схемами
+(progress.ts, sync.ts). Значение `5.0` (FSRS `[1, 10]` шкала) на
+границе импорта (`ProgressImportRequestSchema.parse` в stats.routes)
+отклоняется 400-й, а не пишется тихо в `UserWordProgress.difficulty`.
+Пример в JSDoc поправлен: `difficulty: 5.0` → `0.5`. Покрыто
+`progressExport.test.ts` (новый, +2 теста): `0`/`0.5`/`1` → ok,
+`5`/`-0.1`/`1.01` → fail.
+
 ---
 
 ## 43. `PracticeType` (session.ts) vs `TestQuestionType` (test.ts): underscore vs hyphen
@@ -1460,6 +1470,20 @@ map'ы; строковый lookup, случайно пересекающий и�
 `practiceTypeToTestType` в `packages/shared/src/utils/`. Покрыть unit-тестом.
 
 **Ожидаемый результат**: Нет случайных string-lookup-фейлов.
+
+**Статус**: ✅ Исправлено — выбран вариант «схемы расходятся намеренно».
+Новые `packages/shared/src/utils/typeMapping.ts` (экспорт из index.ts):
+`PRACTICE_TO_TEST_TYPE` (multiple-choice → multiple-choice-translation,
+reverse-choice → reverse-choice-character, pinyin-input → pinyin-input,
+tone-recognition → tone-recognition, character_assembly →
+character-assembly, cloze → cloze; flip-card / syllable-constructor →
+нет аналога), `practiceTypeToTestType()` (null для без-аналога),
+`TEST_TO_PRACTICE_TYPE` + `testTypeToPracticeType()` (всегда определён).
+Конвертация теперь в одном месте, строковые наборы не пересекаются
+случайно. Покрыто `typeMapping.test.ts` (новый, +4 теста): все
+соответствия, null для flip-card/syllable-constructor, отсутствие
+коллизий с практик-набором (кроме дословных самосоответствий
+pinyin-input/tone-recognition), round-trip по всем тест-типам.
 
 ---
 

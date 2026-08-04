@@ -4,24 +4,24 @@ import { z } from 'zod';
  * Экспорт/импорт прогресса пользователя.
  * См. PLAN_Features_v0.2 §10.
  *
- * Формат JSON-файла:
- * {
- *   "version": 1,
- *   "exportedAt": "2026-07-04T12:00:00.000Z",
- *   "userId": "uuid",
- *   "progress": [
- *     {
- *       "wordId": "uuid",
- *       "state": "learning",
- *       "stability": 1.2,
- *       "difficulty": 5.0,
- *       "reps": 3,
- *       "dueDate": "2026-07-04T12:00:00.000Z",
- *       "lastReviewDate": "2026-07-03T12:00:00.000Z" | null
- *     },
- *     ...
- *   ]
- * }
+ *  Формат JSON-файла:
+ *  {
+ *    "version": 1,
+ *    "exportedAt": "2026-07-04T12:00:00.000Z",
+ *    "userId": "uuid",
+ *    "progress": [
+ *      {
+ *        "wordId": "uuid",
+ *        "state": "learning",
+ *        "stability": 1.2,
+ *        "difficulty": 0.5,
+ *        "reps": 3,
+ *        "dueDate": "2026-07-04T12:00:00.000Z",
+ *        "lastReviewDate": "2026-07-03T12:00:00.000Z" | null
+ *      },
+ *      ...
+ *    ]
+ *  }
  *
  * CSV-формат: первая строка — заголовок
  * `wordId,state,stability,difficulty,reps,dueDate,lastReviewDate`,
@@ -39,7 +39,11 @@ export const ProgressRecordSchema = z.object({
   wordId: z.string().uuid(),
   state: ProgressStateSchema,
   stability: z.number().nonnegative(),
-  difficulty: z.number().nonnegative(),
+  // Внутренняя шкала difficulty — [0, 1] (как в progress.ts). Значение
+  // вне диапазона (например, FSRS-шкала [1, 10]) отклоняется на границе,
+  // чтобы импорт не испортил UserWordProgress.difficulty
+  // (PLAN_Features_v0.4 §42).
+  difficulty: z.number().min(0).max(1),
   reps: z.number().int().nonnegative(),
   /** ISO-строка даты (для совместимости с JSON). */
   dueDate: z.string().datetime(),
