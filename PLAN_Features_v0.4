@@ -1073,6 +1073,20 @@ Session, SessionAnswer) вычищают зависимые строки. Доп
 
 **Ожидаемый результат**: В prod аудио доступно по возвращаемому URL.
 
+**Статус**: ✅ Исправлено — `audio.service.ts`. Добавлена зависимость
+`@google-cloud/storage` и абстракция `AudioStorage` с двумя бэкендами:
+`createLocalStorage` (dev: `AUDIO_STORAGE_PATH` + раздача через
+`GET /audio/files/:fileName`) и `createGcsStorage` (prod:
+`bucket.file(name).save(bytes, { contentType: 'audio/mpeg', resumable:
+false })`, публичный URL `https://storage.googleapis.com/<bucket>/<file>`).
+`resolveStorage()` выбирает бэкенд по `GCS_BUCKET_NAME`. Кэш
+проверяется через выбранный бэкенд (`storage.exists`), а не локальный
+диск, поэтому в prod повторные запросы не тратят платный TTS и
+возвращают корректный GCS-URL. Покрыто `audio.service.test.ts` (7 тестов):
+выбор режима, local save/exists/URL, GCS save/exists, интеграционный
+`generateAudio` с моком GCS+fetch: upload в бакет и возврат GCS-URL,
+cache-hit без TTS-запроса. `.env.example` дополнен секцией Audio.
+
 ---
 
 ## 31. `/audio/generate` принимает произвольный текст для платного Google TTS
@@ -1089,6 +1103,18 @@ Cache key `sha1(language:text)` → уникальные строки обход
   свободного `text` (например, ≤20/день).
 
 **Ожидаемый результат**: Платный TTS нельзя абузить.
+
+**Статус**: ✅ Исправлено — `audio.routes.ts`. Free-text синтез (без
+`wordId`) теперь только для ADMIN: обычный пользователь получает 403
+`FORBIDDEN` (guard в обработчике после `authenticate`). При `wordId`
+текст берётся из `Word.character` (`generateAudioForWord`), переданный
+клиентом `text` игнорируется — «подмешать» произвольный текст через
+чужой wordId нельзя. `text` в схеме стал optional с refine
+«wordId или text обязателен» — при wordId можно не слать text.
+Покрыто `audio.routes.test.ts` (6 тестов): USER+free text → 403 без
+вызова генерации; USER+wordId (+произвольный text) → 200 и только
+`generateAudioForWord`; ADMIN+free text → 200 и `generateAudio`;
+пустой payload → 400; без токена → 401.
 
 ---
 

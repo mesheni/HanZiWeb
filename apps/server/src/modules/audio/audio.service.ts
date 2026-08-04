@@ -2,20 +2,78 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { Storage, type Bucket } from '@google-cloud/storage';
 import { prisma } from '../../lib/prisma.js';
-import { loadConfig } from '../../config.js';
+import { loadConfig, type Config } from '../../config.js';
 
 /**
  * Сервис генерации и хранения аудио через Google Cloud TTS.
  *
- * Поддерживает два режима:
- *  1. Production: загрузка mp3 в GCS-бакет (если задан GCS_BUCKET_NAME).
- *  2. Dev: локальное сохранение в AUDIO_STORAGE_PATH (по умолчанию ./storage/audio).
+ * Поддерживает два режима (PLAN_Features_v0.4 §30):
+ *  1. Production: mp3 загружается в GCS-бакет (GCS_BUCKET_NAME задан),
+ *     публичный URL — `https://storage.googleapis.com/<bucket>/<file>`.
+ *  2. Dev: локальное сохранение в AUDIO_STORAGE_PATH и раздача через
+ *     GET /audio/files/:fileName.
  *
  * Если GOOGLE_APPLICATION_CREDENTIALS не задан — эндпоинт вернёт 501.
  */
 
 const STORAGE_DIR = loadConfig().AUDIO_STORAGE_PATH;
+
+/** Имя файла детерминировано от текста+языка — это и есть ключ кэша. */
+function fileNameFor(text: string, language: string): string {
+  return createHash('sha1').update(`${language}:${text}`).digest('hex') + '.mp3';
+}
+
+/** Абстракция хранения, чтобы GCS и локальный режим были взаимозаменяемы. */
+export interface AudioStorage {
+  exists(fileName: string): Promise<boolean>;
+  save(fileName: string, bytes: Buffer): Promise<void>;
+  publicUrl(fileName: string): string;
+}
+
+/** Локальный dev-режим: файлы на диске, раздача через /audio/files. */
+export function createLocalStorage(config: Config): AudioStorage {
+  const dir = config.AUDIO_STORAGE_PATH;
+  return {
+    async exists(fileName) {
+      return existsSync(join(dir, fileName));
+    },
+    async save(fileName, bytes) {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, fileName), bytes);
+    },
+    publicUrl(fileName) {
+      return `${config.AUDIO_PUBLIC_BASE_URL}/${fileName}`;
+    },
+  };
+}
+
+/** Production-режим: mp3 загружается в GCS-бакет. */
+export function createGcsStorage(config: Config): AudioStorage {
+  const storage = new Storage();
+  const bucket: Bucket = storage.bucket(config.GCS_BUCKET_NAME!);
+  return {
+    async exists(fileName) {
+      const [ok] = await bucket.file(fileName).exists();
+      return ok;
+    },
+    async save(fileName, bytes) {
+      await bucket.file(fileName).save(bytes, {
+        contentType: 'audio/mpeg',
+        resumable: false,
+      });
+    },
+    publicUrl(fileName) {
+      return `https://storage.googleapis.com/${config.GCS_BUCKET_NAME}/${fileName}`;
+    },
+  };
+}
+
+/** Выбор режима хранения по конфигу: GCS задан → gcs, иначе → local. */
+export function resolveStorage(config: Config = loadConfig()): AudioStorage {
+  return config.GCS_BUCKET_NAME ? createGcsStorage(config) : createLocalStorage(config);
+}
 
 /** Локальная директория существует? Создаём при необходимости. */
 function ensureStorageDir(): void {
@@ -118,6 +176,9 @@ interface GenerateAudioResult {
  * Генерирует mp3 через Google Cloud TTS, сохраняет (локально или в GCS)
  * и возвращает публичный URL.
  *
+ * Кэш проверяется через выбранный backend (локальный диск или GCS),
+ * поэтому повторные запросы одного текста не тратят платный TTS.
+ *
  * @param text   Текст для синтеза (например, иероглиф "你好")
  * @param language  BCP-47 код языка ('zh-CN')
  * @returns { audioUrl } или выбрасывает ошибку при неудаче.
@@ -129,14 +190,12 @@ export async function generateAudio(
   ensureStorageDir();
 
   const config = loadConfig();
-  const localPath = localAudioPath(text, language);
+  const storage = resolveStorage(config);
+  const fileName = fileNameFor(text, language);
 
-  // Кэш: если файл уже есть локально, не генерируем заново
-  if (existsSync(localPath)) {
-    const publicUrl = `${config.AUDIO_PUBLIC_BASE_URL}/${createHash('sha1')
-      .update(`${language}:${text}`)
-      .digest('hex')}.mp3`;
-    return { audioUrl: publicUrl, source: 'cache' };
+  // Кэш: если файл уже есть в хранилище, не генерируем заново
+  if (await storage.exists(fileName)) {
+    return { audioUrl: storage.publicUrl(fileName), source: 'cache' };
   }
 
   const accessToken = await getGoogleAccessToken();
@@ -177,17 +236,9 @@ export async function generateAudio(
   }
 
   const audioBytes = Buffer.from(ttsJson.audioContent, 'base64');
-  writeFileSync(localPath, audioBytes);
+  await storage.save(fileName, audioBytes);
 
-  const fileName = createHash('sha1')
-    .update(`${language}:${text}`)
-    .digest('hex') + '.mp3';
-
-  // В production здесь была бы загрузка в GCS и возврат публичного URL
-  // Для dev возвращаем локальный URL
-  const publicUrl = `${config.AUDIO_PUBLIC_BASE_URL}/${fileName}`;
-
-  return { audioUrl: publicUrl, source: 'generated' };
+  return { audioUrl: storage.publicUrl(fileName), source: 'generated' };
 }
 
 /**
@@ -207,6 +258,8 @@ export function readAudioFile(fileName: string): { data: Buffer; mime: string } 
 
 /**
  * Генерирует аудио для конкретного слова и сохраняет URL в Words.audio_url.
+ * Текст всегда берётся из `Word.character` — переданный клиентом текст
+ * не участвует в синтезе (PLAN_Features_v0.4 §31).
  */
 export async function generateAudioForWord(
   wordId: string,
