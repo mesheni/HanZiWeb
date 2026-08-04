@@ -18,7 +18,19 @@ interface Card {
     translation: string;
   };
   state: WordState;
+  /** FSRS stability на момент выдачи карточки (PLAN_Features_v0.4 §50). */
+  stability: number;
+  /** FSRS difficulty (каноническая шкала [1, 10], §46). */
+  difficulty: number;
   answered: boolean;
+  /** Заполняется оптимистичным пересчётом после оценки (UI-feedback). */
+  intervalDays?: number;
+  dueDate?: string;
+}
+
+interface LastAnswer {
+  xp: number;
+  intervalDays: number;
 }
 
 interface SessionData {
@@ -42,6 +54,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastAnswer, setLastAnswer] = useState<LastAnswer | null>(null);
 
   const startSession = useCallback(async () => {
     setLoading(true);
@@ -74,10 +87,34 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
     setSubmitting(true);
 
     // Optimistic local update via FSRS (mirrors web's
-    // `recalcFsrsLocally` in `apps/web/src/db/fsrs.ts`). Even if the
-    // server is unreachable, the user sees the same next-due-date as
-    // they would on web.
-    const localUpdate = recalcFsrs(rating, 0, 0, card.state);
+    // `recalcFsrsLocally` in `apps/web/src/db/fsrs.ts`). Uses the real
+    // FSRS parameters the server sent in the session card — before
+    // §50 the call started from `(0, 0)` and the UI never reflected the
+    // new due date until the next `/sessions/start` re-fetched data.
+    const localUpdate = recalcFsrs(rating, card.stability, card.difficulty, card.state);
+
+    // Мгновенная UI-обратная связь: применяем пересчёт к карточке в
+    // локальном стейте (state/stability/difficulty/dueDate), чтобы
+    // сессия и следующий start вели себя как после серверного ответа.
+    const nextDueDate = new Date(Date.now() + localUpdate.intervalDays * 86_400_000).toISOString();
+    setSession((prev) => {
+      if (!prev) return prev;
+      const cards = prev.cards.map((c, i) =>
+        i === currentIndex
+          ? {
+              ...c,
+              state: localUpdate.newState,
+              stability: localUpdate.newStability,
+              difficulty: localUpdate.newDifficulty,
+              answered: true,
+              intervalDays: localUpdate.intervalDays,
+              dueDate: nextDueDate,
+            }
+          : c,
+      );
+      return { ...prev, cards };
+    });
+    setLastAnswer({ xp: RATING_XP[rating], intervalDays: localUpdate.intervalDays });
 
     // Один ответ — ровно один пересчёт прогресса (PLAN_Features_v0.4 §45):
     // онлайн → только live-post `/sessions/:id/answer` (сервер сразу даёт
@@ -196,6 +233,13 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
         </Pressable>
       </View>
 
+      {lastAnswer ? (
+        <Text style={styles.lastAnswer}>
+          +{lastAnswer.xp} XP · следующее повторение{' '}
+          {lastAnswer.intervalDays > 0 ? `через ${lastAnswer.intervalDays} дн.` : 'сегодня'}
+        </Text>
+      ) : null}
+
       <Pressable style={styles.card} onPress={() => setFlipped((f) => !f)} disabled={submitting}>
         {flipped ? (
           <View style={styles.cardBack}>
@@ -306,6 +350,13 @@ const styles = StyleSheet.create({
   progressNumber: {
     color: '#7B8497',
     fontSize: 14,
+  },
+  lastAnswer: {
+    color: '#81C784',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: -8,
+    marginBottom: 4,
   },
   exit: {
     color: '#7B8497',

@@ -1,5 +1,5 @@
 import { Model } from '@nozbe/watermelondb';
-import { field, text, date, json, readonly } from '@nozbe/watermelondb/decorators';
+import { field, text, date, json } from '@nozbe/watermelondb/decorators';
 
 /**
  * A Hanzi word cached locally on the device. The mobile app downloads
@@ -86,7 +86,11 @@ export class PendingChangeModel extends Model {
   @text('type') type!: string;
   @json('payload', sanitizePayload) payload!: Record<string, unknown>;
   @field('is_synced') isSynced!: boolean;
-  @readonly @date('created_at') createdAt!: Date;
+  // БЕЗ @readonly: WatermelonQueueStorage задаёт createdAt вручную из
+  // PendingChange (оригинальный timestamp сохраняется для порядка и
+  // дедупа). С @readonly WatermelonDB бросал "Attempted to set readonly
+  // property" на первом же оффлайн-ответе (PLAN_Features_v0.4 §51).
+  @date('created_at') createdAt!: Date;
 }
 
 function sanitizePayload(raw: unknown): Record<string, unknown> {

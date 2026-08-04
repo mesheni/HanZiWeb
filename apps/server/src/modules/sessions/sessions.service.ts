@@ -260,12 +260,18 @@ export async function startSession(userId: string, input: StartSession) {
     word: unknown;
     answered: boolean;
     state: string;
+    stability: number;
+    difficulty: number;
     distractors: string[];
   }> = allCards.map((p, i) => ({
     index: i,
     word: { ...p.word, tags: extractWordTags(p.word) },
     answered: false,
     state: p.state,
+    // FSRS-параметры для оптимистичного пересчёта на клиенте
+    // (PLAN_Features_v0.4 §50).
+    stability: p.stability,
+    difficulty: p.difficulty,
     distractors: characterDistractors.get(p.word.id) ?? [],
   }));
 

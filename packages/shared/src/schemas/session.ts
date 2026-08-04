@@ -65,6 +65,16 @@ export const SessionCardSchema = z.object({
   rating: SrsRatingSchema.optional(),
   /** Текущее состояние слова (new/learning/review/graduated) */
   state: WordStateSchema.default('new'),
+  /**
+   * FSRS-параметры слова на момент выдачи карточки. Нужны клиенту для
+   * мгновенного оптимистичного пересчёта после оценки (без них
+   * `recalcFsrs` стартовал с нулей, и UI не отражал новый due date,
+   * пока следующий `/sessions/start` не перетянул реальные данные —
+   * PLAN_Features_v0.4 §50).
+   */
+  stability: z.number().nonnegative().default(0),
+  /** Каноническая FSRS-5 шкала [1, 10] (см. progress.ts, §46). */
+  difficulty: z.number().min(1).max(10).default(5),
   /** Дистракторы для режима `character_assembly` (иероглифы из других слов). */
   distractors: z.array(z.string()).default([]),
 });

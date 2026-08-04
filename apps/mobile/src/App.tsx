@@ -30,7 +30,7 @@ export default function App(): React.ReactElement {
         //    token or the server rejects it, we just land on the
         //    login screen.
         await useAuthStore.getState().hydrateAuth(async () => {
-          const result = await api.post<AuthResponse & { refreshToken: string }>(
+          const result = await api.post<AuthResponse>(
             '/auth/refresh',
             {},
             { withRefreshToken: true },

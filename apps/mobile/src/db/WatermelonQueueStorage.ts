@@ -2,11 +2,7 @@ import { Q } from '@nozbe/watermelondb';
 import type { Database } from '@nozbe/watermelondb';
 import type { QueueStorage } from '@hanzi/mobile-sdk';
 import type { PendingChange } from '@hanzi/shared';
-import {
-  WordModel,
-  ProgressModel,
-  PendingChangeModel,
-} from './models';
+import { WordModel, ProgressModel, PendingChangeModel } from './models';
 
 /**
  * WatermelonDB-backed {@link QueueStorage}. Each pending change lives
@@ -53,7 +49,11 @@ export function createWatermelonQueueStorage(db: Database): QueueStorage {
       if (rows.length === 0) return;
       await db.write(async () => {
         for (const row of rows) {
-          await row.markAsDeleted();
+          // destroyPermanently() — реальное удаление строки. markAsDeleted
+          // (мягкое удаление) оставлял запись в таблице навсегда —
+          // pending_changes росла безгранично при перманентном отказе
+          // сервера (PLAN_Features_v0.4 §51).
+          await row.destroyPermanently();
         }
       });
     },

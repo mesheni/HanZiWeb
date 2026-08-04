@@ -1769,6 +1769,26 @@ due date → выглядит «сломанным», пока следующи�
 
 **Ожидаемый результат**: Карточка после оценки реально меняется в UI.
 
+**Статус**: ✅ Исправлено —
+- `packages/shared/src/schemas/session.ts` — `SessionCardSchema` получил
+  `stability: z.number().nonnegative().default(0)` и `difficulty:
+  z.number().min(1).max(10).default(5)` (каноническая шкала §46).
+- `apps/server/src/modules/sessions/sessions.service.ts` — cards-маппинг
+  включает `stability: p.stability, difficulty: p.difficulty` (сервер и
+  раньше имел их в `ProgressWithWord`, просто не сериализовал).
+- `apps/mobile/src/screens/StudyScreen.tsx` — оптимистичный пересчёт
+  теперь `recalcFsrs(rating, card.stability, card.difficulty,
+  card.state)` с реальными параметрами. После оценки карточка в
+  локальном стейте обновляется (state/stability/difficulty/answered/
+  intervalDays/dueDate = now + intervalDays·86400000), а под
+  прогресс-баром появляется UI-feedback: «+N XP · следующее повторение
+  через N дн.» — карточка «реально меняется» без ожидания следующего
+  `/sessions/start`.
+- Бонус: `apps/mobile/src/App.tsx` — убран устаревший каст
+  `AuthResponse & { refreshToken: string }` (поле уже в контракте, §47).
+- Покрытие: typecheck mobile/server/shared/web, server vitest 398/398,
+  mobile-sdk 34/34 (RN-UI юнитами не покрыт).
+
 ---
 
 ## 51. WatermelonDB `PendingChange` — `@readonly @date('createdAt')` бросает на insert
@@ -1791,6 +1811,19 @@ due date → выглядит «сломанным», пока следующи�
 - `remove()` → `await row.destroyPermanently()` для реального удаления.
 
 **Ожидаемый результат**: Офлайн-ответы реально кладутся в очередь.
+
+**Статус**: ✅ Исправлено —
+- `apps/mobile/src/db/models.ts` — с `createdAt` убран `@readonly`
+  (остался `@date('created_at')`): `WatermelonQueueStorage.insert`
+  задаёт его вручную из `PendingChange.createdAt` — оригинальный
+  timestamp сохраняется для порядка и дедупа. WatermelonDB больше не
+  бросает "Attempted to set readonly property" на первом же
+  оффлайн-ответе.
+- `apps/mobile/src/db/WatermelonQueueStorage.ts` — `remove()` переведён
+  с `markAsDeleted()` (мягкое удаление — записи копились навсегда при
+  перманентном отказе сервера) на `destroyPermanently()` — реальный
+  purge строки; `pending_changes` больше не растёт безгранично.
+- Покрытие: typecheck mobile чист (RN-специфика юнитами не покрыта).
 
 ---
 
