@@ -84,10 +84,15 @@ function shuffle<T>(arr: readonly T[]): T[] {
   return a;
 }
 
-/** Выбрать N уникальных элементов из `pool`, исключая `exclude`. */
+/**
+ * Выбрать N уникальных элементов из `pool`, исключая `exclude`.
+ * Сначала дедуплицирует пул: слова-варианты («爸爸» и «爸» с одним
+ * переводом) не должны давать одинаковые варианты ответа в MCQ
+ * (PLAN_Features_v0.4 §38).
+ */
 function pickNUnique<T>(pool: readonly T[], exclude: ReadonlySet<unknown>, n: number): T[] {
-  const filtered = pool.filter((x) => !exclude.has(x));
-  return shuffle(filtered).slice(0, n);
+  const unique = Array.from(new Set(pool.filter((x) => !exclude.has(x))));
+  return shuffle(unique).slice(0, n);
 }
 
 /** Собрать иероглифы-дистракторы из других слов уровня. */
@@ -113,7 +118,9 @@ export function buildCharacterPool(target: WordRow, pool: readonly WordRow[]): s
 }
 
 /** Найти в примерах предложение, содержащее иероглиф целиком. */
-export function findClozeExample(word: WordRow): { exampleId: string; clozeSentence: string } | null {
+export function findClozeExample(
+  word: WordRow,
+): { exampleId: string; clozeSentence: string } | null {
   const target = word.character;
   if (Array.from(target).length === 0) return null;
 
@@ -127,9 +134,7 @@ export function findClozeExample(word: WordRow): { exampleId: string; clozeSente
   // иероглифных слов (`"大"` НЕ blank'ается в `"大学"`).
   const escaped = escapeRegex(target);
   const pattern =
-    Array.from(target).length === 1
-      ? `(?<!${CJK_RANGE})${escaped}(?!${CJK_RANGE})`
-      : escaped;
+    Array.from(target).length === 1 ? `(?<!${CJK_RANGE})${escaped}(?!${CJK_RANGE})` : escaped;
   const re = new RegExp(pattern, 'gu');
 
   for (const ex of word.examples) {
@@ -147,8 +152,8 @@ function escapeRegex(s: string): string {
 }
 
 /** Сгенерировать один вопрос по типу. Если тип неприменим (например, нет примера для cloze),
- *  вернёт null — caller должен пропустить или подменить. */
-function buildQuestion(
+ *  вернёт null — caller должен пропустить или подменить. Экспортируется для тестов. */
+export function buildQuestion(
   type: TestQuestionType,
   word: WordRow,
   pool: readonly WordRow[],
@@ -300,11 +305,7 @@ function buildQuestions(words: readonly WordRow[]): TestQuestion[] {
 /** Записать сессию в Redis и вернуть TestSession для клиента. */
 async function persistSession(record: TestSessionRecord): Promise<TestSession> {
   const redis = getRedis();
-  await redis.setex(
-    TEST_SESSION_KEY(record.id),
-    TEST_SESSION_TTL_SECONDS,
-    JSON.stringify(record),
-  );
+  await redis.setex(TEST_SESSION_KEY(record.id), TEST_SESSION_TTL_SECONDS, JSON.stringify(record));
   return {
     id: record.id,
     level: record.level as 1 | 2 | 3 | 4 | 5 | 6,
@@ -348,6 +349,11 @@ async function deleteTestSession(testId: string): Promise<void> {
  * Сгенерировать новый тест выбранного уровня HSK.
  * Берёт случайные слова уровня, формирует вопросы 6 типов,
  * перемешивает и сохраняет в Redis.
+ *
+ * Контракт shared-схемы — 20–30 вопросов. Если в БД меньше
+ * `TEST_MIN_QUESTIONS` слов уровня (например, sparse HSK 5/6,
+ * ещё не засеянные), генерация падает с `400 INSUFFICIENT_WORDS`
+ * вместо тихого теста на 5–10 вопросов (PLAN_Features_v0.4 §39).
  */
 export async function generateTest(userId: string, input: StartTest): Promise<TestSession> {
   const allWords = await prisma.word.findMany({
@@ -363,9 +369,11 @@ export async function generateTest(userId: string, input: StartTest): Promise<Te
     },
   });
 
-  if (allWords.length < 4) {
+  if (allWords.length < TEST_MIN_QUESTIONS) {
     throw Object.assign(
-      new Error(`HSK ${input.level}: недостаточно слов для генерации теста`),
+      new Error(
+        `HSK ${input.level}: недостаточно слов (${allWords.length} < ${TEST_MIN_QUESTIONS}) для теста из 20-30 вопросов`,
+      ),
       { statusCode: 400, code: 'INSUFFICIENT_WORDS' },
     );
   }
@@ -376,7 +384,9 @@ export async function generateTest(userId: string, input: StartTest): Promise<Te
 
   if (questions.length < 4) {
     throw Object.assign(
-      new Error(`HSK ${input.level}: не удалось собрать минимальный тест (вопросов: ${questions.length})`),
+      new Error(
+        `HSK ${input.level}: не удалось собрать минимальный тест (вопросов: ${questions.length})`,
+      ),
       { statusCode: 400, code: 'INSUFFICIENT_QUESTIONS' },
     );
   }
@@ -398,9 +408,7 @@ export async function submitTest(
 ): Promise<TestResult> {
   const session = await loadTestSession(testId, userId);
 
-  const answersById = new Map<string, TestAnswer>(
-    input.answers.map((a) => [a.questionId, a]),
-  );
+  const answersById = new Map<string, TestAnswer>(input.answers.map((a) => [a.questionId, a]));
 
   const results: TestAnswerResult[] = session.questions.map((q) => {
     const userAnswer = answersById.get(q.id)?.answer ?? '';

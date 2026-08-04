@@ -1315,6 +1315,17 @@ verified-email → возвращается его id, `lastActiveDate` бамп
 
 **Ожидаемый результат**: Все варианты MCQ уникальны.
 
+**Статус**: ✅ Исправлено — `tests.service.ts` (`pickNUnique`).
+Функция теперь сначала дедуплицирует: `Array.from(new Set(pool.filter(x
+=> !exclude.has(x))))`, затем `shuffle().slice(0, n)` — слова-варианты
+(«爸爸»/«爸» с общим переводом) не дают одинаковых вариантов ответа ни
+в multiple-choice-translation, ни в reverse-choice-character/cloze.
+`buildQuestion` экспортирован для тестов. Покрыто `tests.service.test.ts`
+(+2 теста, по 50 прогонов из-за рандома): дублирующийся перевод в пуле
+никогда не даёт дубликатов options (Set size == length, options
+содержат правильный ответ); дублирующиеся иероглифы в пуле — то же
+для reverse-choice.
+
 ---
 
 ## 39. Гарантия 20-30 вопросов тихо нарушается для sparse HSK-уровней
@@ -1332,6 +1343,17 @@ verified-email → возвращается его id, `lastActiveDate` бамп
 `INSUFFICIENT_WORDS` при `allWords.length < TEST_MIN_QUESTIONS`.
 
 **Ожидаемый результат**: Контракт «20-30» соблюдается либо ясная ошибка.
+
+**Статус**: ✅ Исправлено — `tests.service.ts` (`generateTest`).
+Выбран вариант «ясная ошибка»: guard поднят с `< 4` до
+`allWords.length < TEST_MIN_QUESTIONS` (20) — sparse HSK-уровень
+теперь падает с `400 INSUFFICIENT_WORDS` и сообщением
+«недостаточно слов (N < 20) для теста из 20-30 вопросов», вместо
+тихого теста на 5-10 вопросов и пустых ячеек фиксированной сетки.
+JSDoc `generateTest` документирует контракт. Покрыто
+`tests.generation.test.ts` (новый файл, +4 теста с моками
+prisma/redis): 10 слов → `INSUFFICIENT_WORDS`; ровно 20 слов →
+валидный тест 20-30; 25 слов → 25 вопросов; 100 слов → кап 30.
 
 ---
 
