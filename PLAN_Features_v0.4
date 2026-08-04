@@ -1376,6 +1376,25 @@ serverChanges: z.array(z.any()),
 
 **Ожидаемый результат**: Дрифт sync-контракта детектится на границе.
 
+**Статус**: ✅ Исправлено. `packages/shared/src/schemas/sync.ts`:
+добавлен `ServerChangeSchema` (зеркало SDK-интерфейса + реального
+ответа `sync.service.ts`): `wordId`, `state: WordStateSchema`,
+`stability`, `difficulty: min(0).max(1)`, `reps: int().min(0)`,
+`dueDate`, `lastReviewDate: nullable()`, `timestamp`; тип
+`ServerChange` экспортируется из shared. `serverChanges` теперь
+`z.array(ServerChangeSchema)` вместо `z.array(z.any())`.
+`SyncEngine.ts`: локальный интерфейс `ServerChange` удалён (импорт из
+shared), каст `as unknown as ServerChange[]` убран — ответ после post
+прогоняется через `SyncResponseSchema.parse(response.data)`, дрифт
+сервера (неизвестный state, difficulty вне [0, 1], …) падает с
+ZodError → catch → retry, а не пишется тихо в локальное хранилище.
+`apps/web/src/db/sync.ts`: убраны `as any`-касты serverChange (типы из
+shared). Покрыто: `sync.schemas.test.ts` (новый, +9 тестов: валидный
+shape, неизвестный state, difficulty вне границ, missing-поля,
+non-integer reps, bounded SyncResult.newDifficulty, валидный/битый
+SyncResponse), `SyncEngine.test.ts` (+1: дрифт serverChanges не
+доходит до handler и уходит в retry).
+
 ---
 
 ## 41. `SyncResultSchema.newDifficulty` — без границ, хотя везде `[0, 1]`
@@ -1395,6 +1414,14 @@ WatermelonDB `progress.difficulty`, и следующий FSRS-вызов пол
 `SyncResultSchema` (и `SrsRecalcResultSchema` уже так).
 
 **Ожидаемый результат**: Согласованный диапазон difficulty по sync.
+
+**Статус**: ✅ Исправлено — `packages/shared/src/schemas/sync.ts`:
+`SyncResultSchema.newDifficulty` теперь `z.number().min(0).max(1)` —
+значение вне диапазона не пройдёт Zod на границе (SyncEngine
+парсит ответ схемой, см. §40) и не попадёт в WatermelonDB
+`progress.difficulty`. Валидируется и в `ServerChangeSchema.difficulty`
+(та же граница). Покрыто `sync.schemas.test.ts`: `newDifficulty: 5`
+и `-1` → fail, `0`/`0.5`/`1` → ok.
 
 ---
 

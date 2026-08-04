@@ -54,9 +54,11 @@ export class SyncEngine {
     this.isSyncing = true;
 
     try {
-      const changes = await db.pending_changes.find({
-        selector: { isSynced: false },
-      }).exec();
+      const changes = await db.pending_changes
+        .find({
+          selector: { isSynced: false },
+        })
+        .exec();
 
       if (changes.length === 0) {
         this.isSyncing = false;
@@ -79,12 +81,14 @@ export class SyncEngine {
       }
 
       for (const serverChange of response.serverChanges) {
-        const existing = await db.progress.findOne({
-          selector: { wordId: (serverChange as any).wordId },
-        }).exec();
+        const existing = await db.progress
+          .findOne({
+            selector: { wordId: serverChange.wordId },
+          })
+          .exec();
 
         if (existing) {
-          const serverTime = new Date((serverChange as any).timestamp).getTime();
+          const serverTime = new Date(serverChange.timestamp).getTime();
           const localTime = new Date((existing as any).lastReviewDate || 0).getTime();
           if (serverTime > localTime) {
             await existing.patch(serverChange);

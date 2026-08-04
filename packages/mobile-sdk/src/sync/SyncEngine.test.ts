@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SyncEngine, type ServerChange } from './SyncEngine';
+import { SyncEngine } from './SyncEngine';
 import { createMemoryQueueStorage } from './QueueStorage';
 import { setNetworkAdapter, getNetworkAdapter } from '../network/NetworkAdapter';
 import type { ApiClient, ApiResult } from '../api/ApiClient';
-import type { SyncResponse } from '@hanzi/shared';
+import type { ServerChange, SyncResponse } from '@hanzi/shared';
 
 class FakeNetworkAdapter {
   private listeners = new Set<(online: boolean) => void>();
@@ -47,7 +47,21 @@ describe('SyncEngine', () => {
     const api = makeApiMock(async () => ({
       ok: true,
       status: 200,
-      data: { results: [{ changeId: 'id-1', wordId: 'w1', newStability: 1, newDifficulty: 0, newState: 'learning', newDueDate: new Date().toISOString(), intervalDays: 0, xpGain: 0 }], serverChanges: [] },
+      data: {
+        results: [
+          {
+            changeId: 'id-1',
+            wordId: 'w1',
+            newStability: 1,
+            newDifficulty: 0,
+            newState: 'learning',
+            newDueDate: new Date().toISOString(),
+            intervalDays: 0,
+            xpGain: 0,
+          },
+        ],
+        serverChanges: [],
+      },
     }));
 
     const engine = new SyncEngine({ api, storage, idFactory });
@@ -97,7 +111,11 @@ describe('SyncEngine', () => {
 
   it('does NOT flush while offline but queues the change', async () => {
     network.go(false);
-    const api = makeApiMock(async () => ({ ok: true, status: 200, data: { results: [], serverChanges: [] } }));
+    const api = makeApiMock(async () => ({
+      ok: true,
+      status: 200,
+      data: { results: [], serverChanges: [] },
+    }));
 
     const engine = new SyncEngine({ api, storage, idFactory });
     engine.start();
@@ -216,6 +234,55 @@ describe('SyncEngine', () => {
     expect(handler).toHaveBeenCalledWith(serverChange);
   });
 
+  it('rejects malformed serverChanges (contract drift §40) and retries instead of forwarding', async () => {
+    const api = makeApiMock(async (body) => {
+      const changes = body.changes as Array<{ id: string }>;
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          results: changes.map((c) => ({
+            changeId: c.id,
+            wordId: 'w1',
+            newStability: 1,
+            newDifficulty: 0,
+            newState: 'learning',
+            newDueDate: new Date().toISOString(),
+            intervalDays: 0,
+            xpGain: 0,
+          })),
+          // Дрифт: неизвестный state не пройдёт ServerChangeSchema.
+          serverChanges: [
+            {
+              wordId: 'w1',
+              state: 'bogus-state',
+              stability: 1,
+              difficulty: 0.3,
+              reps: 1,
+              dueDate: new Date().toISOString(),
+              lastReviewDate: null,
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        },
+      };
+    });
+
+    const handler = vi.fn();
+    const engine = new SyncEngine({ api, storage, idFactory, initialRetryDelay: 1 });
+    engine.setOnServerChange(handler);
+    await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 3 });
+    await engine.flush();
+
+    // Дрифт не должен доехать до подписчиков локального хранилища.
+    expect(handler).not.toHaveBeenCalled();
+    // Разбор упал → retry с бэкоффом.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(api.post).toHaveBeenCalledTimes(2);
+
+    engine.destroy();
+  });
+
   it('does not double-flush when flush() is called concurrently', async () => {
     // We track every api.post invocation and let the test resolve them
     // one at a time. Returning "no acks" makes the runFlushLoop loop
@@ -289,7 +356,11 @@ describe('SyncEngine', () => {
   });
 
   it('destroy() removes the network subscription and clears the retry timer', () => {
-    const api = makeApiMock(async () => ({ ok: true, status: 200, data: { results: [], serverChanges: [] } }));
+    const api = makeApiMock(async () => ({
+      ok: true,
+      status: 200,
+      data: { results: [], serverChanges: [] },
+    }));
     const engine = new SyncEngine({ api, storage, idFactory });
     engine.start();
     expect(getNetworkAdapter()).toBe(network as never);

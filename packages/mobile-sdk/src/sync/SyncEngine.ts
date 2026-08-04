@@ -1,6 +1,7 @@
 import { isOnline, subscribeNetwork } from '../network/NetworkAdapter';
 import type { ApiClient } from '../api/ApiClient';
-import type { PendingChange, PendingChangeType, SyncResponse } from '@hanzi/shared';
+import type { PendingChange, PendingChangeType, ServerChange, SyncResponse } from '@hanzi/shared';
+import { SyncResponseSchema } from '@hanzi/shared';
 import type { QueueStorage } from './QueueStorage';
 
 export interface SyncEngineOptions {
@@ -161,14 +162,21 @@ export class SyncEngine {
           return;
         }
 
-        const ackedIds = new Set(response.data.results.map((r) => r.changeId));
+        // Контракт sync-ответа фиксируется в shared-схеме: дрифт
+        // сервера (неизвестные поля serverChanges, difficulty вне
+        // [0, 1], …) падает здесь с ZodError → catch → retry, а не
+        // проваливается тихо в локальное хранилище
+        // (PLAN_Features_v0.4 §40, §41).
+        const data = SyncResponseSchema.parse(response.data);
+
+        const ackedIds = new Set(data.results.map((r) => r.changeId));
         for (const change of pending) {
           if (ackedIds.has(change.id)) {
             await this.storage.markSynced(change.id);
           }
         }
 
-        for (const serverChange of response.data.serverChanges as unknown as ServerChange[]) {
+        for (const serverChange of data.serverChanges) {
           this.onServerChange?.(serverChange);
         }
 
@@ -201,17 +209,6 @@ export class SyncEngine {
       void this.flush();
     }, delay);
   }
-}
-
-export interface ServerChange {
-  wordId: string;
-  state: string;
-  stability: number;
-  difficulty: number;
-  reps: number;
-  dueDate: string;
-  lastReviewDate: string | null;
-  timestamp: string;
 }
 
 function generateId(): string {
