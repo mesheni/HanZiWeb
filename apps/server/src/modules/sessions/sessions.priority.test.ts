@@ -42,50 +42,59 @@ describe('startSession priority words', () => {
     const otherWordId = wordIds[1];
     if (!priorityWordId || !otherWordId) throw new Error('wordIds missing');
 
-    await prisma.userWordPriority.create({
-      data: { userId, wordId: priorityWordId },
-    });
+    try {
+      await prisma.userWordPriority.create({
+        data: { userId, wordId: priorityWordId },
+      });
 
-    const session = await startSession(
-      userId,
-      StartSessionSchema.parse({
-        cardLimit: 5,
-        includeNew: false,
-        mode: 'mixed',
-        practiceType: 'flip-card',
-      }),
-    );
+      const session = await startSession(
+        userId,
+        StartSessionSchema.parse({
+          cardLimit: 5,
+          includeNew: false,
+          mode: 'mixed',
+          practiceType: 'flip-card',
+        }),
+      );
 
-    expect(session.cards.length).toBeGreaterThan(0);
-    expect(firstWordId(session as { cards: CardWithWord[] })).toBe(priorityWordId);
+      expect(session.cards.length).toBeGreaterThan(0);
+      expect(firstWordId(session as { cards: CardWithWord[] })).toBe(priorityWordId);
 
-    await prisma.userWordPriority.deleteMany({
-      where: { userId, wordId: priorityWordId },
-    });
-    await prisma.userWordProgress.deleteMany({
-      where: { userId, wordId: { in: wordIds } },
-    });
-    await prisma.session.deleteMany({ where: { userId } });
+      // Убираем priority-строку и прогресс ДО второго запуска сессии:
+      // normalSession (learn) не должен видеть приоритетное слово
+      // (иначе loadPriorityCards вернёт его снова).
+      await prisma.userWordPriority.deleteMany({
+        where: { userId, wordId: priorityWordId },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { userId, wordId: { in: wordIds } },
+      });
+      await prisma.session.deleteMany({ where: { userId } });
 
-    const normalSession = await startSession(
-      userId,
-      StartSessionSchema.parse({
-        cardLimit: 5,
-        includeNew: true,
-        mode: 'learn',
-        practiceType: 'flip-card',
-      }),
-    );
+      const normalSession = await startSession(
+        userId,
+        StartSessionSchema.parse({
+          cardLimit: 5,
+          includeNew: true,
+          mode: 'learn',
+          practiceType: 'flip-card',
+        }),
+      );
 
-    const seen = new Set(
-      normalSession.cards.map((c) => (c as CardWithWord).word.id),
-    );
-    expect(seen.has(priorityWordId)).toBe(false);
-
-    await prisma.userWordProgress.deleteMany({
-      where: { userId, wordId: { in: wordIds } },
-    });
-    await prisma.session.deleteMany({ where: { userId } });
+      const seen = new Set(normalSession.cards.map((c) => (c as CardWithWord).word.id));
+      expect(seen.has(priorityWordId)).toBe(false);
+    } finally {
+      // Чистка в finally: упавший ассерт не должен оставить
+      // UserWordPriority (unique @@unique([userId, wordId])) — иначе
+      // следующий тест этого файла упадёт с P2002 (PLAN_Features_v0.4 §29).
+      await prisma.userWordPriority.deleteMany({
+        where: { userId, wordId: priorityWordId },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { userId, wordId: { in: wordIds } },
+      });
+      await prisma.session.deleteMany({ where: { userId } });
+    }
   });
 
   it('ignores priority words when includePriority is false', async () => {
@@ -93,30 +102,32 @@ describe('startSession priority words', () => {
     const priorityWordId = wordIds[0];
     if (!priorityWordId) throw new Error('wordIds missing');
 
-    await prisma.userWordPriority.create({
-      data: { userId, wordId: priorityWordId },
-    });
+    try {
+      await prisma.userWordPriority.create({
+        data: { userId, wordId: priorityWordId },
+      });
 
-    const session = await startSession(
-      userId,
-      StartSessionSchema.parse({
-        cardLimit: 5,
-        includeNew: true,
-        includePriority: false,
-        mode: 'learn',
-        practiceType: 'flip-card',
-      }),
-    );
+      const session = await startSession(
+        userId,
+        StartSessionSchema.parse({
+          cardLimit: 5,
+          includeNew: true,
+          includePriority: false,
+          mode: 'learn',
+          practiceType: 'flip-card',
+        }),
+      );
 
-    const first = firstWordId(session as { cards: CardWithWord[] });
-    expect(first).not.toBe(priorityWordId);
-
-    await prisma.userWordPriority.deleteMany({
-      where: { userId, wordId: priorityWordId },
-    });
-    await prisma.userWordProgress.deleteMany({
-      where: { userId, wordId: { in: wordIds } },
-    });
-    await prisma.session.deleteMany({ where: { userId } });
+      const first = firstWordId(session as { cards: CardWithWord[] });
+      expect(first).not.toBe(priorityWordId);
+    } finally {
+      await prisma.userWordPriority.deleteMany({
+        where: { userId, wordId: priorityWordId },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { userId, wordId: { in: wordIds } },
+      });
+      await prisma.session.deleteMany({ where: { userId } });
+    }
   });
 });

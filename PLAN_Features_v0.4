@@ -1019,6 +1019,10 @@ pre-tokenized позиции из `ReadingTextWord`); заменять все в
 
 **Ожидаемый результат**: Cloze blank'ает ровно целевое вхождение.
 
+**Статус**: ✅ Исправлено — дубликат записи (см. исправленный вариант
+выше: `tests.service.ts:115-138`, коммит `0d24750`, 13 тестов в
+`tests.service.test.ts`).
+
 ---
 
 ## 29. Тесты гоняют на общей БД без изоляции — флакинг
@@ -1036,6 +1040,22 @@ pre-tokenized позиции из `ReadingTextWord`); заменять все в
 `fileParallelism: false`.
 
 **Ожидаемый результат**: Тесты не флекают и не зависят от порядка.
+
+**Статус**: ✅ Исправлено — `vitest.config.ts:5-13`. Выбран третий из
+предложенных вариантов — `fileParallelism: false`. 8 БД-тестов
+(`decks.idor`, `refresh.cas`, `sessions.{idor,priority,transaction}`,
+`stats.{activity,streak}`, `words.admin`) ходят в одну реальную Postgres
+из `apps/server/.env`; полная per-file schema-изоляция потребовала бы
+отдельного `prisma db push` + seed на каждый файл, а wrap в
+`$transaction` с ROLLBACK несовместим с сервисами, работающими через
+общий `prisma`-клиент. Последовательный запуск файлов исключает гонки
+на общих таблицах; внутри файлов данные изолированы уникальными
+email/char (`testRunId`), а `afterAll` удаляет пользователя — каскадные
+`onDelete: Cascade` в `schema.prisma` (UserWordPriority, UserWordProgress,
+Session, SessionAnswer) вычищают зависимые строки. Дополнительно
+`sessions.priority.test.ts`: inline-чистка вынесена в `finally`, чтобы
+упавший ассерт не оставлял `UserWordPriority` (`@@unique([userId, wordId])`
+→ P2002 в следующем тесте того же файла).
 
 ---
 
