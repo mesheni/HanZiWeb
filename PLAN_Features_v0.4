@@ -1522,6 +1522,18 @@ const adapter = {
 
 **Ожидаемый результат**: SyncEngine знает реальный онлайн-статус.
 
+**Статус**: ✅ Исправлено — `apps/mobile/src/bootstrap.ts`.
+`netInfoAdapter.isOnline()` теперь возвращает кэш `cachedOnline`
+(модульный `let`), который обновляется из `NetInfo.addEventListener`
+(подписка) — `Boolean(Promise)` больше не светится как `true`.
+Добавлен стартовый snapshot: `NetInfo.fetch().then(s => {
+cachedOnline = Boolean(s.isConnected); })` — кэш наполняется до того,
+как `SyncEngine.start()` прочитает `isOnline()`. SyncEngine видит
+реальный онлайн-статус: оффлайн → `enqueueChange` не стреляет flush,
+онлайн-переход → flush на реконнекте. RN-типы не проверяются юнитами
+(Node), покрытие — `pnpm --filter @hanzi/mobile typecheck` + SDK-набор
+(`NetworkAdapter.test.ts`, `SyncEngine.test.ts`).
+
 ---
 
 ## 45. Mobile StudyScreen дабл-процессит каждый ответ — расход XP/reps ×2
@@ -1544,6 +1556,18 @@ const adapter = {
   с `/sync` позже.
 
 **Ожидаемый результат**: Один ответ → один пересчёт прогресса.
+
+**Статус**: ✅ Исправлено — `apps/mobile/src/screens/StudyScreen.tsx`
+(`handleRate`). Ответ больше не шлётся одновременно в очередь и
+live-post: онлайн → только `api.post('/sessions/:id/answer')` (XP/
+достижения сразу), в очередь не кладём; оффлайн → только
+`enqueueChange('study_answer', …)`, flush догонит через `/sync` на
+реконнекте. Fallback: если live-post не прошёл (обрыв в момент
+запроса) — ответ уходит в очередь; дедуп по timestamp в
+`sync.service.ts` отбрасывает запись, если live-post всё же успел
+примениться, так что двойного применения не будет. Live-ветка
+использует синхронный `isOnline()` из SDK (см. §44). Покрытие —
+typecheck mobile/sdk + SDK-тесты (RN-UI не покрыт юнитами).
 
 ---
 

@@ -1,16 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api, getSync } from '../bootstrap';
-import { recalcFsrs, RATING_XP } from '@hanzi/mobile-sdk';
+import { recalcFsrs, RATING_XP, isOnline } from '@hanzi/mobile-sdk';
 import type { SrsRating, WordState } from '@hanzi/shared';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -86,34 +79,45 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
     // they would on web.
     const localUpdate = recalcFsrs(rating, 0, 0, card.state);
 
-    // Queue the answer to be synced later — exactly the same as
-    // `apps/web/src/hooks/useStudySession.ts` does.
-    try {
-      await getSync().enqueueChange('study_answer', {
+    // Один ответ — ровно один пересчёт прогресса (PLAN_Features_v0.4 §45):
+    // онлайн → только live-post `/sessions/:id/answer` (сервер сразу даёт
+    // XP/достижения), в очередь НЕ кладём;
+    // оффлайн → только enqueueChange, flush догонит через `/sync`
+    // на реконнекте, live-post не делаем.
+    // Отправлять оба нельзя: sync.service.ts применил бы ответ дважды —
+    // reps/XP инкрементятся ×2, «Again» применяется два раза.
+    const enqueueOffline = async (): Promise<void> => {
+      try {
+        await getSync().enqueueChange('study_answer', {
+          wordId: card.word.id,
+          rating,
+          sessionId: session.id,
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        Alert.alert('Ошибка', 'Не удалось сохранить ответ офлайн.');
+      }
+    };
+
+    if (isOnline()) {
+      const liveResult = await api.post(`/sessions/${session.id}/answer`, {
         wordId: card.word.id,
         rating,
-        sessionId: session.id,
-        timestamp: new Date().toISOString(),
       });
-    } catch (err) {
-      Alert.alert('Ошибка', 'Не удалось сохранить ответ офлайн.');
-    }
-
-    // Also try the live endpoint so the server can grant XP / check
-    // achievements / etc. immediately when online. If we're offline,
-    // the live call fails silently — the queue will sync on reconnect.
-    const liveResult = await api.post(`/sessions/${session.id}/answer`, {
-      wordId: card.word.id,
-      rating,
-    });
-    if (!liveResult.ok) {
-      // eslint-disable-next-line no-console
-      console.warn('Live answer failed; queued for sync:', liveResult.message);
+      if (!liveResult.ok) {
+        // Live-post не прошёл (сетевая ошибка в момент запроса) — кладём
+        // в очередь; сервер применит его ровно один раз, когда связь
+        // вернётся. Дедуп по timestamp в sync.service.ts отбрасывает
+        // запись, если live-post всё же успел примениться.
+        console.warn('Live answer failed; falling back to offline queue:', liveResult.message);
+        await enqueueOffline();
+      } else {
+        console.log(
+          `[FSRS] local newStability=${localUpdate.newStability.toFixed(2)} xp+=${RATING_XP[rating]}`,
+        );
+      }
     } else {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[FSRS] local newStability=${localUpdate.newStability.toFixed(2)} xp+=${RATING_XP[rating]}`,
-      );
+      await enqueueOffline();
     }
 
     setSubmitting(false);
@@ -181,9 +185,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.progressBar}>
-        <View
-          style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]}
-        />
+        <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
       </View>
       <View style={styles.progressText}>
         <Text style={styles.progressNumber}>
@@ -194,11 +196,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
         </Pressable>
       </View>
 
-      <Pressable
-        style={styles.card}
-        onPress={() => setFlipped((f) => !f)}
-        disabled={submitting}
-      >
+      <Pressable style={styles.card} onPress={() => setFlipped((f) => !f)} disabled={submitting}>
         {flipped ? (
           <View style={styles.cardBack}>
             <Text style={styles.cardTranslation}>{card.word.translation}</Text>
@@ -217,7 +215,11 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
           {RATING_BUTTONS.map((b) => (
             <Pressable
               key={b.rating}
-              style={[styles.rateButton, { backgroundColor: b.color }, submitting && styles.rateDisabled]}
+              style={[
+                styles.rateButton,
+                { backgroundColor: b.color },
+                submitting && styles.rateDisabled,
+              ]}
               onPress={() => void handleRate(b.rating)}
               disabled={submitting}
             >

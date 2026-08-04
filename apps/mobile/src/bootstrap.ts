@@ -45,17 +45,33 @@ const REFRESH_TOKEN_KEY = 'hanzi.auth.refresh';
 
 /* ─── NetInfo-backed NetworkAdapter ──────────────────────────────────── */
 
+// Кэшируем состояние: `NetInfo.fetch()` асинхронный, а NetworkAdapter
+// требует синхронный snapshot. До фикса `isOnline()` возвращал
+// `Boolean(Promise)` === true — SyncEngine считал устройство всегда
+// онлайн и хаммерил сервер ретраями даже в оффлайне
+// (PLAN_Features_v0.4 §44).
+let cachedOnline = true;
+
 const netInfoAdapter: NetworkAdapter = {
   isOnline() {
-    return Boolean(NetInfo.fetch().then((s) => s.isConnected));
+    return cachedOnline;
   },
   subscribe(listener) {
     const sub = NetInfo.addEventListener((state) => {
-      listener(Boolean(state.isConnected));
+      cachedOnline = Boolean(state.isConnected);
+      listener(cachedOnline);
     });
     return () => sub();
   },
 };
+
+// Стартовый snapshot: подписка NetInfo может сработать позже, а
+// SyncEngine читает `isOnline()` сразу в `start()`. Кэш обновляем
+// асинхронно; между стартом и первым событием считаем «онлайн»
+// (см. §51) — безопаснее, чем блокировать flush при живом коннекте.
+NetInfo.fetch().then((s) => {
+  cachedOnline = Boolean(s.isConnected);
+});
 
 /* ─── Wire up the SDK ────────────────────────────────────────────────── */
 

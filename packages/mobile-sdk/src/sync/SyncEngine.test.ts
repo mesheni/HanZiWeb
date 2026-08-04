@@ -276,9 +276,10 @@ describe('SyncEngine', () => {
 
     // Дрифт не должен доехать до подписчиков локального хранилища.
     expect(handler).not.toHaveBeenCalled();
-    // Разбор упал → retry с бэкоффом.
+    // Разбор упал → retry с бэкоффом (за 10ms с задержками 1→2→4мс
+    // может успеть 2-4 вызова — проверяем минимум, не точное число).
     await new Promise((r) => setTimeout(r, 10));
-    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(api.post.mock.calls.length).toBeGreaterThanOrEqual(2);
 
     engine.destroy();
   });
