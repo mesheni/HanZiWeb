@@ -29,6 +29,13 @@ const HSK_LEVEL_LIST = [...HSK_LEVELS];
 /** Мс в сутках — для elapsed-времени в FSRS (PLAN_Features_v0.4 §35). */
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * Внутренний сигнал оптимистичной блокировки: строка прогресса изменилась
+ * между чтением и записью (конкурентный ответ) — транзакция откатывается,
+ * recordAnswer перечитывает и пересчитывает FSRS (PLANCorrection #17).
+ */
+class ConcurrentUpdateError extends Error {}
+
 function shuffle<T>(arr: readonly T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -300,14 +307,6 @@ export async function startSession(userId: string, input: StartSession) {
  * (PLAN_Features_v0.3 §20).
  */
 export async function recordAnswer(userId: string, input: RecordAnswer) {
-  const progress = await prisma.userWordProgress.findUnique({
-    where: { userId_wordId: { userId, wordId: input.wordId } },
-  });
-
-  if (!progress) {
-    throw Object.assign(new Error('Progress not found'), { statusCode: 404, code: 'NOT_FOUND' });
-  }
-
   // Загружаем сессию, чтобы узнать practiceType (нужен для ветки
   // тренировочного режима). Делается ОДИН раз, используется только
   // в early-return ниже. Prisma хранит `practiceType` как `string`,
@@ -332,6 +331,14 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
     : 'flip-card';
 
   if (isTrainingPractice(sessionPracticeType)) {
+    // Тренировочный режим: прогресс нужен только для «нейтрального»
+    // ответа — читается без блокировок, FSRS не пересчитывается.
+    const progress = await prisma.userWordProgress.findUnique({
+      where: { userId_wordId: { userId, wordId: input.wordId } },
+    });
+    if (!progress) {
+      throw Object.assign(new Error('Progress not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
     await prisma.session.update({
       where: { id: input.sessionId },
       data: { cardsCompleted: { increment: 1 } },
@@ -360,112 +367,160 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // в sync.service.ts срабатывает строго: T1 === T2 → повторный
   // пересчёт отбрасывается.
   const answeredAt = input.answeredAt ? new Date(input.answeredAt) : new Date();
-  const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
-  const elapsedDays = lastReviewMs > 0 ? (answeredAt.getTime() - lastReviewMs) / MS_PER_DAY : 0;
-  const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
-    input.rating,
-    progress.stability,
-    progress.difficulty,
-    progress.state,
-    elapsedDays,
-  );
+  const answeredAtMs = answeredAt.getTime();
 
-  const newDueDate = new Date();
-  newDueDate.setDate(newDueDate.getDate() + intervalDays);
+  // Прогресс читается ВНУТРИ транзакции, а запись идёт через updateMany
+  // с optimistic-условием (stability/reps как «версия» строки): два
+  // конкурентных ответа на одно слово не теряют обновление — проигравший
+  // получает count === 0, откатывается, перечитывает строку после
+  // коммита победителя и пересчитывает FSRS от актуального состояния
+  // (PLANCorrection #17). Ретрай ограничен тремя попытками.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const outcome = await prisma.$transaction(async (tx) => {
+        const progress = await tx.userWordProgress.findUnique({
+          where: { userId_wordId: { userId, wordId: input.wordId } },
+        });
 
-  // Шаги 1-3 (прогресс слова + ответ в сессии + счётчик сессии)
-  // обязаны коммититься атомарно. До фикса это были четыре независимых
-  // `await`: падение `sessionAnswer.create` оставляло `UserWordProgress`
-  // уже изменённым, а `Session.cardsCompleted` — без записи ответа
-  // (PLAN_Features_v0.4 §26). `xp` (User.update) оставлен вне — он
-  // инкрементный, идемпотентный на уровне строки, и при сбое основной
-  // транзакции его отсутствие лишь «не награждает» пользователя.
-  //
-  // `sessionAnswer.create` защищён уникальным индексом
-  // (sessionId, wordId): если ответ за то же слово в той же сессии
-  // уже записан (дублирующий retry после ложной сетевой ошибки),
-  // P2002 ловится ниже и возвращается идемпотентный ответ без
-  // повторного пересчёта (fix v0.4 §45 follow-up).
-  try {
-    await prisma.$transaction(async (tx) => {
-      await tx.userWordProgress.update({
-        where: { userId_wordId: { userId, wordId: input.wordId } },
-        data: {
-          state: newState,
-          stability: newStability,
-          difficulty: newDifficulty,
-          reps: { increment: 1 },
-          dueDate: newDueDate,
-          lastReviewDate: answeredAt,
-        },
+        if (!progress) {
+          throw Object.assign(new Error('Progress not found'), {
+            statusCode: 404,
+            code: 'NOT_FOUND',
+          });
+        }
+
+        const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
+        const elapsedDays =
+          lastReviewMs > 0 && answeredAtMs > lastReviewMs
+            ? (answeredAtMs - lastReviewMs) / MS_PER_DAY
+            : 0;
+        const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
+          input.rating,
+          progress.stability,
+          progress.difficulty,
+          progress.state,
+          elapsedDays,
+        );
+
+        const newDueDate = new Date();
+        newDueDate.setDate(newDueDate.getDate() + intervalDays);
+
+        // Шаги 1-3 (прогресс слова + ответ в сессии + счётчик сессии)
+        // обязаны коммититься атомарно. До фикса это были четыре
+        // независимых `await`: падение `sessionAnswer.create` оставляло
+        // `UserWordProgress` уже изменённым, а `Session.cardsCompleted` —
+        // без записи ответа (PLAN_Features_v0.4 §26). `xp` (User.update)
+        // оставлен вне — он инкрементный, идемпотентный на уровне строки,
+        // и при сбое основной транзакции его отсутствие лишь «не
+        // награждает» пользователя.
+        //
+        // `sessionAnswer.create` защищён уникальным индексом
+        // (sessionId, wordId): если ответ за то же слово в той же
+        // сессии уже записан (дублирующий retry после ложной сетевой
+        // ошибки), P2002 ловится ниже и возвращается идемпотентный
+        // ответ без повторного пересчёта (fix v0.4 §45 follow-up).
+        const updated = await tx.userWordProgress.updateMany({
+          where: {
+            userId,
+            wordId: input.wordId,
+            stability: progress.stability,
+            reps: progress.reps,
+          },
+          data: {
+            state: newState,
+            stability: newStability,
+            difficulty: newDifficulty,
+            reps: { increment: 1 },
+            dueDate: newDueDate,
+            lastReviewDate: answeredAt,
+          },
+        });
+        if (updated.count === 0) {
+          // Строка изменилась после нашего чтения — конкурентный ответ
+          // уже закоммичен. Откатываем транзакцию и перечитываем.
+          throw new ConcurrentUpdateError();
+        }
+
+        await tx.sessionAnswer.create({
+          data: {
+            sessionId: input.sessionId,
+            wordId: input.wordId,
+            rating: input.rating,
+            answeredAt,
+          },
+        });
+
+        await tx.session.update({
+          where: { id: input.sessionId },
+          data: { cardsCompleted: { increment: 1 } },
+        });
+
+        return { newStability, newDifficulty, newState, newDueDate, intervalDays };
       });
 
-      await tx.sessionAnswer.create({
-        data: {
-          sessionId: input.sessionId,
-          wordId: input.wordId,
-          rating: input.rating,
-          answeredAt,
-        },
+      // Начисляем XP
+      const xpGain = { 1: 0, 2: 1, 3: 3, 4: 5 }[input.rating] ?? 0;
+      await prisma.user.update({
+        where: { id: userId },
+        data: { xp: { increment: xpGain } },
       });
 
-      await tx.session.update({
-        where: { id: input.sessionId },
-        data: { cardsCompleted: { increment: 1 } },
-      });
-    });
-  } catch (err) {
-    // Уникальный индекс (sessionId, wordId) сработал — прогресс уже
-    // пересчитан этим ответом. Возвращаем текущее состояние без
-    // повторного применения (реps/XP не инкрементятся второй раз).
-    if ((err as { code?: string }).code === 'P2002') {
-      const current = await prisma.userWordProgress.findUnique({
-        where: { userId_wordId: { userId, wordId: input.wordId } },
-      });
-      if (!current) throw err;
+      // Проверка достижений (глобальные + идеальная сессия).
+      // Делается после всех мутаций, чтобы checkPerfectSession
+      // видел уже записанный ответ. Не блокирует ответ: даже при
+      // ошибке пользователь получит корректный SRS-результат.
+      let unlockedAchievements: UserAchievement[] = [];
+      try {
+        unlockedAchievements = await achievementsService.checkAllAchievements(
+          userId,
+          input.sessionId,
+        );
+      } catch (err) {
+        // Достижения не должны ломать основной поток
+        console.error('checkAllAchievements failed', err);
+      }
+
       return {
         wordId: input.wordId,
-        newStability: current.stability,
-        newDifficulty: current.difficulty,
-        newState: current.state,
-        newDueDate: current.dueDate.toISOString(),
-        intervalDays: 0,
-        xpGain: 0,
-        unlockedAchievements: [],
+        newStability: outcome.newStability,
+        newDifficulty: outcome.newDifficulty,
+        newState: outcome.newState,
+        newDueDate: outcome.newDueDate.toISOString(),
+        intervalDays: outcome.intervalDays,
+        xpGain,
+        unlockedAchievements,
       };
+    } catch (err) {
+      if (err instanceof ConcurrentUpdateError) {
+        continue;
+      }
+      // Уникальный индекс (sessionId, wordId) сработал — прогресс уже
+      // пересчитан этим ответом. Возвращаем текущее состояние без
+      // повторного применения (реps/XP не инкрементятся второй раз).
+      if ((err as { code?: string }).code === 'P2002') {
+        const current = await prisma.userWordProgress.findUnique({
+          where: { userId_wordId: { userId, wordId: input.wordId } },
+        });
+        if (!current) throw err;
+        return {
+          wordId: input.wordId,
+          newStability: current.stability,
+          newDifficulty: current.difficulty,
+          newState: current.state,
+          newDueDate: current.dueDate.toISOString(),
+          intervalDays: 0,
+          xpGain: 0,
+          unlockedAchievements: [],
+        };
+      }
+      throw err;
     }
-    throw err;
   }
 
-  // Начисляем XP
-  const xpGain = { 1: 0, 2: 1, 3: 3, 4: 5 }[input.rating] ?? 0;
-  await prisma.user.update({
-    where: { id: userId },
-    data: { xp: { increment: xpGain } },
+  throw Object.assign(new Error('Too many concurrent updates, try again'), {
+    statusCode: 409,
+    code: 'CONFLICT',
   });
-
-  // Проверка достижений (глобальные + идеальная сессия).
-  // Делается после всех мутаций, чтобы checkPerfectSession
-  // видел уже записанный ответ. Не блокирует ответ: даже при
-  // ошибке пользователь получит корректный SRS-результат.
-  let unlockedAchievements: UserAchievement[] = [];
-  try {
-    unlockedAchievements = await achievementsService.checkAllAchievements(userId, input.sessionId);
-  } catch (err) {
-    // Достижения не должны ломать основной поток
-    console.error('checkAllAchievements failed', err);
-  }
-
-  return {
-    wordId: input.wordId,
-    newStability,
-    newDifficulty,
-    newState,
-    newDueDate: newDueDate.toISOString(),
-    intervalDays,
-    xpGain,
-    unlockedAchievements,
-  };
 }
 
 export async function getSession(userId: string, sessionId: string) {

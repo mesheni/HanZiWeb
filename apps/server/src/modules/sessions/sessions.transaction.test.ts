@@ -39,10 +39,25 @@ async function createProgress(userId: string, wordId: string): Promise<void> {
 }
 
 type MockTx = {
-  userWordProgress: { update: ReturnType<typeof vi.fn> };
+  userWordProgress: {
+    findUnique: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
   sessionAnswer: { create: ReturnType<typeof vi.fn> };
   session: { update: ReturnType<typeof vi.fn> };
 };
+
+/** Стаб строки прогресса, который читает recordAnswer внутри tx. */
+function progressStub() {
+  return {
+    stability: 5,
+    difficulty: 5,
+    state: 'review',
+    reps: 1,
+    dueDate: new Date(),
+    lastReviewDate: new Date(Date.now() - 86_400_000),
+  };
+}
 
 function runWithMockTransaction(txMock: MockTx): { restore: () => void } {
   const txSpy = vi.spyOn(prisma, '$transaction');
@@ -75,7 +90,10 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
     // вызовет tx.user.update, получит TypeError и тест упадёт. Это
     // структурное доказательство, что XP остался вне $transaction.
     const txMock: MockTx = {
-      userWordProgress: { update: vi.fn().mockResolvedValue({}) },
+      userWordProgress: {
+        findUnique: vi.fn().mockResolvedValue(progressStub()),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       sessionAnswer: { create: vi.fn().mockResolvedValue({}) },
       session: { update: vi.fn().mockResolvedValue({}) },
     };
@@ -94,21 +112,25 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
       restore();
     }
 
-    expect(txMock.userWordProgress.update).toHaveBeenCalledTimes(1);
+    expect(txMock.userWordProgress.findUnique).toHaveBeenCalledTimes(1);
+    expect(txMock.userWordProgress.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.sessionAnswer.create).toHaveBeenCalledTimes(1);
     expect(txMock.session.update).toHaveBeenCalledTimes(1);
   });
 
   it('mid-transaction failure: only first two ops run in tx, no DB change, XP is not granted', async () => {
     // Шаги:
-    //   1) tx.userWordProgress.update  ✓
-    //   2) tx.sessionAnswer.create      ✗ (mock throws)
-    //   3) tx.session.update            — не выполняется (после throw)
-    //   4) prisma.user.update (XP)      — не выполняется (после throw)
+    //   1) tx.userWordProgress.findUnique + updateMany  ✓
+    //   2) tx.sessionAnswer.create                      ✗ (mock throws)
+    //   3) tx.session.update                            — не выполняется (после throw)
+    //   4) prisma.user.update (XP)                      — не выполняется (после throw)
     // Mock-tx не пишет в реальный Postgres, так что и так ничего бы не
     // записалось. Дополнительно проверяем реальное состояние DB.
     const txMock: MockTx = {
-      userWordProgress: { update: vi.fn().mockResolvedValue({}) },
+      userWordProgress: {
+        findUnique: vi.fn().mockResolvedValue(progressStub()),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       sessionAnswer: {
         create: vi.fn().mockRejectedValue(new Error('forced mid-tx failure')),
       },
@@ -132,8 +154,9 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
       restore();
     }
 
-    // Внутри tx-колбэка успели вызваться 1) и 2), 2-й упал.
-    expect(txMock.userWordProgress.update).toHaveBeenCalledTimes(1);
+    // Внутри tx-колбэка успели выполниться 1) и 2), 2-й упал.
+    expect(txMock.userWordProgress.findUnique).toHaveBeenCalledTimes(1);
+    expect(txMock.userWordProgress.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.sessionAnswer.create).toHaveBeenCalledTimes(1);
     // 3) не выполнился — мы упали на шаге 2.
     expect(txMock.session.update).not.toHaveBeenCalled();
