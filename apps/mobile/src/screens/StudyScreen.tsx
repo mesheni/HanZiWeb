@@ -86,6 +86,14 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
     if (!card) return;
     setSubmitting(true);
 
+    // Момент ответа штампуется ОДИН раз и используется и в live-post
+    // (поле answeredAt), и в payload офлайн-очереди (timestamp).
+    // Сервер ставит lastReviewDate = answeredAt, поэтому дедуп
+    // `changeTime <= existingTime` в sync.service.ts отбрасывает
+    // fallback-flush после успешного live-post: T1 === T2 → ответ не
+    // применяется дважды (fix v0.4 §45 follow-up).
+    const answeredAt = new Date().toISOString();
+
     // Optimistic local update via FSRS (mirrors web's
     // `recalcFsrsLocally` in `apps/web/src/db/fsrs.ts`). Uses the real
     // FSRS parameters the server sent in the session card — before
@@ -129,7 +137,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
           wordId: card.word.id,
           rating,
           sessionId: session.id,
-          timestamp: new Date().toISOString(),
+          timestamp: answeredAt,
         });
       } catch {
         Alert.alert('Ошибка', 'Не удалось сохранить ответ офлайн.');
@@ -140,12 +148,14 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
       const liveResult = await api.post(`/sessions/${session.id}/answer`, {
         wordId: card.word.id,
         rating,
+        answeredAt,
       });
       if (!liveResult.ok) {
         // Live-post не прошёл (сетевая ошибка в момент запроса) — кладём
-        // в очередь; сервер применит его ровно один раз, когда связь
-        // вернётся. Дедуп по timestamp в sync.service.ts отбрасывает
-        // запись, если live-post всё же успел примениться.
+        // в очередь с тем же answeredAt; сервер применит его ровно один
+        // раз, когда связь вернётся: если live-post всё же успел
+        // примениться, дедуп по timestamp (T1 === T2) в sync.service.ts
+        // отбросит запись (fix v0.4 §45 follow-up).
         console.warn('Live answer failed; falling back to offline queue:', liveResult.message);
         await enqueueOffline();
       } else {

@@ -39,7 +39,15 @@ export class SyncEngine {
     await db.pending_changes.insert({
       id: crypto.randomUUID(),
       type,
-      payload: { ...payload, timestamp: new Date().toISOString() },
+      payload: {
+        ...payload,
+        // Клиент может передать timestamp (момент ответа) — используем
+        // его, а не перевыпускаем: иначе дедуп в sync.service.ts
+        // (`changeTime <= existingTime`) не отловит flush после
+        // успешного live-post и ответ применится дважды
+        // (fix v0.4 §45 follow-up).
+        timestamp: (payload.timestamp as string | undefined) ?? new Date().toISOString(),
+      },
       isSynced: false,
       createdAt: new Date().toISOString(),
     });

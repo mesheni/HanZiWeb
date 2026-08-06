@@ -267,6 +267,13 @@ model SessionAnswer {
   word       Word     @relation(fields: [wordId], references: [id])
   rating     Int // 1=Again, 2=Hard, 3=Good, 4=Easy
   answeredAt DateTime @default(now())
+
+  // Идемпотентность: одно слово встречается в сессии один раз, значит
+  // и ответ может быть ровно один. Уникальный индекс — финальная
+  // защита от повторного применения ответа при сетевых гонках
+  // (live-post + офлайн-flush), когда оба пути пишут SessionAnswer
+  // (fix v0.4 §45 follow-up).
+  @@unique([sessionId, wordId])
 }
 
 /// Прогресс пользователя по cloze-упражнениям (подстановка пропусков в предложениях).

@@ -10,7 +10,7 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
 
   for (const change of input.changes) {
     if (change.type === 'study_answer') {
-      const { wordId, rating, timestamp } = change.payload as any;
+      const { wordId, rating, timestamp, sessionId } = change.payload as any;
 
       const progress = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId, wordId } },
@@ -23,15 +23,36 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
       const existingTime = progress.lastReviewDate?.getTime() ?? 0;
       const changeTime = new Date(timestamp).getTime();
 
-      if (changeTime < existingTime) {
+      // Дедуп по времени (fix v0.4 §45 follow-up). Клиент штампует
+      // `answeredAt` один раз на ответ и кладёт его же в payload
+      // очереди, поэтому после успешного live-post (lastReviewDate =
+      // answeredAt) flush приходит с ровно тем же timestamp →
+      // `changeTime <= existingTime` → пропуск. Строгое `<` пропускало
+      // этот случай, и ответ применялся второй раз (reps/XP ×2).
+      if (changeTime <= existingTime) {
         continue;
+      }
+
+      // Страховка на уровне данных: ответ за то же слово в той же
+      // сессии уже записан (live-post успел примениться, а flush догнал
+      // с более поздним timestamp) — пропускаем, чтобы не пересчитывать
+      // прогресс повторно.
+      if (sessionId) {
+        const existingAnswer = await prisma.sessionAnswer.findFirst({
+          where: { sessionId, wordId },
+        });
+        if (existingAnswer) {
+          continue;
+        }
       }
 
       // Elapsed с последнего повторения (PLAN_Features_v0.4 §35):
       // офлайн-ответ может прийти с опозданием — это должно влиять
-      // на retrievability и пересчёт stability.
+      // на retrievability и пересчёт stability. Отсчитываем от
+      // timestamp'а ответа, а не от момента flush, чтобы серверный
+      // пересчёт совпадал с live-путём.
       const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
-      const elapsedDays = lastReviewMs > 0 ? (Date.now() - lastReviewMs) / MS_PER_DAY : 0;
+      const elapsedDays = lastReviewMs > 0 ? (changeTime - lastReviewMs) / MS_PER_DAY : 0;
       const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
         rating,
         progress.stability,
@@ -42,18 +63,37 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
 
       const newDueDate = new Date();
       newDueDate.setDate(newDueDate.getDate() + intervalDays);
+      const answeredAt = new Date(changeTime);
 
-      await prisma.userWordProgress.update({
-        where: { userId_wordId: { userId, wordId } },
-        data: {
-          state: newState,
-          stability: newStability,
-          difficulty: newDifficulty,
-          reps: { increment: 1 },
-          dueDate: newDueDate,
-          lastReviewDate: new Date(),
-        },
-      });
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.userWordProgress.update({
+            where: { userId_wordId: { userId, wordId } },
+            data: {
+              state: newState,
+              stability: newStability,
+              difficulty: newDifficulty,
+              reps: { increment: 1 },
+              dueDate: newDueDate,
+              lastReviewDate: answeredAt,
+            },
+          });
+
+          if (sessionId) {
+            await tx.sessionAnswer.create({
+              data: { sessionId, wordId, rating, answeredAt },
+            });
+          }
+        });
+      } catch (err) {
+        // Гонка между findFirst и create (два параллельных flush):
+        // уникальный индекс (sessionId, wordId) — финальная защита от
+        // повторного применения. Прогресс НЕ пересчитываем повторно.
+        if ((err as { code?: string }).code === 'P2002') {
+          continue;
+        }
+        throw err;
+      }
 
       const xpGain = ({ 1: 0, 2: 1, 3: 3, 4: 5 } as Record<number, number>)[rating as number] ?? 0;
       if (xpGain > 0) {

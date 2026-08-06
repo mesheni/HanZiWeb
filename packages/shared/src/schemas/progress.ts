@@ -67,6 +67,14 @@ export const RecordAnswerSchema = z.object({
   rating: SrsRatingSchema,
   /** Время ответа в миллисекундах (для аналитики) */
   responseTimeMs: z.number().int().nonnegative().optional(),
+  /**
+   * Момент ответа (ISO-строка), штампуется клиентом ОДИН раз на ответ.
+   * Сервер ставит его в `lastReviewDate`, а fallback-очередь кладёт
+   * тот же самый timestamp — поэтому дедуп `changeTime <= existingTime`
+   * в sync.service.ts отбрасывает повторный flush после успешного
+   * live-post (fix v0.4 §45 follow-up).
+   */
+  answeredAt: z.string().datetime().optional(),
 });
 
 export type RecordAnswer = z.infer<typeof RecordAnswerSchema>;

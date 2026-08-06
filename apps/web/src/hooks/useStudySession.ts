@@ -179,6 +179,14 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
     const answeredIndex = currentIndex;
     const shownAt = cardShownAtRef.current;
 
+    // Момент ответа штампуется ОДИН раз и используется и в live-post
+    // (answeredAt), и в payload офлайн-очереди (timestamp). Сервер
+    // ставит lastReviewDate = answeredAt, поэтому дедуп
+    // `changeTime <= existingTime` в sync.service.ts отбрасывает
+    // flush после успешного live-post: ответ не применяется дважды
+    // (fix v0.4 §45 follow-up).
+    const answeredAt = new Date().toISOString();
+
     // Аналитика: пользователь оценил карточку. Шлём ДО обновления
     // стора, чтобы событие содержало валидные card/wordId. Тренировочные
     // ответы тоже логируем — для отдельного отчёта по практике.
@@ -246,6 +254,8 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         sync.enqueueChange('study_answer', {
           wordId: card.word.id,
           rating,
+          sessionId,
+          timestamp: answeredAt,
         });
       }
     }
@@ -256,6 +266,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
           sessionId,
           wordId: card.word.id,
           rating,
+          answeredAt,
         },
         {
           onSuccess: (data) => {

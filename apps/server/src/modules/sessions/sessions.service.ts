@@ -352,8 +352,16 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // повторения (PLAN_Features_v0.4 §35): опоздавшие ответы снижают
   // retrievability R и меняют пересчёт stability. Для новой карточки
   // (lastReviewDate нет) elapsed = 0 → R = 1.
+  //
+  // `answeredAt` — момент ответа, штампованный клиентом один раз
+  // (fix v0.4 §45 follow-up). Если клиент его прислал, он же ложится
+  // в `lastReviewDate`, и тогда у fallback-записи офлайн-очереди
+  // (timestamp = тот же answeredAt) дедуп `changeTime <= existingTime`
+  // в sync.service.ts срабатывает строго: T1 === T2 → повторный
+  // пересчёт отбрасывается.
+  const answeredAt = input.answeredAt ? new Date(input.answeredAt) : new Date();
   const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
-  const elapsedDays = lastReviewMs > 0 ? (Date.now() - lastReviewMs) / MS_PER_DAY : 0;
+  const elapsedDays = lastReviewMs > 0 ? (answeredAt.getTime() - lastReviewMs) / MS_PER_DAY : 0;
   const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
     input.rating,
     progress.stability,
@@ -372,32 +380,62 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // (PLAN_Features_v0.4 §26). `xp` (User.update) оставлен вне — он
   // инкрементный, идемпотентный на уровне строки, и при сбое основной
   // транзакции его отсутствие лишь «не награждает» пользователя.
-  await prisma.$transaction(async (tx) => {
-    await tx.userWordProgress.update({
-      where: { userId_wordId: { userId, wordId: input.wordId } },
-      data: {
-        state: newState,
-        stability: newStability,
-        difficulty: newDifficulty,
-        reps: { increment: 1 },
-        dueDate: newDueDate,
-        lastReviewDate: new Date(),
-      },
-    });
+  //
+  // `sessionAnswer.create` защищён уникальным индексом
+  // (sessionId, wordId): если ответ за то же слово в той же сессии
+  // уже записан (дублирующий retry после ложной сетевой ошибки),
+  // P2002 ловится ниже и возвращается идемпотентный ответ без
+  // повторного пересчёта (fix v0.4 §45 follow-up).
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.userWordProgress.update({
+        where: { userId_wordId: { userId, wordId: input.wordId } },
+        data: {
+          state: newState,
+          stability: newStability,
+          difficulty: newDifficulty,
+          reps: { increment: 1 },
+          dueDate: newDueDate,
+          lastReviewDate: answeredAt,
+        },
+      });
 
-    await tx.sessionAnswer.create({
-      data: {
-        sessionId: input.sessionId,
+      await tx.sessionAnswer.create({
+        data: {
+          sessionId: input.sessionId,
+          wordId: input.wordId,
+          rating: input.rating,
+          answeredAt,
+        },
+      });
+
+      await tx.session.update({
+        where: { id: input.sessionId },
+        data: { cardsCompleted: { increment: 1 } },
+      });
+    });
+  } catch (err) {
+    // Уникальный индекс (sessionId, wordId) сработал — прогресс уже
+    // пересчитан этим ответом. Возвращаем текущее состояние без
+    // повторного применения (реps/XP не инкрементятся второй раз).
+    if ((err as { code?: string }).code === 'P2002') {
+      const current = await prisma.userWordProgress.findUnique({
+        where: { userId_wordId: { userId, wordId: input.wordId } },
+      });
+      if (!current) throw err;
+      return {
         wordId: input.wordId,
-        rating: input.rating,
-      },
-    });
-
-    await tx.session.update({
-      where: { id: input.sessionId },
-      data: { cardsCompleted: { increment: 1 } },
-    });
-  });
+        newStability: current.stability,
+        newDifficulty: current.difficulty,
+        newState: current.state,
+        newDueDate: current.dueDate.toISOString(),
+        intervalDays: 0,
+        xpGain: 0,
+        unlockedAchievements: [],
+      };
+    }
+    throw err;
+  }
 
   // Начисляем XP
   const xpGain = { 1: 0, 2: 1, 3: 3, 4: 5 }[input.rating] ?? 0;

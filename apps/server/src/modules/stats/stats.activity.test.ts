@@ -57,6 +57,12 @@ describe('getActivityData — tz-aware heatmap (PLAN_Features_v0.4 §25)', () =>
     const utcSession = await createSession(utcUserId);
     const mskSession = await createSession(mskUserId);
     const laSession = await createSession(laUserId);
+    // Второй ответ за то же слово требует НОВОЙ сессии: уникальный
+    // индекс (sessionId, wordId) допускает один ответ на слово в
+    // сессии (fix v0.4 §45 follow-up).
+    const utcSession2 = await createSession(utcUserId);
+    const mskSession2 = await createSession(mskUserId);
+    const laSession2 = await createSession(laUserId);
     // Тот же UTC-момент: 2026-07-15T23:30:00Z
     //   UTC:        2026-07-15
     //   Moscow:     2026-07-16 (02:30 локально)
@@ -70,9 +76,9 @@ describe('getActivityData — tz-aware heatmap (PLAN_Features_v0.4 §25)', () =>
     //   Moscow:     2026-01-01 (00:00 MSK)
     //   LA:         2025-12-31 (13:00 PST)
     const tsYearEdge = new Date('2025-12-31T21:00:00.000Z');
-    await recordAnswerAt(utcSession, sharedWordId, 3, tsYearEdge);
-    await recordAnswerAt(mskSession, sharedWordId, 3, tsYearEdge);
-    await recordAnswerAt(laSession, sharedWordId, 3, tsYearEdge);
+    await recordAnswerAt(utcSession2, sharedWordId, 3, tsYearEdge);
+    await recordAnswerAt(mskSession2, sharedWordId, 3, tsYearEdge);
+    await recordAnswerAt(laSession2, sharedWordId, 3, tsYearEdge);
   });
 
   afterAll(async () => {
