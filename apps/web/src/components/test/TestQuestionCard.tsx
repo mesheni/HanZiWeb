@@ -91,14 +91,10 @@ function MultipleChoiceBody({
     <>
       <div className="test-question-cue">Выбери правильный перевод</div>
       <div className="test-question-character-wrap">
+        {/* Пиньинь — подсказка, а не ответ: перевод выбранного иероглифа
+            пользователь должен вспомнить сам (fix v0.4 §4 follow-up). */}
         <div className="test-question-pinyin">{question.wordPinyin}</div>
-        <div className="test-question-translation">{question.wordTranslation}</div>
-        <div
-          className="test-question-character"
-          title={`${question.wordPinyin} — ${question.wordTranslation}`}
-        >
-          {question.wordCharacter}
-        </div>
+        <div className="test-question-character">{question.wordCharacter}</div>
       </div>
       <div className="test-question-options">
         {question.options.map((opt) => (
@@ -126,13 +122,9 @@ function ReverseChoiceBody({
     <>
       <div className="test-question-cue">Выбери правильный иероглиф</div>
       <div className="test-question-character-wrap">
+        {/* Иероглиф — это и есть выбираемый вариант: показываем только
+            перевод + пиньинь, иначе ответ виден до выбора. */}
         <div className="test-question-pinyin">{question.wordPinyin}</div>
-        <div
-          className="test-question-character"
-          title={`${question.wordPinyin} — ${question.wordTranslation}`}
-        >
-          {question.wordCharacter}
-        </div>
         <div className="test-question-translation">{question.wordTranslation}</div>
       </div>
       <div className="test-question-options test-question-options--chars">
@@ -175,13 +167,8 @@ function PinyinInputBody({
     <>
       <div className="test-question-cue">Набери пиньинь</div>
       <div className="test-question-character-wrap">
-        <div className="test-question-pinyin">{question.wordPinyin}</div>
-        <div
-          className="test-question-character"
-          title={`${question.wordPinyin} — ${question.wordTranslation}`}
-        >
-          {question.wordCharacter}
-        </div>
+        {/* Пиньинь — ответ: пользователь должен набрать его сам. */}
+        <div className="test-question-character">{question.wordCharacter}</div>
         <div className="test-question-translation">{question.wordTranslation}</div>
       </div>
       <div className="practice-input-wrap">
@@ -245,13 +232,10 @@ function ToneRecognitionBody({
     <>
       <div className="test-question-cue">Какой тон?</div>
       <div className="test-question-character-wrap">
-        <div className="test-question-pinyin">{question.wordPinyin}</div>
-        <div
-          className="test-question-character"
-          title={`${question.wordPinyin} — ${question.wordTranslation}`}
-        >
-          {question.wordCharacter}
-        </div>
+        {/* Пиньинь с тональными метками — это и есть ответ. Оставляем
+            иероглиф + перевод для идентификации слова, тон угадываем на слух. */}
+        <div className="test-question-character">{question.wordCharacter}</div>
+        <div className="test-question-translation">{question.wordTranslation}</div>
       </div>
       <button
         type="button"
