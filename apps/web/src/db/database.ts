@@ -73,9 +73,28 @@ const PENDING_CHANGES_SCHEMA = {
   required: ['id', 'type', 'payload', 'isSynced'],
 } as const;
 
+/**
+ * Тип документа коллекции `progress`. Нужен sync-merge и локальному
+ * пересчёту FSRS, чтобы поля (в т.ч. `lastReviewDate`) были
+ * типизированы без `as any`-кастов (fix v0.4 §40 follow-up).
+ * `lastReviewDate: null` — у ещё не повторённого слова (сервер шлёт
+ * null в ServerChange).
+ */
+export interface ProgressDoc {
+  id: string;
+  userId: string;
+  wordId: string;
+  state: string;
+  stability: number;
+  difficulty: number;
+  reps: number;
+  dueDate: string;
+  lastReviewDate: string | null;
+}
+
 export type DbCollections = {
   words: RxCollection;
-  progress: RxCollection;
+  progress: RxCollection<ProgressDoc>;
   pending_changes: RxCollection;
 };
 

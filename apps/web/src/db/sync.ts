@@ -105,9 +105,12 @@ export class SyncEngine {
 
         if (existing) {
           const serverTime = new Date(serverChange.timestamp).getTime();
-          const localTime = new Date((existing as any).lastReviewDate || 0).getTime();
+          const localTime = new Date(existing.lastReviewDate || 0).getTime();
           if (serverTime > localTime) {
-            await existing.patch(serverChange);
+            // `timestamp` — служебное поле курсора sync, в локальный
+            // документ прогресса оно не пишется (типизированный patch).
+            const { timestamp: _timestamp, ...progressPatch } = serverChange;
+            await existing.patch(progressPatch);
           }
         }
       }
