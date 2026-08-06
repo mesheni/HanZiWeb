@@ -8,6 +8,27 @@ import { getDatabase } from './db/database';
 import { createWatermelonQueueStorage } from './db/WatermelonQueueStorage';
 import type { AuthResponse } from '@hanzi/shared';
 
+/**
+ * Синхронизирует IANA-таймзону устройства с сервером (fix v0.4
+ * §24/§25 follow-up): без записи `User.timezone` стрик и heatmap
+ * считаются в UTC. Вызывается после успешного hydrate при старте.
+ */
+async function syncDeviceTimezone(): Promise<void> {
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!timezone) return;
+    const settings = await api.get<{ dailyGoal: number; timezone: string | null }>(
+      '/users/settings',
+    );
+    if (!settings.ok) return;
+    if (settings.data.timezone !== timezone) {
+      await api.put('/users/settings', { timezone });
+    }
+  } catch {
+    // Не критично: синхронизация повторится при следующем старте.
+  }
+}
+
 export default function App(): React.ReactElement {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +59,13 @@ export default function App(): React.ReactElement {
           if (!result.ok || !result.data) return null;
           return result.data;
         });
+
+        // 3.5. Sync the device IANA timezone so daily stats (streak,
+        //      heatmap) follow the user's local calendar (v0.4 §24/§25
+        //      follow-up). Fire-and-forget, non-critical.
+        if (useAuthStore.getState().isAuthenticated) {
+          void syncDeviceTimezone();
+        }
 
         // 4. Boot the sync engine. It will auto-flush any pending
         //    answers from previous sessions once we have network.

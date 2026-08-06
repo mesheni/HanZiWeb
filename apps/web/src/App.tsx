@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { apiGet, apiPut } from './api/client';
+import type { UserSettings } from '@hanzi/shared';
 import ProtectedLayout from './components/ProtectedLayout';
 import ToastContainer from './components/ui/Toast';
 import HomeScreen from './screens/HomeScreen';
@@ -25,11 +27,34 @@ function GuestGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Синхронизирует IANA-таймзону браузера с сервером (fix v0.4 §24/§25
+ * follow-up): без записи `User.timezone` стрик и heatmap всегда
+ * считаются в UTC. Отправляем при первом визите и при смене зоны.
+ */
+async function syncBrowserTimezone(): Promise<void> {
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!timezone) return;
+    const settings = await apiGet<UserSettings>('/users/settings');
+    if (settings.timezone !== timezone) {
+      await apiPut<UserSettings>('/users/settings', { timezone });
+    }
+  } catch {
+    // Не критично: синхронизация повторится при следующем визите.
+  }
+}
+
 export default function App() {
   const hydrateAuth = useAuthStore((s) => s.hydrateAuth);
 
   useEffect(() => {
-    void hydrateAuth();
+    void (async () => {
+      await hydrateAuth();
+      if (useAuthStore.getState().isAuthenticated) {
+        void syncBrowserTimezone();
+      }
+    })();
   }, [hydrateAuth]);
 
   return (

@@ -3,26 +3,27 @@ import { DAILY_GOAL_DEFAULT } from '@hanzi/shared';
 import type { UpdateUserSettings, UserSettings } from '@hanzi/shared';
 
 /**
- * Возвращает пользовательские настройки (сейчас — `dailyGoal`).
- * Если у пользователя поле по какой-то причине не заполнено (не должно
- * быть после миграции), отдаём дефолт.
+ * Возвращает пользовательские настройки: `dailyGoal` + `timezone`.
+ * Если `dailyGoal` по какой-то причине не заполнен, отдаём дефолт;
+ * `timezone: null` — UTC (backward-compat, v0.4 §24).
  *
  * См. PLAN_Features_v0.2 §9.
  */
 export async function getUserSettings(userId: string): Promise<UserSettings> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { dailyGoal: true },
+    select: { dailyGoal: true, timezone: true },
   });
 
   return {
     dailyGoal: user?.dailyGoal && user.dailyGoal > 0 ? user.dailyGoal : DAILY_GOAL_DEFAULT,
+    timezone: user?.timezone ?? null,
   };
 }
 
 /**
- * Применяет патч `UpdateUserSettings` к пользователю. Сейчас
- * поддерживается только `dailyGoal` — схема расширяемая.
+ * Применяет патч `UpdateUserSettings` к пользователю.
+ * Поддерживается `dailyGoal` (v0.2 §9) и `timezone` (v0.4 §24/§25).
  *
  * Бросает 404, если пользователь не найден.
  */
@@ -30,9 +31,12 @@ export async function updateUserSettings(
   userId: string,
   patch: UpdateUserSettings,
 ): Promise<UserSettings> {
-  const data: { dailyGoal?: number } = {};
+  const data: { dailyGoal?: number; timezone?: string | null } = {};
   if (patch.dailyGoal !== undefined) {
     data.dailyGoal = patch.dailyGoal;
+  }
+  if (patch.timezone !== undefined) {
+    data.timezone = patch.timezone;
   }
 
   // Если ничего не передано — просто читаем текущее значение.
@@ -44,9 +48,9 @@ export async function updateUserSettings(
     const user = await prisma.user.update({
       where: { id: userId },
       data,
-      select: { dailyGoal: true },
+      select: { dailyGoal: true, timezone: true },
     });
-    return { dailyGoal: user.dailyGoal };
+    return { dailyGoal: user.dailyGoal, timezone: user.timezone };
   } catch (err) {
     const prismaCode = (err as { code?: string }).code;
     if (prismaCode === 'P2025') {
