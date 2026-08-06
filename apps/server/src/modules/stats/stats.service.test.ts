@@ -269,6 +269,42 @@ describe('getTodayUtcRange с timezone', () => {
     const { start, end } = getTodayUtcRange(d, 'Europe/Moscow');
     expect(end.getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000);
   });
+
+  it('America/New_York, осенний DST-переход (2026-11-01): локальные сутки 25ч', () => {
+    // 2026-11-01T17:00:00Z = 12:00 EST (переход 02:00 EDT → 01:00 EST уже
+    // произошёл). Начало дня = 2026-11-01T04:00:00Z (00:00 EDT, ещё до
+    // перехода), конец = 2026-11-02T05:00:00Z (00:00 EST). Фиксированное
+    // 24h-окно давало конец 2026-11-02T04:00:00Z и теряло последний
+    // локальный час дня.
+    const d = new Date('2026-11-01T17:00:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'America/New_York');
+    expect(start.toISOString()).toBe('2026-11-01T04:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-11-02T05:00:00.000Z');
+    expect(end.getTime() - start.getTime()).toBe(25 * 60 * 60 * 1000);
+  });
+
+  it('America/New_York, весенний DST-переход (2026-03-08): локальные сутки 23ч', () => {
+    // 2026-03-08T16:00:00Z = 12:00 EDT (переход 02:00 EST → 03:00 EDT уже
+    // произошёл). Начало дня = 2026-03-08T05:00:00Z (00:00 EST),
+    // конец = 2026-03-09T04:00:00Z (00:00 EDT). Фиксированное 24h-окно
+    // давало конец 2026-03-09T05:00:00Z и захватывало первый час
+    // следующего локального дня.
+    const d = new Date('2026-03-08T16:00:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'America/New_York');
+    expect(start.toISOString()).toBe('2026-03-08T05:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-03-09T04:00:00.000Z');
+    expect(end.getTime() - start.getTime()).toBe(23 * 60 * 60 * 1000);
+  });
+
+  it('America/New_York, граница месяца/года с dayOffset не ломается (31 октября → 1 ноября)', () => {
+    // 2026-10-31T20:00:00Z = 16:00 EDT 31 октября. Окно переходит
+    // через месяц: конец = 2026-11-01T04:00:00Z (00:00 EDT 1 ноября,
+    // до осеннего перехода).
+    const d = new Date('2026-10-31T20:00:00.000Z');
+    const { start, end } = getTodayUtcRange(d, 'America/New_York');
+    expect(start.toISOString()).toBe('2026-10-31T04:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-11-01T04:00:00.000Z');
+  });
 });
 
 // ─── Экспорт/импорт прогресса (PLAN_Features_v0.2 §10) ─────────────

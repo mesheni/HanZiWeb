@@ -338,17 +338,20 @@ function tzOffsetMsAt(utc: Date, timezone: string): number {
 
 /**
  * Возвращает UTC Date, соответствующий локальной полуночи того дня,
- * в котором находится `date` в `timezone`. Чистая функция.
+ * в котором находится `date` в `timezone` (или `dayOffset` календарных
+ * дней спустя — для вычисления «следующей полуночи» в getTodayUtcRange).
+ * Чистая функция.
  *
  * Пример (date = 2026-07-15T20:00:00.000Z):
  *   localMidnightUtc(d, 'Europe/Moscow') === Date('2026-07-15T21:00:00.000Z')
  *     // 00:00 в Москве = 21:00 UTC предыдущего дня (логически того же)
  *   localMidnightUtc(d, 'UTC')           === Date('2026-07-15T00:00:00.000Z')
  */
-function localMidnightUtc(date: Date, timezone: string): Date {
+function localMidnightUtc(date: Date, timezone: string, dayOffset = 0): Date {
   if (timezone === 'UTC') {
     const out = new Date(date);
     out.setUTCHours(0, 0, 0, 0);
+    if (dayOffset !== 0) out.setUTCDate(out.getUTCDate() + dayOffset);
     return out;
   }
   const dayKey = getLocalDayKey(date, timezone);
@@ -362,7 +365,9 @@ function localMidnightUtc(date: Date, timezone: string): Date {
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
     throw new Error(`Invalid day key from Intl: ${dayKey}`);
   }
-  const guess = Date.UTC(y, m - 1, d, 0, 0, 0, 0);
+  // Date.UTC сам переводит переполнение календаря (например, 32 февраля →
+  // 4 марта), поэтому `d + dayOffset` корректен и через границу месяца/года.
+  const guess = Date.UTC(y, m - 1, d + dayOffset, 0, 0, 0, 0);
   // tz-offset в точке guess — аппроксимация для offset в точке localMidnight.
   // Корректно для всех случаев кроме самого момента DST-перехода
   // (когда смещение меняется на ±1ч). В этом случае оффсет
@@ -393,7 +398,12 @@ export function getTodayUtcRange(
     return { start, end };
   }
   const start = localMidnightUtc(now, timezone);
-  const end = new Date(start.getTime() + 86_400_000);
+  // Конец окна — следующая ЛОКАЛЬНАЯ полночь, а не start + 24ч
+  // (PLANCorrection #14): в дни DST-перехода локальные сутки длятся
+  // 23/25 часов, и фиксированное 24h-окно захватывало лишний час
+  // следующего локального дня (весна) или теряло последний час
+  // текущего (осень) — daily-прогресс и countTodayReviews съезжали.
+  const end = localMidnightUtc(now, timezone, 1);
   return { start, end };
 }
 
