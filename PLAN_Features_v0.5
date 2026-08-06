@@ -1,0 +1,593 @@
+# PLAN_Features_v0.5
+
+Дорожная карта доработок HanZiWeb v0.5.
+Источник: **верификационный аудит реализации PLAN_Features_v0.4** — все 54
+пункта v0.4 проверены по фактическому коду (5 параллельных проходов по
+пакетам web / server / shared / mobile / mobile-sdk + ручные спот-чеки
+критичных мест + прогон всех тестов).
+
+## Итоги верификации v0.4
+
+**Базовая линия зелёная**: `pnpm typecheck` 7/7 пакетов, server vitest
+**398/398** (35 файлов, все заявленные в v0.4 тест-файлы существуют),
+mobile-sdk vitest **36/36**.
+
+Подтверждено корректными (по коду, не по отметкам в плане): §2, §3, §5-§8
+(с оговорками ниже), §10-§17, §19, §20, §21 (CAS подписывает токен с
+version+1 — проверено), §23, §26 (с оговоркой), §27, §29, §32-§34, §36-§39,
+§40-§43, §46-§52, §54.
+
+**Часть фиксов внесла новые дефекты или оставила дыры** — они и составляют
+ядро этого плана (Часть A). Далее — баги, найденные вне scope v0.4
+(Части B-E).
+
+Формат записи прежний: **Проблема → Что исправить → Ожидаемый результат**,
+с файлами и строками. Нумерация сквозная.
+
+---
+
+# Часть A. Регрессии, внесённые фиксами v0.4
+
+## 1. Тестовые карточки показывают ответ прямо в вопросе (4 из 6 body)
+
+**Проблема**: Фикс v0.4 §4 добавил вертикальный стек
+«пиньинь → перевод → иероглиф» во ВСЕ body-компоненты
+`apps/web/src/components/test/TestQuestionCard.tsx`, не различая, какое
+поле является **ответом** в данном типе вопроса:
+
+- `MultipleChoiceBody:92-101` — cue «Выбери правильный перевод», но
+  `question.wordTranslation` (строка 95) показан над вариантами. Ответ
+  виден до выбора.
+- `ReverseChoiceBody:127-136` — cue «Выбери правильный иероглиф», но
+  `question.wordCharacter` (строка 134) показан в вопросе. Ответ виден.
+- `PinyinInputBody:176-185` — cue «Набери пиньинь», но
+  `question.wordPinyin` (строка 178) показан над полем ввода. Ответ виден.
+- `ToneRecognitionBody:246-254` — cue «Какой тон?», но `wordPinyin`
+  (строка 248) показан **с тональными метками**. Ответ виден.
+
+Тесты HSK тривиализированы: правильный вариант читается с экрана.
+Без утечек только `CharacterAssemblyBody` и `ClozeBody` (пиньинь+перевод —
+это подсказка, ответ — иероглиф).
+**Severity**: Critical.
+
+**Что исправить**: Матрица «что показывать» по типам вопроса — показывать
+только clue-поля, никогда не answer-поле:
+- `multiple-choice-translation` (иероглиф → перевод): иероглиф крупно;
+  пиньинь — опционально (это подсказка, не ответ); **перевод скрыть**.
+- `reverse-choice-character` (перевод → иероглиф): перевод + пиньинь;
+  **иероглиф скрыть** (это и есть выбираемый вариант).
+- `pinyin-input`: иероглиф + перевод; **пиньинь скрыть**.
+- `tone-recognition`: иероглиф + перевод; **пиньинь скрыть** (тональные
+  метки = ответ); аудио-кнопка остаётся.
+- `character-assembly`, `cloze`: пиньинь + перевод (без изменений).
+Тултип `title="<pinyin> — <translation>"` оставить только там, где оба
+поля уже видны; иначе он тоже утекает ответом (hover по иероглифу в
+multiple-choice показывает перевод — убрать title из MC/reverse/pinyin/
+tone до сдачи ответа, либо показывать только после ответа).
+
+**Ожидаемый результат**: Ни один тип вопроса не содержит свой ответ в
+условии; тест снова измеряет знание, а не чтение с экрана.
+
+---
+
+## 2. Mobile: fallback в офлайн-очередь штампует новый timestamp — двойной apply возвращается
+
+**Проблема**: Фикс v0.4 §45 (`apps/mobile/src/screens/StudyScreen.tsx:126-158`)
+при провале live-post кладёт ответ в очередь, но `enqueueOffline`
+генерирует timestamp **в момент enqueue** (`:132`:
+`timestamp: new Date().toISOString()`), а не в момент ответа.
+Серверный дедуп (`apps/server/src/modules/sync/sync.service.ts:23-28`)
+пропускает изменение только если `changeTime < existingTime`
+(`progress.lastReviewDate`). Сценарий гонки:
+
+1. Live-post `POST /sessions/:id/answer` доходит до сервера, `recordAnswer`
+   применяет FSRS, ставит `lastReviewDate = T1`.
+2. Ответ теряется (таймаут/обрыв) → клиент видит `!liveResult.ok`.
+3. Fallback кладёт в очередь изменение с `timestamp = T2 > T1`.
+4. Flush: `changeTime (T2) > existingTime (T1)` → дедуп **не срабатывает**
+   → ответ применяется второй раз: reps+1, XP снова, stability пересчитан
+   дважды («Again» дважды).
+
+Комментарий в коде (`:146-148`) утверждает, что дедуп это отловит — это
+неверно, т.к. timestamp перевыпускается.
+**Severity**: Critical (возврат бага §45 в другой форме).
+
+**Что исправить**:
+- В `handleRate` штамповать `answeredAt = new Date().toISOString()` **один
+  раз** до оптимистичного апдейта; использовать его и в live-post (поле
+  тела), и в payload очереди.
+- Сервер: `recordAnswer` принимает опциональный `answeredAt` и ставит
+  `lastReviewDate = answeredAt` (тогда `T1 === T2`, дедуп по
+  `changeTime < existingTime` строгий — смягчить до `<=`).
+- Страховка: идемпотентность на уровне БД — уникальный частичный индекс
+  `SessionAnswer (sessionId, wordId)` или проверка `findFirst` перед
+  применением в sync (ответ за то же слово в той же сессии = пропуск).
+- Покрыть тестом: симулировать «live-post применился, клиент увидел
+  ошибку, flush догнал» — reps инкрементится ровно один раз.
+
+**Ожидаемый результат**: Один ответ → один пересчёт прогресса при любых
+сетевых гонках.
+
+---
+
+## 3. `X-Client-Type: mobile` спуфабелен — XSS может вытащить refreshToken в тело ответа
+
+**Проблема**: Фикс v0.4 §47 (`apps/server/src/modules/auth/auth.routes.ts:35-36`):
+```ts
+const isNonCookieClient = (request: FastifyRequest) =>
+  request.headers['x-client-type'] === 'mobile';
+```
+Заголовок выставляется любым клиентом. До §47 refreshToken жил только в
+HttpOnly cookie (JS недоступен); теперь вредоносный JS на web-оригине
+(XSS) зовёт `fetch('/api/auth/refresh', { headers: { 'X-Client-Type':
+'mobile' }, credentials: 'include' })` и получает **новый refreshToken в
+JS-читаемом теле** → эксфильтрация долгоживущей сессии на сервер атакующего.
+CAS-ротация (§21) детектит reuse лишь постфактум.
+**Severity**: High.
+
+**Что исправить**: Границу «mobile» нельзя строить на самодекларируемом
+заголовке. Вариант: отдавать body-токен только когда `X-Client-Type:
+mobile` **И** отсутствует заголовок `Origin` (браузер всегда шлёт Origin
+на POST; RN `fetch` — нет). Дополнительно: для ответов с body-refreshToken
+ставить `Cache-Control: no-store`. Задокументировать, что механизм —
+best-effort, а не security boundary; рассмотреть PKCE-подобный one-time
+exchange для mobile в будущем.
+Тест: запрос с Origin + X-Client-Type → refreshToken в теле отсутствует;
+без Origin + X-Client-Type → присутствует.
+
+**Ожидаемый результат**: Из браузерного JS нельзя получить refreshToken в
+теле, даже с подменённым заголовком.
+
+---
+
+## 4. «Ещё сессия» теряет `practice` из URL — transient-сброс на flip-card
+
+**Проблема**: §1 v0.4 не был помечен выполненным; кнопка работает, но с
+остаточным багом. `apps/web/src/screens/StudyScreen.tsx:488-499`:
+```ts
+const handleRestartSession = () => {
+  queryClient.invalidateQueries({ queryKey: ['stats'] });
+  retrySession();
+  navigate(`/study?mode=${mode}`, { replace: true });
+};
+```
+`navigate` дропает `?practice=...`. `practiceFromUrl` (`:113-115`) падает
+в дефолт `'flip-card'`, и URL→store эффект (`:128-133`) переписывает
+`practiceType`, пока retry-мутация ещё стартует со старым
+`activePracticeType`. Итог: после рестарта селектор/стейт показывают
+flip-card; если retry упадёт — пользователь остаётся на сброшенном режиме.
+**Severity**: Medium.
+
+**Что исправить**: В `navigate` сохранять текущий practice:
+`navigate(\`/study?mode=${mode}&practice=${activePracticeType}\`,
+{ replace: true })` — либо прекратить синкать `practiceType` из URL после
+старта сессии (эффект гейтить по `!hasStarted`).
+
+**Ожидаемый результат**: Рестарт продолжает тот же режим тренировки, UI не
+мигает на flip-card.
+
+---
+
+# Часть B. Web-клиент (`apps/web/`)
+
+## 5. `logout()` не отменяет in-flight refresh — тихий re-login после выхода
+
+**Проблема**: `apps/web/src/stores/authStore.ts` — `logout()` (после §5
+v0.4) шлёт `notifyServerLogout()` и чистит стейт, но не инвалидирует
+уже летящий `hydrateAuth()`/refresh: общий `refreshPromise`
+(`src/api/client.ts:9-35`) резолвится **после** logout и
+`doRefresh()`/`setAccessToken` снова наполняет zustand → пользователь
+«выходит», но остаётся залогиненным. Гонка узкая, но реальная (клик
+«Выйти» во время фонового 401-refresh).
+**Severity**: Medium.
+
+**Что исправить**: Модульный `authGeneration`/`loggedOutAt` маркер:
+`logout()` инкрементит поколение; `refreshAccessToken()` после await
+проверяет поколение и не сетит токен, если logout случился позже старта
+refresh. Либо `AbortController` на refresh-флоу + отказ set'а при
+`isAuthenticated === false` после резолва.
+
+**Ожидаемый результат**: «Выйти» окончательно: ни один летящий async не
+восстановит сессию.
+
+---
+
+## 6. Конкурентные 401 → N × `onSessionExpired()` — дублированный logout
+
+**Проблема**: `apps/web/src/api/client.ts` — §9 v0.4 устранил шторм
+refresh'ей (общий promise), но не failure-ветку: если refresh вернул
+`null`, **каждый** из N ожидавших запросов независимо зовёт
+`onSessionExpired()` → N вызовов `logout()` → N запросов
+`POST /auth/logout`, N `caches.delete`, повторные навигации на `/login`.
+**Severity**: Low/Medium.
+
+**Что исправить**: Идемпотентный `onSessionExpired`: module-флаг
+`sessionExpiredHandled` (сброс при успешном login/hydrate), либо вызов
+только если `useAuthStore.getState().isAuthenticated` ещё `true`.
+
+**Ожидаемый результат**: Провал refresh → ровно один logout-флоу.
+
+---
+
+## 7. StrictMode: `useStudySession` enabled-эффект стартует сессию дважды в dev
+
+**Проблема**: После §8 v0.4 единственный стартер — enabled-эффект в
+`useStudySession` (`apps/web/src/hooks/useStudySession.ts:59-116`).
+`generationRef` — per-mount; под React.StrictMode dev-ремонт заново
+выполняет эффект → второй `POST /sessions/start`. В prod не
+воспроизводится, но мусорные сессии в dev путают отладку и метрики.
+**Severity**: Low.
+
+**Что исправить**: Дедуп на уровне мутации: `startMutation.mutate` только
+если `status === 'idle'` и `sessionId === null`, либо module-level
+in-flight guard по ключу фильтров (аналог `refreshPromise` из §9).
+
+**Ожидаемый результат**: Двойной эффект-ремонт = один запрос старта.
+
+---
+
+## 8. Modal: Escape закрывает ВСЕ вложенные модалки сразу
+
+**Проблема**: Фикс §18 v0.4 (`apps/web/src/components/ui/Modal.tsx`)
+ввёл module-level счётчик для body-overflow, но keydown-обработчик
+остался per-instance: каждый открытый Modal вешает свой listener, и одно
+нажатие Escape вызывает `onClose` всех (внутренний `WordDetailModal`
+и внешний `DeckBuilderModal` закрываются вместе).
+**Severity**: Low.
+
+**Что исправить**: Module-level стек открытых модалок (`modalStack:
+Array<{ close: () => void }>`); единственный document-listener закрывает
+только верхнюю (`modalStack.at(-1)`).
+
+**Ожидаемый результат**: Escape закрывает ровно одну (верхнюю) модалку.
+
+---
+
+## 9. `as any` в `apps/web/src/db/sync.ts:100`
+
+**Проблема**: Остаточный каст `existing.lastReviewDate` через `as any` —
+дыра в type-safety на merge-пути sync (рядом с убранными §40 кастами).
+**Severity**: Low.
+
+**Что исправить**: Типизировать локальную запись (RxDB doc type) так,
+чтобы `lastReviewDate` имел корректный тип, и убрать каст.
+
+**Ожидаемый результат**: sync-merge без `as any`.
+
+---
+
+# Часть C. Сервер (`apps/server/`)
+
+## 10. `DELETE /words/:wordId/examples/:exampleId` — без owner/admin-проверки
+
+**Проблема**: `apps/server/src/modules/examples/examples.service.ts:39-48` —
+`deleteExample(userId, exampleId)` выбирает пример (и даже подгружает
+`progress` юзера в `select`), но `userId` используется **только в
+select**, не в решении об авторизации. Любой залогиненный удаляет любой
+пример, включая общие `source: 'tatoeba'` — вандализм словаря. Похоже на
+§22 (words admin), но эндпоинт остался открытым.
+**Severity**: High.
+
+**Что исправить**: `DELETE` → `app.requireAdmin` (примеры — общий
+контент), либо разрешать удаление только `source: 'manual'` владельцу —
+но у `Example` нет `ownerId`, поэтому корректный минимум: admin-guard.
+Тест: USER → 403, ADMIN → 200.
+
+**Ожидаемый результат**: Общие примеры удаляет только админ.
+
+---
+
+## 11. `createExample` / `fetchExamplesFromTatoeba` — любой юзер загрязняет словарь и дёргает внешний API
+
+**Проблема**: `examples.routes.ts` — `POST /words/:wordId/examples`
+(ручное создание) и `POST .../examples/fetch` (стрим-импорт из Tatoeba)
+требуют только `authenticate`. Любой юзер может: (а) массово создавать
+мусорные примеры к словам HSK; (б) инициировать исходящие HTTP к Tatoeba
+(лимиты/бан по IP сервера — см. `examples.service.ts:56-105`).
+**Severity**: Medium.
+
+**Что исправить**: Оба write-эндпоинта → `requireAdmin` (контент словаря),
+либо per-user rate-limit на fetch + модерация manual-примеров. Минимум:
+admin-guard как в §22.
+
+**Ожидаемый результат**: Контент словаря меняется только админом.
+
+---
+
+## 12. Tags CRUD — мутации без admin/owner-проверок
+
+**Проблема**: `apps/server/src/modules/tags/tags.routes.ts:13-46` +
+`tags.service.ts:37-105` — любой залогиненный создаёт/удаляет теги и
+переприсваивает теги словам (`PUT /words/:id/tags`). Если теги общие —
+та же уязвимость, что §22; если пользовательские — нужен owner-фильтр,
+которого нет.
+**Severity**: Medium.
+
+**Что исправить**: Определить модель владения тегами: общие →
+`requireAdmin` на все мутации; пользовательские → `ownerId` в схеме +
+`where: { userId }` во всех операциях. Тесты по образцу `words.admin.test.ts`.
+
+**Ожидаемый результат**: Теги меняет только владелец/админ.
+
+---
+
+## 13. `User.timezone` нельзя выставить ни через один API — §24/§25 мертвы в проде
+
+**Проблема**: v0.4 §24/§25 завезли tz-aware стрик/heatmap, но поле
+осталось незаписываемым: `apps/server/src/modules/users/users.routes.ts:1-22`
+и `users.service.ts:29-57` поддерживают только `dailyGoal`;
+`packages/shared/src/schemas/userSettings.ts:13-28` — тоже только
+`dailyGoal`. В проде `User.timezone` всегда `NULL` → все пользователи
+на UTC-ветке, фича никогда не включается.
+**Severity**: High (мёртвая фича целого пункта v0.4).
+
+**Что исправить**:
+- `UpdateUserSettingsSchema` + `UserSettingsSchema`: `timezone:
+  z.string().max(64).nullable().optional()` с валидацией IANA через
+  `Intl.supportedValuesOf('timeZone')` (или try/catch
+  `new Intl.DateTimeFormat(undefined, { timeZone: v })`).
+- `users.service.getUserSettings/updateUserSettings`: читать/писать поле.
+- Web-клиент: при первом визите (или в настройках) отправлять
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`; mobile —
+  аналогично.
+- Тест: PUT settings с `Europe/Moscow` → последующий
+  `getUserStreak`/`getActivityData` использует её.
+
+**Ожидаемый результат**: Стрик и heatmap реально идут по локальному дню
+пользователя.
+
+---
+
+## 14. `getTodayUtcRange` — фиксированное 24h-окно ломается на DST
+
+**Проблема**: `apps/server/src/modules/stats/stats.service.ts:384-397` —
+после §24 конец «сегодня» считается как `start + 86_400_000`. В дни
+перехода DST локальные сутки длятся 23h/25h: осенью окно захватывает лишний
+час завтра, весной — недобирает час сегодня → `countTodayReviews` и
+daily-goal прогресс съезжают два раза в год.
+**Severity**: Medium.
+
+**Что исправить**: `end = localMidnightUtc(startLocalDate + 1 день,
+timezone)` — вычислять следующую полночь тем же `localMidnightUtc`, а не
+константой 24h. Тест: день перехода DST для `America/New_York` /
+`Europe/Moscow`-подобной зоны с историческим DST (или зафиксировать
+`Australia/Lord_Howe` с 30-мин сдвигом).
+
+**Ожидаемый результат**: «Сегодня» = локальные сутки всегда, включая DST.
+
+---
+
+## 15. Offline-sync считает FSRS-elapsed от времени приёма, а не ответа
+
+**Проблема**: `apps/server/src/modules/sync/sync.service.ts:33-34`:
+```ts
+const elapsedDays = lastReviewMs > 0 ? (Date.now() - lastReviewMs) / MS_PER_DAY : 0;
+```
+Для офлайн-ответа, доехавшего через 3 дня, `Date.now()` — момент
+**синхронизации**, а не ответа. `change.payload.timestamp` (момент ответа)
+уже есть в payload, но игнорируется. Retrievability и интервал считаются
+неверно (завышенный elapsed).
+**Severity**: Medium.
+
+**Что исправить**: `const answeredAt = new Date(timestamp).getTime();
+const elapsedDays = lastReviewMs > 0 ? (answeredAt - lastReviewMs) /
+MS_PER_DAY : 0;` + guard `answeredAt < lastReviewMs` → elapsed = 0.
+Тест: ответ с payload.timestamp 2 дня назад → elapsed = 2, а не ~0.
+
+**Ожидаемый результат**: Офлайн-ответы пересчитываются по времени ответа.
+
+---
+
+## 16. Офлайн-ответы не создают `SessionAnswer` и не трогают стрик/heatmap/ачивки
+
+**Проблема**: `/sync` (`sync.service.ts:11-77`) применяет FSRS + XP, но:
+не создаёт `SessionAnswer`-записей, не инкрементит `Session.cardsCompleted`,
+не зовёт `checkAllAchievements`, не бампает `User.lastActiveDate`. Heatmap
+(`getActivityData`) и стрик читают `SessionAnswer.answeredAt` → учёба
+офлайн **невидима** в календаре активности и не продлевает стрик, ачивки
+за офлайн-ответы не выдаются.
+**Severity**: Medium.
+
+**Что исправить**: В ветке `study_answer` sync'а (при наличии
+`payload.sessionId`) создавать `SessionAnswer` с `answeredAt = timestamp`
+и инкрементить `cardsCompleted` в той же транзакции; `lastActiveDate =
+max(lastActiveDate, answeredAt)`; после батча — `checkAllAchievements`
+(best-effort, как в recordAnswer). Учесть §2 (идемпотентность —
+unique `(sessionId, wordId)`).
+
+**Ожидаемый результат**: Офлайн-учёба полностью отражается в статистике,
+стрике и достижениях.
+
+---
+
+## 17. `recordAnswer`: pre-transaction read race — потерянное обновление stability
+
+**Проблема**: `apps/server/src/modules/sessions/sessions.service.ts:303-400` —
+после §26 три записи атомарны, но FSRS-вход читается **до** транзакции:
+два конкурентных ответа на одно слово оба читают старую
+`stability/difficulty/state`, оба считают FSRS от одной базы, обе
+транзакции коммитят — второй затирает первый (reps +2, а stability — от
+устаревшего состояния).
+**Severity**: Medium.
+
+**Что исправить**: Читать прогресс `SELECT ... FOR UPDATE` внутри
+`$transaction` (`tx.$queryRaw` или `tx.userWordProgress.update` с
+инкрементом версии + проверка), либо optimistic-контроль:
+`updateMany({ where: { userId, wordId, stability: readStability,
+reps: readReps }, ... })` и `count === 0` → перечитать и пересчитать.
+Тест: два параллельных `recordAnswer` → финальный state соответствует
+последовательному применению двух оценок.
+
+**Ожидаемый результат**: Конкурентные ответы сериализуются без потери.
+
+---
+
+## 18. GCS audio: публичный URL предполагает публичный бакет
+
+**Проблема**: Фикс §30 v0.4 (`audio.service.ts`, `createGcsStorage`) —
+`publicUrl()` хардкодит `https://storage.googleapis.com/<bucket>/<file>`.
+Если бакет приватный (uniform bucket-level access, дефолт новых
+проектов), URL отдаёт 403 → в prod аудио «сгенерировано», но не играет.
+**Severity**: Medium (prod-only).
+
+**Что исправить**: Либо `file.makePublic()` на upload (и документировать
+требование публичного чтения), либо signed URL (V4, TTL) —
+`getSignedUrl({ action: 'read', expires })`. Выбрать и задокументировать
+один режим; тест с моком проверяет выбранный путь.
+
+**Ожидаемый результат**: Возвращаемый URL реально доступен в выбранной
+конфигурации бакета.
+
+---
+
+## 19. TTS `/audio/generate` по `wordId` — без per-user лимита
+
+**Проблема**: После §31 v0.4 free-text — admin-only, но wordId-путь
+открыт любому юзеру (`audio.routes.ts:43-49`). Кэш смягчает повторы, но
+перебор всех wordId словаря с разных аккаунтов гоняет платный TTS;
+единственный предел — глобальный 60 req/min/IP (`index.ts:82-98`).
+**Severity**: Low.
+
+**Что исправить**: Per-user Redis-счётчик генераций (cache-miss only),
+например ≤100/день; cache-hit не считать. Тест: 101-я уникальная
+генерация за день → 429.
+
+**Ожидаемый результат**: Платный TTS не разогнать перебором wordId.
+
+---
+
+## 20. `stats.routes.ts` — `year`/`month` через `parseInt` без валидации → NaN
+
+**Проблема**: `apps/server/src/modules/stats/stats.routes.ts:28-30` —
+query-параметры парсятся `parseInt` без схемы: `?year=abc` → `NaN`,
+который течёт в `getActivityData` → пустой/мусорный ответ или 500
+вместо 400.
+**Severity**: Low.
+
+**Что исправить**: Zod-схема querystring на уровне роута
+(`z.coerce.number().int().min(2000).max(2100)`, `month: 1-12`), ошибка →
+400 через существующий error-handler.
+
+**Ожидаемый результат**: Невалидные параметры даты → понятный 400.
+
+---
+
+## 21. `change.payload as any` в `sync.service.ts:13`
+
+**Проблема**: Payload `study_answer` деструктурируется через `as any` —
+нетипизированный разбор на границе (при этом §40 ввёл схемы для ответа,
+но не для payload изменений).
+**Severity**: Low.
+
+**Что исправить**: `SyncChangeSchema` с discriminated union по `type`
+(payload `study_answer`: wordId/rating/sessionId/timestamp) в
+`packages/shared/src/schemas/sync.ts`; сервер парсит payload схемой, без
+`as any`.
+
+**Ожидаемый результат**: Вход sync валидируется контрактом, а не кастом.
+
+---
+
+## 22. `findClozeExample`: CJK Extension B+ не покрыт + multi-char substring внутри слова
+
+**Проблема**: Фикс §28 v0.4 (`tests.service.ts:121-146`) покрыл BMP +
+Ext-A. Осталось: (а) иероглифы Ext-B+ (`U+20000-2A6DF`, редкие, но есть
+в HSK 7-9/именах) boundary-проверкой не видны — одиночный char внутри
+такого слова blank'ается как substring; (б) multi-char цель blank'ает
+вхождение внутри более длинного слова («大学» в «大学生») — задокументированный
+trade-off, но для cloze-вопросов даёт искажённые предложения.
+**Severity**: Low.
+
+**Что исправить**: Расширить `CJK_RANGE` до `[\u4e00-\u9fff\u3400-\u4dbf
+\U00020000-\U0002a6df]` (с `u`-флагом); multi-char — boundary только с
+CJK-сторон (не blank'ать, если сразу вокруг матча CJK). Тесты на оба
+кейса.
+
+**Ожидаемый результат**: Cloze blank'ает только standalone-вхождения для
+всех CJK-плоскостей.
+
+---
+
+# Часть D. Shared-пакет (`packages/shared/`)
+
+## 23. `SessionCardSchema` дефолты маскируют пропущенные сервером поля
+
+**Проблема**: Фикс §50 v0.4 (`schemas/session.ts:58-80`) добавил
+`stability`/`difficulty` с дефолтами (`0`/`5`), а также `answered: false`,
+`state: 'new'`, `distractors: []`. Если сервер забудет сериализовать поле
+(как и было до §50), Zod **молча подставит дефолт** — мобильный
+оптимистичный FSRS посчитает от (0, 5) вместо реальных значений, и это
+снова будет выглядеть «почти нормально».
+**Severity**: Low.
+
+**Что исправить**: Убрать `.default()` у `stability`/`difficulty`/`state`
+(сервер их всегда отдаёт после §50 — пусть схема падает при пропуске);
+оставить дефолты только у чисто клиентских полей (`answered`).
+Регрессионный тест: карточка без `stability` → ZodError.
+
+**Ожидаемый результат**: Дрифт серверной сериализации детектится на
+границе, а не в FSRS-математике.
+
+---
+
+# Часть E. Mobile (`apps/mobile/`)
+
+## 24. Стартовый `NetInfo.fetch()` в bootstrap без `.catch`
+
+**Проблема**: Фикс §44/§53 v0.4 (`apps/mobile/src/bootstrap.ts:84-86`) —
+module-level `NetInfo.fetch().then(s => { cachedOnline = ... })` без
+`.catch`. Rejected fetch (редко, но возможен на раннем boot Android) →
+unhandled promise rejection warning/краш-репорт.
+**Severity**: Low.
+
+**Что исправить**: `.catch(() => {})` (семантика как в subscribe-seed:
+безопасный дефолт «онлайн»).
+
+**Ожидаемый результат**: Нет unhandled rejection на холодном старте.
+
+---
+
+# Рекомендуемая очерёдность выполнения
+
+### Приоритет 1 — Критичные регрессии v0.4 (ломают продукт/безопасность):
+1. **§1** — ответы видны в условиях теста (4 типа вопросов тривиальны).
+2. **§2** — mobile двойной apply через fallback-очередь (возврат §45 v0.4).
+3. **§3** — spoofable `X-Client-Type` → кража refreshToken через XSS.
+
+### Приоритет 2 — High:
+4. **§10** — удаление чужих/общих примеров любым юзером.
+5. **§13** — timezone нельзя выставить → §24/§25 v0.4 не работают в проде.
+6. **§4** — рестарт сессии сбрасывает practice-режим.
+7. **§5** — re-login после logout через in-flight refresh.
+
+### Приоритет 3 — Medium:
+8. **§11, §12** — мутации примеров/тегов без авторизации.
+9. **§14** — DST в `getTodayUtcRange`.
+10. **§15, §16** — elapsed от receipt-time; офлайн-ответы вне
+    статистики/стрика/ачивок.
+11. **§17** — race в `recordAnswer`.
+12. **§18** — GCS private bucket 403.
+13. **§6** — дублированный `onSessionExpired`.
+
+### Приоритет 4 — Low:
+14. **§7, §8, §9, §19, §20, §21, §22, §23, §24**.
+
+---
+
+## Сводка по пакетам
+
+| Пакет | Пункты |
+|---|---|
+| `apps/web` | §1 (TestQuestionCard утечки), §4 (restart practice), §5 (logout race), §6 (dup onSessionExpired), §7 (StrictMode double-start), §8 (Modal Escape), §9 (as any sync.ts) |
+| `apps/server` | §2 (idempotent recordAnswer + dedup `<=`), §3 (Origin+header gate), §10-12 (examples/tags authz), §13 (timezone API), §14 (DST), §15-16 (sync elapsed/SessionAnswer), §17 (recordAnswer race), §18 (GCS), §19 (TTS limit), §20 (year/month), §21 (payload schema), §22 (CJK range) |
+| `packages/shared` | §13 (userSettings timezone), §21 (SyncChangeSchema), §23 (SessionCardSchema defaults) |
+| `apps/mobile` | §2 (единый answeredAt), §13 (отправка tz), §24 (NetInfo catch) |
+| `packages/mobile-sdk` | §2 (прокидывание answeredAt в payload) |
+
+## Вне scope багов (дорожная карта, не дефекты)
+
+- Mobile StudyScreen поддерживает только flip-card; 6 типов тренировок
+  (`apps/web/src/components/practice/`) не портированы
+  (`apps/mobile/README.md`, «Known gaps»).
+- `LibraryScreen`/`StatsScreen` mobile — read-only.
+- Push-регистрация `UserDevice` на RN не реализована.
