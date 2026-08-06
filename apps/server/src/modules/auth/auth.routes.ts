@@ -31,9 +31,27 @@ export async function authRoutes(app: FastifyInstance) {
    * ответа; web — только через HttpOnly cookie, поэтому в JS-доступном
    * теле он не дублируется (XSS-поверхность). Mobile SDK шлёт
    * `X-Client-Type: mobile` на все запросы (PLAN_Features_v0.4 §47).
+   *
+   * Границу нельзя строить на самодекларируемом заголовке: XSS-скрипт
+   * на web-оригине может подделать его и вытащить refreshToken в
+   * JS-читаемое тело. Поэтому body-токен отдаётся ТОЛЬКО когда
+   * `X-Client-Type: mobile` И заголовок `Origin` отсутствует — браузер
+   * всегда шлёт `Origin` на POST (в т.ч. same-origin), а RN `fetch` —
+   * нет (fix v0.4 §47 follow-up).
+   *
+   * Механизм — best-effort, а НЕ security boundary: не-браузерный
+   * клиент теоретически может подделать оба признака. Настоящая защита
+   * web — HttpOnly cookie. Для mobile в будущем стоит сделать
+   * PKCE-подобный one-time exchange (одноразовый код в обмен на токены),
+   * как в `/auth/oauth/exchange`.
    */
   const isNonCookieClient = (request: FastifyRequest) =>
-    request.headers['x-client-type'] === 'mobile';
+    request.headers['x-client-type'] === 'mobile' && !request.headers.origin;
+
+  /** Тело ответа с refreshToken'ом не должно кешироваться (никакой
+   *  прокси/CDN не должен раздавать токены другим клиентам). */
+  const markTokenBodyNoStore = (reply: FastifyReply) =>
+    reply.header('Cache-Control', 'no-store');
 
   /** POST /auth/register — создание аккаунта */
   app.post('/register', async (request, reply) => {
@@ -52,6 +70,7 @@ export async function authRoutes(app: FastifyInstance) {
     };
     if (isNonCookieClient(request)) {
       data.refreshToken = result.refreshToken;
+      markTokenBodyNoStore(reply);
     }
     return reply.status(201).send({ success: true, data });
   });
@@ -81,6 +100,7 @@ export async function authRoutes(app: FastifyInstance) {
     };
     if (isNonCookieClient(request)) {
       data.refreshToken = result.refreshToken;
+      markTokenBodyNoStore(reply);
     }
     return reply.send({ success: true, data });
   });
@@ -117,6 +137,7 @@ export async function authRoutes(app: FastifyInstance) {
     };
     if (isNonCookieClient(request)) {
       data.refreshToken = result.refreshToken;
+      markTokenBodyNoStore(reply);
     }
     return reply.send({ success: true, data });
   });
@@ -256,6 +277,7 @@ export async function authRoutes(app: FastifyInstance) {
     };
     if (isNonCookieClient(request)) {
       data.refreshToken = result.refreshToken;
+      markTokenBodyNoStore(reply);
     }
     return reply.send({ success: true, data });
   });
