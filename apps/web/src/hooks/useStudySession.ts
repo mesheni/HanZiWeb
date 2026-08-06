@@ -58,6 +58,14 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
 
   const generationRef = useRef(0);
 
+  // Дедуп старта сессии (fix v0.4 §8 follow-up): React.StrictMode в dev
+  // прогоняет эффекты дважды на одном инстансе (ref'ы переживают
+  // ремонт) → без ключа было бы два POST /sessions/start. Ключ =
+  // параметры старта: реальная смена параметров (другой ключ) стартует
+  // новую сессию, ремонт с тем же ключом пропускается. Новый маунт —
+  // новый ref — свежая сессия.
+  const inFlightStartKeyRef = useRef<string | null>(null);
+
   // Состояние обратной связи для choice-based режимов:
   // после выбора ответа не переходим к след. карточке, а ждём
   // нажатия "Продолжить".
@@ -93,6 +101,9 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
   // отображался без побочного эффекта — обращения к /sessions/start.
   useEffect(() => {
     if (!enabled) return;
+    const startKey = JSON.stringify([deckId, mode, practiceType, filters]);
+    if (inFlightStartKeyRef.current === startKey) return;
+    inFlightStartKeyRef.current = startKey;
     resetSession();
     const gen = ++generationRef.current;
 
