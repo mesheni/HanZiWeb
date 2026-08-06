@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useCallback } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -8,38 +8,45 @@ interface ModalProps {
   children: ReactNode;
 }
 
+interface ModalEntry {
+  close: () => void;
+}
+
 /**
- * Module-level счётчик одновременно открытых Modal'ов.
- * Сбрасываем `body.overflow` только когда счётчик доходит до нуля —
- * иначе при вложенных модалках (например, WordDetailModal внутри
- * DeckBuilderModal) закрытие внутренней реактивировало бы scroll,
- * хотя внешняя ещё открыта. См. PLAN_Features_v0.4 §18.
+ * Module-level стек открытых Modal'ов + ЕДИНСТВЕННЫЙ document-listener
+ * (fix v0.4 §18 follow-up). Per-instance keydown-обработчики закрывали
+ * ВСЕ вложенные модалки сразу (WordDetailModal внутри DeckBuilderModal),
+ * т.к. каждое открытое окно вешало свой listener. Теперь Escape
+ * закрывает ровно одну — верхнюю в стеке (`modalStack.at(-1)`).
+ * Тот же стек управляет body-overflow: скролл разблокируется, только
+ * когда стек пуст.
  */
-let openModalCount = 0;
+const modalStack: ModalEntry[] = [];
+
+function handleDocumentKeyDown(e: KeyboardEvent): void {
+  if (e.key !== 'Escape') return;
+  const top = modalStack[modalStack.length - 1];
+  top?.close();
+}
 
 export default function Modal({ open, onClose, title, children }: ModalProps) {
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    },
-    [onClose],
-  );
-
   useEffect(() => {
     if (!open) return undefined;
-    if (openModalCount === 0) {
+    const entry: ModalEntry = { close: onClose };
+    modalStack.push(entry);
+    if (modalStack.length === 1) {
+      document.addEventListener('keydown', handleDocumentKeyDown);
       document.body.style.overflow = 'hidden';
     }
-    openModalCount += 1;
-    document.addEventListener('keydown', handleKeyDown);
     return () => {
-      openModalCount -= 1;
-      document.removeEventListener('keydown', handleKeyDown);
-      if (openModalCount === 0) {
+      const idx = modalStack.indexOf(entry);
+      if (idx !== -1) modalStack.splice(idx, 1);
+      if (modalStack.length === 0) {
+        document.removeEventListener('keydown', handleDocumentKeyDown);
         document.body.style.overflow = '';
       }
     };
-  }, [open, handleKeyDown]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
