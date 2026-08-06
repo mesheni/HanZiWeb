@@ -81,9 +81,14 @@ const netInfoAdapter: NetworkAdapter = {
 // SyncEngine читает `isOnline()` сразу в `start()`. Кэш обновляем
 // асинхронно; между стартом и первым событием считаем «онлайн»
 // (см. §51) — безопаснее, чем блокировать flush при живом коннекте.
-NetInfo.fetch().then((s) => {
-  cachedOnline = Boolean(s.isConnected);
-});
+NetInfo.fetch()
+  .then((s) => {
+    cachedOnline = Boolean(s.isConnected);
+  })
+  // Редкий reject на раннем boot Android — семантика как в
+  // subscribe-seed выше: безопасный дефолт «онлайн»
+  // (PLAN_Features_v0.5 #24).
+  .catch(() => {});
 
 /* ─── Wire up the SDK ────────────────────────────────────────────────── */
 
