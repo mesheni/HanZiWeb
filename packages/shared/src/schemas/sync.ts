@@ -1,15 +1,24 @@
 import { z } from 'zod';
-import { WordStateSchema } from './progress.js';
+import { WordStateSchema, SrsRatingSchema } from './progress.js';
 
 export const PendingChangeTypeSchema = z.enum(['study_answer']);
 export type PendingChangeType = z.infer<typeof PendingChangeTypeSchema>;
 
-export const PendingChangePayloadSchema = z.object({
+/** Payload ответа в сессии (live и офлайн-очередь) — контракт study_answer. */
+export const StudyAnswerPayloadSchema = z.object({
   wordId: z.string(),
-  rating: z.number().int().min(1).max(4),
+  rating: SrsRatingSchema,
   timestamp: z.string().datetime(),
   sessionId: z.string().optional(),
 });
+export type StudyAnswerPayload = z.infer<typeof StudyAnswerPayloadSchema>;
+
+/**
+ * Payload локальной офлайн-очереди мобильного SDK. Сейчас единственный
+ * тип изменения — study_answer, поэтому алиас на StudyAnswerPayloadSchema;
+ * имя сохранено для совместимости (PendingChange в SyncEngine).
+ */
+export const PendingChangePayloadSchema = StudyAnswerPayloadSchema;
 export type PendingChangePayload = z.infer<typeof PendingChangePayloadSchema>;
 
 export const PendingChangeSchema = z.object({
@@ -21,11 +30,19 @@ export const PendingChangeSchema = z.object({
 });
 export type PendingChange = z.infer<typeof PendingChangeSchema>;
 
-export const SyncChangeSchema = z.object({
-  id: z.string(),
-  type: PendingChangeTypeSchema,
-  payload: PendingChangePayloadSchema,
-});
+/**
+ * Изменение в теле sync-запроса — discriminated union по `type`
+ * (PLANCorrection #21): payload каждой ветки типизирован и валидируется
+ * контрактом, сервер разбирает его без ручных кастов.
+ */
+export const SyncChangeSchema = z.discriminatedUnion('type', [
+  z.object({
+    id: z.string(),
+    type: z.literal('study_answer'),
+    payload: StudyAnswerPayloadSchema,
+  }),
+]);
+export type SyncChange = z.infer<typeof SyncChangeSchema>;
 
 export const SyncRequestSchema = z.object({
   changes: z.array(SyncChangeSchema),

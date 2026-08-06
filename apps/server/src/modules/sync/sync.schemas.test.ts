@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ServerChangeSchema,
+  SyncChangeSchema,
   SyncRequestSchema,
   SyncResultSchema,
   SyncResponseSchema,
@@ -70,6 +71,57 @@ describe('SyncRequestSchema sinceTimestamp (incremental sync cursor, PLAN_Featur
     expect(SyncRequestSchema.safeParse({ changes: [], sinceTimestamp: 'not-a-date' }).success).toBe(
       false,
     );
+  });
+});
+
+describe('SyncChangeSchema — discriminated union по type (PLANCorrection #21)', () => {
+  const validChange = {
+    id: 'c1',
+    type: 'study_answer',
+    payload: {
+      wordId: 'w1',
+      rating: 3,
+      timestamp: new Date().toISOString(),
+      sessionId: '00000000-0000-4000-8000-000000000000',
+    },
+  };
+
+  it('accepts a valid study_answer change', () => {
+    expect(SyncChangeSchema.safeParse(validChange).success).toBe(true);
+  });
+
+  it('accepts payload without sessionId (офлайн-очередь старого клиента)', () => {
+    const { sessionId: _sessionId, ...payload } = validChange.payload;
+    expect(SyncChangeSchema.safeParse({ ...validChange, payload }).success).toBe(true);
+  });
+
+  it('rejects an unknown change type (контракт вместо кастома)', () => {
+    expect(
+      SyncChangeSchema.safeParse({ ...validChange, type: 'bogus_type' }).success,
+    ).toBe(false);
+  });
+
+  it('rejects payload missing required wordId', () => {
+    const { wordId: _wordId, ...payload } = validChange.payload;
+    expect(SyncChangeSchema.safeParse({ ...validChange, payload }).success).toBe(false);
+  });
+
+  it('rejects payload with rating outside 1..4', () => {
+    expect(
+      SyncChangeSchema.safeParse({
+        ...validChange,
+        payload: { ...validChange.payload, rating: 5 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects payload with malformed timestamp', () => {
+    expect(
+      SyncChangeSchema.safeParse({
+        ...validChange,
+        payload: { ...validChange.payload, timestamp: 'вчера' },
+      }).success,
+    ).toBe(false);
   });
 });
 

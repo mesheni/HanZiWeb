@@ -13,8 +13,11 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
   const appliedSessionIds = new Set<string>();
 
   for (const change of input.changes) {
+    // Discriminated union по type (PLANCorrection #21): в ветке
+    // study_answer payload уже типизирован StudyAnswerPayloadSchema
+    // (валидация на границе — SyncRequestSchema.parse в sync.routes.ts).
     if (change.type === 'study_answer') {
-      const { wordId, rating, timestamp, sessionId } = change.payload as any;
+      const { wordId, rating, timestamp, sessionId } = change.payload;
 
       const progress = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId, wordId } },
