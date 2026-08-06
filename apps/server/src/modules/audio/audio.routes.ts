@@ -43,10 +43,11 @@ export async function audioRoutes(app: FastifyInstance) {
       // Если указан wordId — синхронизируем текст с Word.character:
       // generateAudioForWord сам берёт character из БД, а переданный
       // клиентом text игнорируется (нельзя «подмешать» произвольный
-      // текст в платный TTS через чужой wordId).
+      // текст в платный TTS через чужой wordId). userId идёт в сервис
+      // для per-user дневного лимита генераций (PLANCorrection #19).
       const result = wordId
-        ? await audioService.generateAudioForWord(wordId, language)
-        : await audioService.generateAudio(text!, language);
+        ? await audioService.generateAudioForWord(wordId, language, { userId: request.userId })
+        : await audioService.generateAudio(text!, language, { userId: request.userId });
 
       // Аналитика: событие `audio_generated` с источником (cache | generated).
       // Не блокирует ответ даже при сбое аналитики.

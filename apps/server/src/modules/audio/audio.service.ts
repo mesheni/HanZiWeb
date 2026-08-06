@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Storage, type Bucket } from '@google-cloud/storage';
 import { prisma } from '../../lib/prisma.js';
+import { getRedis } from '../../lib/redis.js';
 import { loadConfig, type Config } from '../../config.js';
 
 /**
@@ -12,6 +13,10 @@ import { loadConfig, type Config } from '../../config.js';
  * Поддерживает два режима (PLAN_Features_v0.4 §30):
  *  1. Production: mp3 загружается в GCS-бакет (GCS_BUCKET_NAME задан),
  *     публичный URL — `https://storage.googleapis.com/<bucket>/<file>`.
+ *     Объект публикуется на чтение сразу при загрузке
+ *     (`file.makePublic()`), поэтому бакет может быть приватным
+ *     (uniform bucket-level access) — service account нужны права
+ *     storage.objectAdmin (PLANCorrection #18).
  *  2. Dev: локальное сохранение в AUDIO_STORAGE_PATH и раздача через
  *     GET /audio/files/:fileName.
  *
@@ -59,10 +64,16 @@ export function createGcsStorage(config: Config): AudioStorage {
       return ok;
     },
     async save(fileName, bytes) {
-      await bucket.file(fileName).save(bytes, {
+      const file = bucket.file(fileName);
+      await file.save(bytes, {
         contentType: 'audio/mpeg',
         resumable: false,
       });
+      // Публикуем объект на чтение сразу после загрузки: при приватном
+      // бакете (uniform bucket-level access — дефолт новых проектов)
+      // publicUrl() без этого отдавал бы 403. Требование к ролям
+      // service account — storage.objectAdmin (PLANCorrection #18).
+      await file.makePublic();
     },
     publicUrl(fileName) {
       return `https://storage.googleapis.com/${config.GCS_BUCKET_NAME}/${fileName}`;
@@ -79,6 +90,42 @@ export function resolveStorage(config: Config = loadConfig()): AudioStorage {
 function ensureStorageDir(): void {
   if (!existsSync(STORAGE_DIR)) {
     mkdirSync(STORAGE_DIR, { recursive: true });
+  }
+}
+
+/** Дневной лимит платных TTS-генераций на пользователя (PLANCorrection #19). */
+const DAILY_GENERATION_LIMIT = 100;
+/** TTL Redis-счётчика — сутки (UTC-день в ключе). */
+const QUOTA_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Per-user дневной лимит платных TTS-генераций (PLANCorrection #19).
+ *
+ * Считаются ТОЛЬКО cache-miss'ы — вызов происходит после проверки
+ * кэша в `generateAudio`, поэтому повторный запрос уже закэшированного
+ * файла счётчик не трогает. INCR атомарен: 101-я генерация за сутки
+ * получает 429 до вызова платного TTS. При недоступности Redis лимит
+ * fail-open — генерация не блокируется (глобальный rate limit и так
+ * деградирует без Redis).
+ */
+async function consumeGenerationQuota(userId: string): Promise<void> {
+  let count: number;
+  try {
+    const redis = getRedis();
+    const key = `audio:gen:${userId}:${new Date().toISOString().slice(0, 10)}`;
+    count = await redis.incr(key);
+    if (count === 1) {
+      await redis.expire(key, QUOTA_TTL_SECONDS);
+    }
+  } catch (err) {
+    console.error('TTS quota check failed', err);
+    return;
+  }
+  if (count > DAILY_GENERATION_LIMIT) {
+    throw Object.assign(new Error('Daily TTS generation limit exceeded'), {
+      statusCode: 429,
+      code: 'TTS_QUOTA_EXCEEDED',
+    });
   }
 }
 
@@ -181,11 +228,14 @@ interface GenerateAudioResult {
  *
  * @param text   Текст для синтеза (например, иероглиф "你好")
  * @param language  BCP-47 код языка ('zh-CN')
+ * @param options   `userId` — включает per-user дневной лимит генераций
+ *                  (только cache-miss'ы; см. consumeGenerationQuota)
  * @returns { audioUrl } или выбрасывает ошибку при неудаче.
  */
 export async function generateAudio(
   text: string,
   language: string = 'zh-CN',
+  options: { userId?: string } = {},
 ): Promise<GenerateAudioResult> {
   ensureStorageDir();
 
@@ -196,6 +246,12 @@ export async function generateAudio(
   // Кэш: если файл уже есть в хранилище, не генерируем заново
   if (await storage.exists(fileName)) {
     return { audioUrl: storage.publicUrl(fileName), source: 'cache' };
+  }
+
+  // Per-user дневной лимит платных генераций — только cache-miss'ы
+  // тратят TTS (PLANCorrection #19). Скрипты (без userId) не лимитируются.
+  if (options.userId) {
+    await consumeGenerationQuota(options.userId);
   }
 
   const accessToken = await getGoogleAccessToken();
@@ -264,13 +320,14 @@ export function readAudioFile(fileName: string): { data: Buffer; mime: string } 
 export async function generateAudioForWord(
   wordId: string,
   language: string = 'zh-CN',
+  options: { userId?: string } = {},
 ): Promise<GenerateAudioResult> {
   const word = await prisma.word.findUnique({ where: { id: wordId } });
   if (!word) {
     throw Object.assign(new Error('Word not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
 
-  const result = await generateAudio(word.character, language);
+  const result = await generateAudio(word.character, language, options);
 
   await prisma.word.update({
     where: { id: wordId },

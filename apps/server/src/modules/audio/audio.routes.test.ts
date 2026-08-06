@@ -108,7 +108,7 @@ describe('POST /audio/generate — платный TTS guard (PLAN_Features_v0.4 
         payload: { text: 'произвольный текст', wordId },
       });
       expect(res.statusCode).toBe(200);
-      expect(generateAudioForWordMock).toHaveBeenCalledWith(wordId, 'zh-CN');
+      expect(generateAudioForWordMock).toHaveBeenCalledWith(wordId, 'zh-CN', { userId });
       expect(generateAudioMock).not.toHaveBeenCalled();
     } finally {
       await app.close();
@@ -127,7 +127,7 @@ describe('POST /audio/generate — платный TTS guard (PLAN_Features_v0.4 
         payload: { wordId },
       });
       expect(res.statusCode).toBe(200);
-      expect(generateAudioForWordMock).toHaveBeenCalledWith(wordId, 'zh-CN');
+      expect(generateAudioForWordMock).toHaveBeenCalledWith(wordId, 'zh-CN', { userId });
     } finally {
       await app.close();
     }
@@ -144,7 +144,7 @@ describe('POST /audio/generate — платный TTS guard (PLAN_Features_v0.4 
         payload: { text: '任意文本', language: 'zh-CN' },
       });
       expect(res.statusCode).toBe(200);
-      expect(generateAudioMock).toHaveBeenCalledWith('任意文本', 'zh-CN');
+      expect(generateAudioMock).toHaveBeenCalledWith('任意文本', 'zh-CN', { userId: adminId });
       expect(generateAudioForWordMock).not.toHaveBeenCalled();
     } finally {
       await app.close();

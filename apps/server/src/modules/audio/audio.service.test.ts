@@ -11,22 +11,36 @@ import {
   generateAudio,
 } from './audio.service.js';
 
-const { saveMock, existsMock, fileMock, bucketMock } = vi.hoisted(() => {
-  const saveMock = vi.fn().mockResolvedValue(undefined);
-  const existsMock = vi.fn();
-  const fileMock = vi.fn(() => ({ save: saveMock, exists: existsMock }));
-  return {
-    saveMock,
-    existsMock,
-    fileMock,
-    bucketMock: vi.fn(() => ({ file: fileMock })),
-  };
-});
+const { saveMock, existsMock, makePublicMock, fileMock, bucketMock, incrMock, expireMock } =
+  vi.hoisted(() => {
+    const saveMock = vi.fn().mockResolvedValue(undefined);
+    const existsMock = vi.fn();
+    const makePublicMock = vi.fn().mockResolvedValue(undefined);
+    const fileMock = vi.fn(() => ({
+      save: saveMock,
+      exists: existsMock,
+      makePublic: makePublicMock,
+    }));
+    return {
+      saveMock,
+      existsMock,
+      makePublicMock,
+      fileMock,
+      bucketMock: vi.fn(() => ({ file: fileMock })),
+      incrMock: vi.fn(),
+      expireMock: vi.fn(),
+    };
+  });
 
 vi.mock('@google-cloud/storage', () => ({
   Storage: class {
     bucket = bucketMock;
   },
+}));
+
+// Redis для per-user лимита генераций (PLANCorrection #19).
+vi.mock('../../lib/redis.js', () => ({
+  getRedis: () => ({ incr: incrMock, expire: expireMock }),
 }));
 
 function sha1(text: string, language: string): string {
@@ -79,11 +93,12 @@ describe('createGcsStorage', () => {
     delete process.env.GCS_BUCKET_NAME;
     saveMock.mockClear();
     existsMock.mockClear();
+    makePublicMock.mockClear();
     fileMock.mockClear();
     bucketMock.mockClear();
   });
 
-  it('save: bucket.file(name).save с contentType audio/mpeg', async () => {
+  it('save: bucket.file(name).save с contentType audio/mpeg + makePublic после загрузки', async () => {
     const storage = createGcsStorage(loadConfig());
     await storage.save('abc.mp3', Buffer.from('MP3'));
     expect(bucketMock).toHaveBeenCalledWith('test-bucket');
@@ -92,6 +107,9 @@ describe('createGcsStorage', () => {
       contentType: 'audio/mpeg',
       resumable: false,
     });
+    // Приватный бакет (uniform bucket-level access) без публикации объекта
+    // отдавал бы 403 по publicUrl() (PLANCorrection #18).
+    expect(makePublicMock).toHaveBeenCalledTimes(1);
   });
 
   it('exists: bucket.file(name).exists', async () => {
@@ -160,6 +178,7 @@ describe('generateAudio — GCS upload + кэш (PLAN_Features_v0.4 §30)', () =
     existsMock.mockResolvedValue([false]);
     fetchMock.mockClear();
     saveMock.mockClear();
+    makePublicMock.mockClear();
     fileMock.mockClear();
 
     const result = await generateAudio('你好', 'zh-CN');
@@ -189,5 +208,51 @@ describe('generateAudio — GCS upload + кэш (PLAN_Features_v0.4 §30)', () =
     );
     // Ни одного запроса наружу (ни token, ни TTS)
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('per-user лимит: 100 cache-miss генераций проходят, 101-я → 429 TTS_QUOTA_EXCEEDED', async () => {
+    existsMock.mockResolvedValue([false]);
+    fetchMock.mockClear();
+    saveMock.mockClear();
+    let count = 0;
+    incrMock.mockImplementation(async () => ++count);
+    expireMock.mockResolvedValue(1);
+
+    try {
+      for (let i = 0; i < 100; i++) {
+        const r = await generateAudio(`слово-${i}`, 'zh-CN', { userId: 'u1' });
+        expect(r.source).toBe('generated');
+      }
+
+      await expect(generateAudio('слово-101', 'zh-CN', { userId: 'u1' })).rejects.toMatchObject({
+        statusCode: 429,
+        code: 'TTS_QUOTA_EXCEEDED',
+      });
+      // Лимит проверяется ДО вызова платного TTS: 101-й запрос не сгенерировал.
+      expect(incrMock).toHaveBeenCalledTimes(101);
+    } finally {
+      incrMock.mockReset();
+    }
+  });
+
+  it('per-user лимит: cache-hit не инкрементит счётчик', async () => {
+    existsMock.mockResolvedValue([true]);
+    incrMock.mockReset();
+    fetchMock.mockClear();
+
+    const r = await generateAudio('你好', 'zh-CN', { userId: 'u1' });
+    expect(r.source).toBe('cache');
+    expect(incrMock).not.toHaveBeenCalled();
+  });
+
+  it('без userId лимит не применяется (скрипт generateAudioForAllMissingWords)', async () => {
+    existsMock.mockResolvedValue([false]);
+    incrMock.mockReset();
+    fetchMock.mockClear();
+    saveMock.mockClear();
+
+    const r = await generateAudio('скрипт', 'zh-CN');
+    expect(r.source).toBe('generated');
+    expect(incrMock).not.toHaveBeenCalled();
   });
 });
