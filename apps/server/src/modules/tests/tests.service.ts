@@ -52,7 +52,7 @@ const QUESTION_TYPES: readonly TestQuestionType[] = [
  * U+3400..U+4DBF. Используется как «word boundary» для одиночных
  * иероглифов: чтобы не матчить одиночный «大» внутри «大学».
  */
-const CJK_RANGE = '[\\u4e00-\\u9fff\\u3400-\\u4dbf]';
+const CJK_RANGE = '[\\u4e00-\\u9fff\\u3400-\\u4dbf\\u{20000}-\\u{2a6df}]';
 
 export interface WordRow {
   id: string;
@@ -129,12 +129,19 @@ export function findClozeExample(
   // матчит каждое вхождение целиком и не тривиально путается с
   // подстроками других слов. `replace` с флагом `g` blank'ает ВСЕ
   // вхождения, а не только первое.
-  // Одиночный символ: добавляем CJK-lookbehind/lookahead, чтобы
-  // исключить ложные срабатывания на подстроках внутри больших
-  // иероглифных слов (`"大"` НЕ blank'ается в `"大学"`).
+  //
+  // CJK-boundary с обеих сторон применяется и к single-, и к multi-char
+  // целям (PLANCorrection #22): не blank'аем вхождение, если сразу
+  // вокруг матча — CJK-символ (любой плоскости, включая Ext-B+):
+  //   - «大» НЕ blank'ается в «大学»;
+  //   - «大学» НЕ blank'ается в «大学生» (вхождение внутри более
+  //     длинного слова — раньше давало искажённые cloze-предложения);
+  //   - одиночный Ext-B иероглиф (U+20000-U+2A6DF) НЕ blank'ается
+  //     внутри слова из Ext-B символов (раньше boundary их не видел).
+  // Консервативный trade-off (как для single-char): «你好» в «你好世界»
+  // тоже не blank'ается.
   const escaped = escapeRegex(target);
-  const pattern =
-    Array.from(target).length === 1 ? `(?<!${CJK_RANGE})${escaped}(?!${CJK_RANGE})` : escaped;
+  const pattern = `(?<!${CJK_RANGE})${escaped}(?!${CJK_RANGE})`;
   const re = new RegExp(pattern, 'gu');
 
   for (const ex of word.examples) {

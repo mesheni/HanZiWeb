@@ -126,10 +126,16 @@ describe('buildQuestion MCQ options uniqueness — PLAN_Features_v0.4 §38', () 
 describe('findClozeExample — PLAN_Features_v0.4 §28', () => {
   it('multi-char target: матчит точную последовательность и blank-ает', () => {
     const word = mkWord('你好', [{ id: 'ex1', chinese: '你好世界！' }]);
-    expect(findClozeExample(word)).toEqual({
-      exampleId: 'ex1',
-      clozeSentence: '____世界！',
-    });
+    // PLANCorrection #22: CJK-boundary теперь применяется и к multi-char —
+    // «你好» в «你好世界» окружён CJK с правой стороны («世»), поэтому
+    // НЕ blank'ается (консервативный trade-off, как у single-char).
+    expect(findClozeExample(word)).toBeNull();
+  });
+
+  it('multi-char target: standalone с пунктуацией матчит и blank-ает', () => {
+    // Граница слева = начало строки, справа — «，» (non-CJK) → standalone.
+    const word = mkWord('你好', [{ id: 'ex1', chinese: '你好，世界！' }]);
+    expect(findClozeExample(word)?.clozeSentence).toBe('____，世界！');
   });
 
   it('multi-char target: blank-ает ВСЕ вхождения, не только первое', () => {
@@ -137,6 +143,19 @@ describe('findClozeExample — PLAN_Features_v0.4 §28', () => {
     // вхождение — для второй подстроки blank оставался.
     const word = mkWord('你好', [{ id: 'ex1', chinese: '你好，你好！' }]);
     expect(findClozeExample(word)?.clozeSentence).toBe('____，____！');
+  });
+
+  it('multi-char target inside a longer CJK word: НЕ матчит (PLANCorrection #22)', () => {
+    // «大学» в «大学生» — вхождение внутри более длинного слова. До
+    // фикса blank'алось как substring и давало искажённые cloze-вопросы
+    // («____生»). Теперь lookahead видит «生» (CJK) → нет матча.
+    const word = mkWord('大学', [{ id: 'ex1', chinese: '他是大学生。' }]);
+    expect(findClozeExample(word)).toBeNull();
+  });
+
+  it('multi-char target standalone: «大学。» → blank (не сломан boundary-фиксом)', () => {
+    const word = mkWord('大学', [{ id: 'ex1', chinese: '大学。' }]);
+    expect(findClozeExample(word)?.clozeSentence).toBe('____。');
   });
 
   it('single-char target inside larger CJK word: НЕ матчит (главный кейс §28)', () => {
@@ -233,11 +252,30 @@ describe('findClozeExample — PLAN_Features_v0.4 §28', () => {
     });
   });
 
+  it('Ext-B иероглиф внутри слова из Ext-B: НЕ матчит (PLANCorrection #22)', () => {
+    // «𠀀» (U+20000, CJK Ext-B) в «𠀀𠀁» — одиночный char внутри слова
+    // из Ext-B символов. До фикса CJK_RANGE не покрывал U+20000-U+2A6DF,
+    // lookahead не видел «𠀁» как CJK → blank'ался substring.
+    const word = mkWord('𠀀', [{ id: 'ex1', chinese: '𠀀𠀁字。' }]);
+    expect(findClozeExample(word)).toBeNull();
+  });
+
+  it('Ext-B иероглиф standalone с пунктуацией: матчит и blank-ает', () => {
+    const word = mkWord('𠀀', [{ id: 'ex1', chinese: '𠀀。' }]);
+    expect(findClozeExample(word)?.clozeSentence).toBe('____。');
+  });
+
+  it('Ext-B иероглиф рядом с BMP-CJK: НЕ матчит (boundary видит обе плоскости)', () => {
+    // Слева — BMP «学», справа — Ext-B «𠀀»: оба в расширенном диапазоне.
+    const word = mkWord('𠀀', [{ id: 'ex1', chinese: '学𠀀。' }]);
+    expect(findClozeExample(word)).toBeNull();
+  });
+
   it('multi-char target: точная последовательность не путается с подстрокой длинного слова', () => {
-    // «你好» не должно blank'аться внутри «你好吗» как часть чего-то,
-    // потому что «你好吗» содержит «你好» как префикс — и это ровно
-    // та последовательность, которую мы хотим blank'ать.
+    // «你好» в «你好吗» — префикс более длинного слова. PLANCorrection #22
+    // закрыл документированный trade-off: раньше blank'алось
+    // («____吗？»), теперь — нет.
     const word = mkWord('你好', [{ id: 'ex1', chinese: '你好吗？' }]);
-    expect(findClozeExample(word)?.clozeSentence).toBe('____吗？');
+    expect(findClozeExample(word)).toBeNull();
   });
 });
