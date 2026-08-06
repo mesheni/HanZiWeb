@@ -35,11 +35,14 @@ export async function createExample(
   });
 }
 
-/** Удаление примера. */
-export async function deleteExample(userId: string, exampleId: string) {
+/**
+ * Удаление примера. Авторизация (только ADMIN) — на уровне роута
+ * (fix v0.4 §22 follow-up); здесь только существование записи.
+ */
+export async function deleteExample(exampleId: string) {
   const example = await prisma.example.findUnique({
     where: { id: exampleId },
-    select: { id: true, wordId: true, word: { select: { progress: { where: { userId }, take: 1 } } } },
+    select: { id: true },
   });
   if (!example) {
     throw Object.assign(new Error('Example not found'), { statusCode: 404, code: 'NOT_FOUND' });

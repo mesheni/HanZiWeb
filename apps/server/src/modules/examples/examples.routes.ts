@@ -32,10 +32,12 @@ export async function examplesRoutes(app: FastifyInstance) {
 
   /**
    * POST /words/:wordId/examples — ручное добавление примера.
+   * Примеры — общий контент словаря, поэтому write-эндпоинты только
+   * для ADMIN (fix v0.4 §22 follow-up; см. words.routes.ts).
    */
   app.post<{ Params: { wordId: string } }>(
     '/words/:wordId/examples',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request, reply) => {
       const body = CreateExampleSchema.parse(request.body);
       const example = await examplesService.createExample(request.params.wordId, body);
@@ -45,22 +47,26 @@ export async function examplesRoutes(app: FastifyInstance) {
 
   /**
    * DELETE /words/:wordId/examples/:exampleId — удаление примера.
+   * Только ADMIN: иначе любой залогиненный мог бы удалить чужие и
+   * общие (tatoeba/seed) примеры — вандализм словаря.
    */
   app.delete<{ Params: { wordId: string; exampleId: string } }>(
     '/words/:wordId/examples/:exampleId',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request, reply) => {
-      await examplesService.deleteExample(request.userId, request.params.exampleId);
+      await examplesService.deleteExample(request.params.exampleId);
       return reply.send({ success: true });
     },
   );
 
   /**
    * POST /words/:wordId/examples/fetch — стянуть новые примеры из Tatoeba.
+   * Только ADMIN: эндпоинт инициирует исходящие HTTP к внешнему API
+   * (лимиты/бан по IP сервера) и пишет в общий словарь.
    */
   app.post<{ Params: { wordId: string } }>(
     '/words/:wordId/examples/fetch',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request, reply) => {
       const q = FetchQuerySchema.parse(request.query);
       try {
