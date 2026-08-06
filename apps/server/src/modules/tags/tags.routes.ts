@@ -9,17 +9,20 @@ export async function tagsRoutes(app: FastifyInstance) {
     return { success: true, data: tags };
   });
 
-  /** POST /tags — создать тег */
-  app.post('/', { preHandler: [app.authenticate] }, async (request, reply) => {
+  /**
+   * POST /tags — создать тег. Теги — общий контент словаря (у Tag нет
+   * ownerId), поэтому мутации только для ADMIN (fix v0.4 §22 follow-up).
+   */
+  app.post('/', { preHandler: [app.authenticate, app.requireAdmin] }, async (request, reply) => {
     const body = CreateTagSchema.parse(request.body);
     const tag = await tagsService.createTag(body);
     return reply.status(201).send({ success: true, data: tag });
   });
 
-  /** DELETE /tags/:id — удалить тег */
+  /** DELETE /tags/:id — удалить тег (только ADMIN) */
   app.delete<{ Params: { id: string } }>(
     '/:id',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request) => {
       const result = await tagsService.deleteTag(request.params.id);
       return { success: true, data: result };
@@ -36,10 +39,10 @@ export async function tagsRoutes(app: FastifyInstance) {
     },
   );
 
-  /** PUT /words/:wordId/tags — заменить набор тегов слова */
+  /** PUT /words/:wordId/tags — заменить набор тегов слова (только ADMIN) */
   app.put<{ Params: { wordId: string } }>(
     '/words/:wordId/tags',
-    { preHandler: [app.authenticate] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request) => {
       const body = SetWordTagsSchema.parse(request.body);
       const tags = await tagsService.setWordTags(request.params.wordId, body.tagIds);
