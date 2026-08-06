@@ -7,6 +7,18 @@ const ExportFormatQuerySchema = z.object({
   format: z.enum(['json', 'csv']).default('json'),
 });
 
+/**
+ * Query-схема /stats/activity (PLANCorrection #20): до фикса параметры
+ * парсились `parseInt` без валидации — `?year=abc` давал NaN, который
+ * тёк в getActivityData (мусорный ответ/500 вместо 400). Теперь
+ * невалидные значения → ZodError → 400 VALIDATION_ERROR через
+ * глобальный error handler.
+ */
+const ActivityQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+});
+
 export async function statsRoutes(app: FastifyInstance) {
   /** GET /stats/overview — общая статистика пользователя */
   app.get('/overview', { preHandler: [app.authenticate] }, async (request, reply) => {
@@ -20,17 +32,16 @@ export async function statsRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data });
   });
 
-  /** GET /stats/activity?year=2026 — календарь активности (год) */
-  app.get<{ Querystring: { year?: string; month?: string } }>(
-    '/activity',
-    { preHandler: [app.authenticate] },
-    async (request, reply) => {
-      const year = request.query.year ? parseInt(request.query.year, 10) : new Date().getFullYear();
-      const month = request.query.month ? parseInt(request.query.month, 10) : undefined;
-      const data = await statsService.getActivityData(request.userId, year, month);
-      return reply.send({ success: true, data });
-    },
-  );
+  /** GET /stats/activity?year=2026[&month=7] — календарь активности (год/месяц) */
+  app.get('/activity', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const { year, month } = ActivityQuerySchema.parse(request.query);
+    const data = await statsService.getActivityData(
+      request.userId,
+      year ?? new Date().getFullYear(),
+      month,
+    );
+    return reply.send({ success: true, data });
+  });
 
   /** GET /stats/streak — вычисление и обновление daily streak */
   app.get('/streak', { preHandler: [app.authenticate] }, async (request, reply) => {
