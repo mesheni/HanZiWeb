@@ -59,24 +59,26 @@ export const SessionCardSchema = z.object({
   /** Порядковый номер (0-based) */
   index: z.number().int().nonnegative(),
   word: WordSchema,
-  /** Был ли уже дан ответ */
+  /** Чисто клиентское поле: сервер при старте всегда отдаёт false, true клиент ставит после ответа. */
   answered: z.boolean().default(false),
   /** Оценка, если ответ уже дан */
   rating: SrsRatingSchema.optional(),
   /** Текущее состояние слова (new/learning/review/graduated) */
-  state: WordStateSchema.default('new'),
+  state: WordStateSchema,
   /**
    * FSRS-параметры слова на момент выдачи карточки. Нужны клиенту для
    * мгновенного оптимистичного пересчёта после оценки (без них
    * `recalcFsrs` стартовал с нулей, и UI не отражал новый due date,
    * пока следующий `/sessions/start` не перетянул реальные данные —
-   * PLAN_Features_v0.4 §50).
+   * PLAN_Features_v0.4 §50). Сервер отдаёт эти поля всегда — схема
+   * обязана падать при их пропуске, чтобы дрифт сериализации не
+   * маскировался дефолтами (PLAN_Features_v0.5 #23).
    */
-  stability: z.number().nonnegative().default(0),
+  stability: z.number().nonnegative(),
   /** Каноническая FSRS-5 шкала [1, 10] (см. progress.ts, §46). */
-  difficulty: z.number().min(1).max(10).default(5),
+  difficulty: z.number().min(1).max(10),
   /** Дистракторы для режима `character_assembly` (иероглифы из других слов). */
-  distractors: z.array(z.string()).default([]),
+  distractors: z.array(z.string()),
 });
 
 export type SessionCard = z.infer<typeof SessionCardSchema>;
