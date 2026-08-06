@@ -1,4 +1,4 @@
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore, getAuthGeneration } from '../stores/authStore';
 
 const BASE_URL = '/api';
 
@@ -15,6 +15,11 @@ let refreshPromise: Promise<string | null> | null = null;
 function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
     const doRefresh = async (): Promise<string | null> => {
+      // Поколение на момент старта. Если logout случится, пока летит
+      // запрос, токен НЕ должен восстановить сессию: после резолва
+      // поколение не совпадёт → отдаём null, стор не трогаем
+      // (fix v0.4 §5 follow-up).
+      const gen = getAuthGeneration();
       const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
@@ -22,10 +27,11 @@ function refreshAccessToken(): Promise<string | null> {
       if (!refreshRes.ok) return null;
       const data = await refreshRes.json();
       const newToken: string | undefined = data.data?.accessToken;
-      if (newToken) {
+      if (newToken && gen === getAuthGeneration()) {
         useAuthStore.getState().setAccessToken(newToken);
+        return newToken;
       }
-      return newToken ?? null;
+      return null;
     };
     refreshPromise = doRefresh().finally(() => {
       refreshPromise = null;

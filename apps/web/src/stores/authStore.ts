@@ -40,6 +40,45 @@ interface AuthState {
 let hydratePromise: Promise<void> | null = null;
 
 /**
+ * Поколение авторизации. Инкрементируется при каждом logout: любой
+ * in-flight refresh/hydrate, стартовавший ДО logout, после резолва видит
+ * устаревшее поколение и не восстанавливает сессию — «Выйти» окончателен
+ * (fix v0.4 §5 follow-up).
+ */
+let authGeneration = 0;
+
+export function getAuthGeneration(): number {
+  return authGeneration;
+}
+
+/** Инвалидирует все in-flight refresh/hydrate. Вызывается в `logout()`. */
+export function bumpAuthGeneration(): number {
+  authGeneration += 1;
+  return authGeneration;
+}
+
+/**
+ * Идемпотентность `onSessionExpired` (fix v0.4 §9 follow-up): при N
+ * конкурентных 401 после проваленного refresh каждый ожидающий запрос
+ * зовёт `onSessionExpired`. Флаг берётся синхронно при входе — ровно
+ * один silent-refresh и ровно один logout-флоу на пачку. Сбрасывается
+ * при успешном login / hydrate / silentRefresh.
+ */
+let sessionExpiredHandled = false;
+
+export function isSessionExpiredHandled(): boolean {
+  return sessionExpiredHandled;
+}
+
+export function markSessionExpiredHandled(): void {
+  sessionExpiredHandled = true;
+}
+
+export function resetSessionExpiredHandled(): void {
+  sessionExpiredHandled = false;
+}
+
+/**
  * Fire-and-forget уведомление сервера о выходе: `POST /auth/logout`
  * инвалидирует refresh-токен и чистит httpOnly cookie. Без этого после
  * «Выйти» `hydrateAuth()` тихо логинил бы пользователя обратно
@@ -80,20 +119,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isHydrating: true,
 
-  login: (user, accessToken) =>
-    set({ user, accessToken, isAuthenticated: true }),
+  login: (user, accessToken) => {
+    // Новая сессия — следующий реальный expire снова сможет logout.
+    resetSessionExpiredHandled();
+    set({ user, accessToken, isAuthenticated: true });
+  },
 
   logout: () => {
+    // Инвалидируем in-flight refresh/hydrate: их резолвы после этого
+    // увидят новое поколение и не восстановят сессию.
+    bumpAuthGeneration();
     void notifyServerLogout();
     clearApiCache();
-    set({ user: null, accessToken: null, isAuthenticated: false });
+    set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
   },
 
   setAccessToken: (accessToken) => set({ accessToken }),
 
   silentRefresh: async () => {
+    // Уже разлогинены (явный logout) — молча выходим.
+    if (!get().isAuthenticated) return false;
+    const gen = getAuthGeneration();
     const result = await doSilentRefresh();
-    if (!result) return false;
+    // logout случился, пока летел запрос — не восстанавливаем сессию.
+    if (!result || gen !== getAuthGeneration()) return false;
+    resetSessionExpiredHandled();
     set({
       user: result.user,
       accessToken: result.accessToken,
@@ -103,9 +153,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   onSessionExpired: async () => {
+    // Пачка конкурентных 401: первый вызов забирает флаг синхронно,
+    // остальные выходят сразу — один silentRefresh, один logout.
+    if (isSessionExpiredHandled()) return false;
+    markSessionExpiredHandled();
     const recovered = await get().silentRefresh();
-    if (recovered) return true;
-    get().logout();
+    if (recovered) return true; // silentRefresh сбросил флаг
+    // Явный logout уже снял isAuthenticated — не дублируем logout-флоу.
+    if (get().isAuthenticated) {
+      get().logout();
+    }
     return false;
   },
 
@@ -113,11 +170,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (hydratePromise) return hydratePromise;
 
     hydratePromise = (async () => {
+      const gen = getAuthGeneration();
       const result = await doSilentRefresh();
+      // logout случился во время hydrate — сессию не восстанавливаем
+      // (isHydrating уже сброшен в logout()).
+      if (gen !== getAuthGeneration()) return;
       if (!result) {
         set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
         return;
       }
+      resetSessionExpiredHandled();
       set({
         user: result.user,
         accessToken: result.accessToken,
