@@ -492,10 +492,14 @@ export default function StudyScreen() {
     // stats, затем вызываем `retrySession()` (он инкрементит
     // generationRef и стартует новую мутацию). `replace: true` чистит
     // историю: «Назад» не возвращает на завершённую сессию.
+    // practice сохраняем в URL явно: без него `practiceFromUrl` падает
+    // в 'flip-card', эффект URL→стор перезаписывает practiceType, и UI
+    // мигает на flip-card, пока retry-мутация стартует со старым типом
+    // (fix v0.4 §1 follow-up).
     const handleRestartSession = () => {
       queryClient.invalidateQueries({ queryKey: ['stats'] });
       retrySession();
-      navigate(`/study?mode=${mode}`, { replace: true });
+      navigate(`/study?mode=${mode}&practice=${activePracticeType}`, { replace: true });
     };
     return (
       <SessionComplete
