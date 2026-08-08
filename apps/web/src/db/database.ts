@@ -144,6 +144,22 @@ export async function clearWordsCollection(): Promise<void> {
   await Promise.all(docs.map((doc) => doc.remove()));
 }
 
+/**
+ * F07: стирает локальные данные аккаунта — очередь pending-изменений и
+ * зеркало прогресса. Вызывается при logout: чужие ответы и прогресс не
+ * должны пережить смену аккаунта (иначе ответы аккаунта A улетели бы
+ * на сервер под токеном аккаунта B). Словарь слов (words) — общий
+ * контент, не трогается.
+ */
+export async function clearAccountLocalData(): Promise<void> {
+  const db = dbInstance;
+  if (!db) return;
+  for (const name of ['pending_changes', 'progress'] as const) {
+    const docs = await db[name].find().exec();
+    await Promise.all(docs.map((doc) => doc.remove()));
+  }
+}
+
 export async function initDb(): Promise<RxDatabase<DbCollections>> {
   if (dbInstance) return dbInstance;
   if (dbPromise) return dbPromise;

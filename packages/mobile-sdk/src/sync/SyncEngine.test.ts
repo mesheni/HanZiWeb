@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncEngine } from './SyncEngine';
 import { createMemoryQueueStorage } from './QueueStorage';
 import { setNetworkAdapter, getNetworkAdapter } from '../network/NetworkAdapter';
+import { setSecureStorage } from '../storage/SecureStorage';
 import type { ApiClient, ApiResult } from '../api/ApiClient';
 import type { ServerChange, SyncResponse } from '@hanzi/shared';
 
@@ -51,6 +52,7 @@ describe('SyncEngine', () => {
         results: [
           {
             changeId: 'id-1',
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -85,6 +87,7 @@ describe('SyncEngine', () => {
         data: {
           results: changes.map((c) => ({
             changeId: c.id,
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -135,6 +138,7 @@ describe('SyncEngine', () => {
         data: {
           results: changes.map((c) => ({
             changeId: c.id,
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -209,6 +213,7 @@ describe('SyncEngine', () => {
         data: {
           results: changes.map((c) => ({
             changeId: c.id,
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -243,6 +248,7 @@ describe('SyncEngine', () => {
         data: {
           results: changes.map((c) => ({
             changeId: c.id,
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -340,6 +346,7 @@ describe('SyncEngine', () => {
         results: [
           {
             changeId: 'c1',
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -378,6 +385,7 @@ describe('SyncEngine', () => {
         data: {
           results: changes.map((c) => ({
             changeId: c.id,
+            outcome: 'applied',
             wordId: 'w1',
             newStability: 1,
             newDifficulty: 5,
@@ -462,5 +470,116 @@ describe('SyncEngine', () => {
     network.go(false);
     network.go(true);
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  // ─── F07: изоляция очереди/курсора по аккаунту ───────────────────
+
+  function makeMemorySecureStorage(): {
+    data: Map<string, string>;
+    getItem(k: string): string | null;
+    setItem(k: string, v: string): void;
+    removeItem(k: string): void;
+  } {
+    const data = new Map<string, string>();
+    return {
+      data,
+      getItem: (k) => data.get(k) ?? null,
+      setItem: (k, v) => {
+        data.set(k, v);
+      },
+      removeItem: (k) => {
+        data.delete(k);
+      },
+    };
+  }
+
+  const serverChangeWith = (timestamp: string): ServerChange => ({
+    wordId: 'w1',
+    state: 'learning',
+    stability: 1,
+    difficulty: 5,
+    reps: 1,
+    dueDate: '2026-01-01T00:00:00.000Z',
+    lastReviewDate: timestamp,
+    timestamp,
+  });
+
+  it('F07: курсор хранится per-user — смена аккаунта не видит чужой курсор', async () => {
+    const sec = makeMemorySecureStorage();
+    setSecureStorage(sec);
+    const sentSince: string[] = [];
+    const api = makeApiMock(async (body) => {
+      sentSince.push(body.sinceTimestamp as string | undefined);
+      const first = body.changes[0] as { id: string } | undefined;
+      return {
+        ok: true,
+        status: 200,
+        data: {
+          results: [
+            {
+              changeId: first?.id ?? '',
+              outcome: 'applied',
+              wordId: 'w1',
+              newStability: 1,
+              newDifficulty: 5,
+              newState: 'learning',
+              newDueDate: '2026-01-01T00:00:00.000Z',
+              intervalDays: 0,
+              xpGain: 0,
+            },
+          ],
+          serverChanges: [serverChangeWith('2026-01-01T00:00:00.000Z')],
+        } as SyncResponse,
+      };
+    });
+
+    const engine = new SyncEngine({ api, storage, idFactory });
+    engine.setCurrentUserId('user-a');
+    engine.start();
+
+    // Первый flush аккаунта A: курсора нет → полный снапшот.
+    await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
+    await engine.flush();
+    expect(sentSince.at(-1)).toBeUndefined();
+    expect(sec.data.get('hanzi:sync:last-sync-at:user-a')).toBe('2026-01-01T00:00:00.000Z');
+
+    // Смена аккаунта на B: чужой курсор (A) не читается → снова снапшот.
+    engine.setCurrentUserId('user-b');
+    await engine.enqueueChange('study_answer', { wordId: 'w2', rating: 4 });
+    await engine.flush();
+    expect(sentSince.at(-1)).toBeUndefined();
+    expect(sec.data.has('hanzi:sync:last-sync-at:user-b')).toBe(true);
+
+    // Возврат на A: курсор A снова подхватывается.
+    engine.setCurrentUserId('user-a');
+    await engine.enqueueChange('study_answer', { wordId: 'w3', rating: 4 });
+    await engine.flush();
+    expect(sentSince.at(-1)).toBe('2026-01-01T00:00:00.000Z');
+
+    engine.destroy();
+  });
+
+  it('F07: clearLocalState стирает очередь и курсор аккаунта (logout)', async () => {
+    const sec = makeMemorySecureStorage();
+    setSecureStorage(sec);
+    // Flush всегда падает — изменения остаются в pending до logout.
+    const api = makeApiMock(async () => ({
+      ok: false,
+      status: 500,
+      message: 'boom',
+    }));
+
+    const engine = new SyncEngine({ api, storage, idFactory });
+    engine.setCurrentUserId('user-a');
+    engine.start();
+    await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
+    expect(await storage.count()).toBe(1);
+    sec.data.set('hanzi:sync:last-sync-at:user-a', '2026-01-01T00:00:00.000Z');
+
+    await engine.clearLocalState();
+
+    expect(await storage.count()).toBe(0);
+    expect(sec.data.has('hanzi:sync:last-sync-at:user-a')).toBe(false);
+    engine.destroy();
   });
 });

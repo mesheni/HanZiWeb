@@ -20,6 +20,11 @@ export interface QueueStorage {
   remove(id: string): Promise<void>;
   /** Total number of pending changes (used in tests / dev tools). */
   count(): Promise<number>;
+  /**
+   * F07: wipe every pending change. Called on logout so the previous
+   * account's answers never flush under the next account's token.
+   */
+  clearAll(): Promise<void>;
 }
 
 export function createMemoryQueueStorage(): QueueStorage & { _peek(): PendingChange[] } {
@@ -40,6 +45,9 @@ export function createMemoryQueueStorage(): QueueStorage & { _peek(): PendingCha
     },
     async count() {
       return [...items.values()].filter((c) => !c.isSynced).length;
+    },
+    async clearAll() {
+      items.clear();
     },
     _peek() {
       return [...items.values()];

@@ -61,6 +61,16 @@ export function createWatermelonQueueStorage(db: Database): QueueStorage {
     async count(): Promise<number> {
       return collection.query(Q.where('is_synced', false)).fetchCount();
     },
+
+    async clearAll(): Promise<void> {
+      const rows = await collection.query().fetch();
+      if (rows.length === 0) return;
+      await db.write(async () => {
+        for (const row of rows) {
+          await row.destroyPermanently();
+        }
+      });
+    },
   };
 }
 

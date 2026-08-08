@@ -1,9 +1,8 @@
 import { apiPost } from '../api/client';
 import { getDb } from './database';
+import { readSyncCursor, writeSyncCursor } from './syncCursor';
+import { useAuthStore } from '../stores/authStore';
 import type { SyncResponse } from '@hanzi/shared';
-
-/** Курсор инкрементального sync (PLAN_Features_v0.4 §48). */
-const SYNC_CURSOR_KEY = 'hanzi:sync:last-sync-at';
 
 let engineInstance: SyncEngine | null = null;
 
@@ -62,6 +61,11 @@ export class SyncEngine {
     const db = getDb();
     if (!db) return;
 
+    // F07: sync работает только под текущим аккаунтом — курсор
+    // per-user, анонимный flush не имеет смысла (logout чистит очередь).
+    const userId = useAuthStore.getState().user?.id ?? null;
+    if (!userId) return;
+
     this.isSyncing = true;
 
     try {
@@ -82,11 +86,12 @@ export class SyncEngine {
         payload: c.payload as Record<string, unknown>,
       }));
 
+      const cursor = readSyncCursor(userId);
       const response = await apiPost<SyncResponse>('/sync', {
         changes: payload,
         // Инкрементальный sync: сервер отдаёт только изменения после
         // курсора; без курсора (первый sync) — полный снапшот.
-        sinceTimestamp: localStorage.getItem(SYNC_CURSOR_KEY) ?? undefined,
+        sinceTimestamp: cursor ?? undefined,
       });
 
       for (const result of response.results) {
@@ -116,14 +121,15 @@ export class SyncEngine {
       }
 
       // Продвигаем курсор до максимального timestamp'а serverChanges —
-      // следующий sync получит только изменения после него.
-      let maxTs = Number(localStorage.getItem(SYNC_CURSOR_KEY) ?? 0);
+      // следующий sync получит только изменения после него. Курсор
+      // per-user (F07).
+      let maxTs = cursor ? Number(new Date(cursor).getTime()) : 0;
       for (const serverChange of response.serverChanges) {
         const ts = new Date(serverChange.timestamp).getTime();
         if (ts > maxTs) maxTs = ts;
       }
       if (maxTs > 0) {
-        localStorage.setItem(SYNC_CURSOR_KEY, new Date(maxTs).toISOString());
+        writeSyncCursor(userId, new Date(maxTs).toISOString());
       }
 
       this.retryDelay = 1000;

@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { AuthResponse } from '@hanzi/shared';
+import { queryClient } from '../api/queryClient';
+import { clearAccountLocalData } from '../db/database';
+import { removeSyncCursor } from '../db/syncCursor';
 
 interface User {
   id: string;
@@ -131,6 +134,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     bumpAuthGeneration();
     void notifyServerLogout();
     clearApiCache();
+    // F07: изоляция локального состояния по аккаунту — чужие ответы,
+    // курсоры и прогресс не переживают logout.
+    const uid = get().user?.id;
+    if (uid) removeSyncCursor(uid);
+    void clearAccountLocalData().catch((error) => {
+      console.error('Failed to clear account local data:', error);
+    });
+    // React Query кэш (слова/прогресс/статистика) тоже аккаунт-специфичен.
+    queryClient.clear();
     set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
   },
 

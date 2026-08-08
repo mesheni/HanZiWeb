@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createAuthStore } from './AuthStore';
 import { setTokenStore, createDefaultTokenStore, getTokenStore } from './TokenStore';
 import { setSecureStorage, getSecureStorage } from '../storage/SecureStorage';
@@ -45,5 +45,20 @@ describe('createAuthStore', () => {
       );
     expect(getSecureStorage().getItem(ACCESS_TOKEN_KEY)).toBe('tok-2');
     expect(store.getState().isAuthenticated).toBe(true);
+  });
+
+  it('F07: logout вызывает onLogout-хук (хост чистит очередь/курсор)', () => {
+    const onLogout = vi.fn();
+    const store = createAuthStore({ onLogout });
+    store
+      .getState()
+      .login(
+        { id: '22222222-2222-2222-2222-222222222222', email: 'b@b.ru', xp: 0, currentStreak: 0 },
+        'tok-3',
+      );
+    expect(onLogout).not.toHaveBeenCalled();
+    store.getState().logout();
+    expect(onLogout).toHaveBeenCalledTimes(1);
+    expect(store.getState().isAuthenticated).toBe(false);
   });
 });

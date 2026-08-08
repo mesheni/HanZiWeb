@@ -5,8 +5,17 @@ import { SyncResponseSchema } from '@hanzi/shared';
 import type { QueueStorage } from './QueueStorage';
 import { getSecureStorage } from '../storage/SecureStorage';
 
-/** Ключ курсора инкрементального sync (PLAN_Features_v0.4 §48). */
-const SYNC_CURSOR_KEY = 'hanzi:sync:last-sync-at';
+/** Префикс ключа курсора инкрементального sync (PLAN_Features_v0.4 §48). */
+const SYNC_CURSOR_PREFIX = 'hanzi:sync:last-sync-at';
+
+/**
+ * F07: ключ курсора в SecureStorage изолирован по аккаунту —
+ * `hanzi:sync:last-sync-at:<userId>`. Без userId (до логина) — null,
+ * курсор не читается и не пишется.
+ */
+function syncCursorKey(userId: string | null): string | null {
+  return userId ? `${SYNC_CURSOR_PREFIX}:${userId}` : null;
+}
 
 export interface SyncEngineOptions {
   api: ApiClient;
@@ -60,6 +69,8 @@ export class SyncEngine {
    * изменённый после него (PLAN_Features_v0.4 §48).
    */
   private lastSyncAt: string | null;
+  /** F07: текущий аккаунт — курсор хранится per-user. */
+  private currentUserId: string | null = null;
 
   constructor(options: SyncEngineOptions) {
     this.api = options.api;
@@ -68,7 +79,37 @@ export class SyncEngine {
     this.initialRetryDelay = options.initialRetryDelay ?? 1000;
     this.maxRetryDelay = options.maxRetryDelay ?? 30_000;
     this.retryDelay = this.initialRetryDelay;
-    this.lastSyncAt = readSyncCursor();
+    this.lastSyncAt = null;
+  }
+
+  /**
+   * F07: привязывает движок к аккаунту — курсор читается из
+   * per-user ключа (изоляция: чужой курсор не переживает смену
+   * аккаунта). Вызывается после login/hydrate; `null` — выйти.
+   */
+  setCurrentUserId(userId: string | null): void {
+    if (userId === this.currentUserId) return;
+    this.currentUserId = userId ?? null;
+    this.lastSyncAt = this.currentUserId ? readSyncCursor(this.currentUserId) : null;
+  }
+
+  /**
+   * F07: стирает локальное состояние аккаунта — очередь pending-изменений
+   * и курсор. Вызывается при logout: чужие ответы и курсор не должны
+   * пережить смену аккаунта (иначе ответы аккаунта A улетели бы на
+   * сервер под токеном аккаунта B).
+   */
+  async clearLocalState(): Promise<void> {
+    await this.storage.clearAll();
+    if (this.currentUserId) {
+      removeSyncCursor(this.currentUserId);
+    }
+    this.lastSyncAt = null;
+    this.retryDelay = this.initialRetryDelay;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
   }
 
   /** Subscribe to server-pushed changes (used to update local progress). */
@@ -203,7 +244,11 @@ export class SyncEngine {
         }
         if (maxTs > 0) {
           this.lastSyncAt = new Date(maxTs).toISOString();
-          writeSyncCursor(this.lastSyncAt);
+          // F07: персист курсора — только под привязанным аккаунтом
+          // (per-user ключ); без аккаунта курсор живёт в памяти.
+          if (this.currentUserId) {
+            writeSyncCursor(this.currentUserId, this.lastSyncAt);
+          }
         }
 
         this.retryDelay = this.initialRetryDelay;
@@ -255,22 +300,37 @@ function generateId(): string {
 }
 
 /**
- * Читает курсор инкрементального sync из SecureStorage. Если хранилище
- * не зарегистрировано (юнит-тесты) — курсор остаётся в памяти.
+ * Читает курсор инкрементального sync из SecureStorage по per-user ключу
+ * (F07). Если хранилище не зарегистрировано (юнит-тесты) — null.
  */
-function readSyncCursor(): string | null {
+function readSyncCursor(userId: string): string | null {
+  const key = syncCursorKey(userId);
+  if (!key) return null;
   try {
-    return getSecureStorage().getItem(SYNC_CURSOR_KEY);
+    return getSecureStorage().getItem(key);
   } catch {
     return null;
   }
 }
 
 /** Персистит курсор; при недоступном хранилище — молча пропускает. */
-function writeSyncCursor(value: string): void {
+function writeSyncCursor(userId: string, value: string): void {
+  const key = syncCursorKey(userId);
+  if (!key) return;
   try {
-    getSecureStorage().setItem(SYNC_CURSOR_KEY, value);
+    getSecureStorage().setItem(key, value);
   } catch {
     // SecureStorage не зарегистрирован — курсор живёт в памяти.
+  }
+}
+
+/** Удаляет курсор аккаунта (logout, F07). */
+function removeSyncCursor(userId: string): void {
+  const key = syncCursorKey(userId);
+  if (!key) return;
+  try {
+    getSecureStorage().removeItem(key);
+  } catch {
+    // Хранилище не зарегистрировано — удалять нечего.
   }
 }

@@ -30,7 +30,16 @@ export interface AuthState {
   setError(message: string | null): void;
 }
 
-export const createAuthStore = () =>
+export interface AuthStoreOptions {
+  /**
+   * F07: вызывается при logout (fire-and-forget) — хост чистит
+   * локальное состояние аккаунта (очередь/курсор), чтобы чужие ответы
+   * не пережили смену аккаунта.
+   */
+  onLogout?: () => void;
+}
+
+export const createAuthStore = (options: AuthStoreOptions = {}) =>
   create<AuthState>((set) => ({
     user: null,
     accessToken: null,
@@ -46,6 +55,11 @@ export const createAuthStore = () =>
     logout: () => {
       clearTokens();
       set({ user: null, accessToken: null, isAuthenticated: false });
+      try {
+        options.onLogout?.();
+      } catch {
+        // Хук не должен ломать logout.
+      }
     },
 
     setAccessToken: (accessToken) => {

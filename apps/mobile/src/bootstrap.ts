@@ -156,7 +156,23 @@ export const api = new ApiClient({
   },
 });
 
-export const useAuthStore = createAuthStore();
+/**
+ * F07: изоляция локального состояния по аккаунту.
+ * - `onLogout`: при выходе движок стирает очередь pending-изменений и
+ *   курсор текущего аккаунта — чужие ответы/курсоры не переживают
+ *   смену аккаунта.
+ * - подписка на auth-store: курсор читается из per-user ключа, поэтому
+ *   после hydrate/login движок переключается на курсор нового аккаунта.
+ */
+export const useAuthStore = createAuthStore({
+  onLogout: () => {
+    void getSync().clearLocalState();
+  },
+});
+
+useAuthStore.subscribe((state) => {
+  getSync().setCurrentUserId(state.user?.id ?? null);
+});
 
 /* ─── Persistent queue: WatermelonDB (or fallback to MMKV) ──────────── */
 
@@ -186,6 +202,8 @@ export function setQueueStorage(storage: QueueStorage): void {
     // reads from the freshly-wired WatermelonDB collection.
     _sync.destroy();
     _sync = new SyncEngine({ api, storage: _queueStorage });
+    // F07: перепривязанный движок должен знать текущий аккаунт.
+    _sync.setCurrentUserId(useAuthStore.getState().user?.id ?? null);
     _sync.start();
   }
 }
@@ -193,6 +211,9 @@ export function setQueueStorage(storage: QueueStorage): void {
 export function getSync(): SyncEngine {
   if (!_sync) {
     _sync = new SyncEngine({ api, storage: _queueStorage });
+    // F07: курсор читается per-user (аккаунт известен к моменту
+    // первого getSync в App.tsx — после hydrateAuth).
+    _sync.setCurrentUserId(useAuthStore.getState().user?.id ?? null);
     _sync.start();
   }
   return _sync;
