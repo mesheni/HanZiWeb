@@ -79,7 +79,7 @@
 | ✅ F20 | Кэш слов перезаписывается бедными WordListItem (audioUrl, mnemonic, examples, tags → null) | Средний |
 | ✅ F21 | Мобильный не офлайн: сессии всегда требуют сеть; таблицы WatermelonDB объявлены но не заполняются | Высокий |
 | ✅ F22a | Мобильный паритет: только flip-card — портировать 6 практик (multiple-choice, reverse-choice, pinyin-input, tone-recognition, syllable-constructor, cloze) | Высокий |
-| F22b | Мобильный Library/Stats read-only: создать колоду, join share code, детальные статы | Средний |
+| ✅ F22b | Мобильный Library/Stats read-only: создать колоду, join share code, детальные статы | Средний |
 | F22c | Мобильные экраны reading/tests/settings | Средний |
 | F22d | Мобильный push (FCM-регистрация /devices) + аудио-озвучка карточек | Средний |
 | F23 | PWA precache: 9,587 файлов (~32 MiB), 766 kB main chunk; нет skipWaiting/navigation fallback | Средний |
