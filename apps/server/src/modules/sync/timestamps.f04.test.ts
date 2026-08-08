@@ -163,7 +163,7 @@ describe('F04 — серверный источник истины для тай
     expect(Math.abs(p.lastReviewDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
   });
 
-  it('sync-ответ, уже применённый live-путём, не применяется дважды (reps не растёт)', async () => {
+  it('sync-ответ, уже применённый live-путём, не применяется дважды, но получает ack (F05)', async () => {
     const before = await lastReview('liveFuture');
     const stale = new Date(Date.now() - 5000).toISOString();
     const res = await processSync(userId, {
@@ -175,9 +175,11 @@ describe('F04 — серверный источник истины для тай
         },
       ],
     });
-    // Пропущен либо по времени (changeTime <= lastReviewDate), либо по
-    // SessionAnswer-guard — повторного применения нет.
-    expect(res.results).toHaveLength(0);
+    // Пропущен либо по времени (changeTime <= lastReviewDate → stale),
+    // либо по SessionAnswer-guard (duplicate) — повторного применения
+    // нет, но терминальный ack приходит (F05: иначе вечный retry).
+    expect(res.results).toHaveLength(1);
+    expect(['stale', 'duplicate']).toContain(res.results[0]?.outcome);
     const p = await lastReview('liveFuture');
     expect(p.reps).toBe(before.reps);
   });

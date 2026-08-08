@@ -128,6 +128,7 @@ describe('SyncChangeSchema — discriminated union по type (PLANCorrection #21
 describe('SyncResultSchema difficulty bounds (PLAN_Features_v0.4 §41)', () => {
   const base = {
     changeId: 'c1',
+    outcome: 'applied',
     wordId: 'w1',
     newStability: 1,
     newState: 'learning',
@@ -149,16 +150,57 @@ describe('SyncResultSchema difficulty bounds (PLAN_Features_v0.4 §41)', () => {
   });
 });
 
+describe('SyncResultSchema outcome (F05 — терминальные ack)', () => {
+  const base = {
+    changeId: 'c1',
+    outcome: 'applied',
+    wordId: 'w1',
+    newStability: 1,
+    newDifficulty: 5,
+    newState: 'learning',
+    newDueDate: new Date().toISOString(),
+    intervalDays: 0,
+    xpGain: 0,
+  };
+
+  it('accepts каждый из четырёх исходов', () => {
+    for (const outcome of ['applied', 'duplicate', 'stale', 'rejected']) {
+      expect(SyncResultSchema.safeParse({ ...base, outcome }).success).toBe(true);
+    }
+  });
+
+  it('rejects неизвестный исход', () => {
+    expect(SyncResultSchema.safeParse({ ...base, outcome: 'maybe' }).success).toBe(false);
+  });
+
+  it('rejects отсутствующий outcome (обязателен — контракт F05)', () => {
+    const { outcome: _outcome, ...rest } = base;
+    expect(SyncResultSchema.safeParse(rest).success).toBe(false);
+  });
+});
+
 describe('SyncResponseSchema (PLAN_Features_v0.4 §40)', () => {
   it('accepts a well-formed response', () => {
     const response = {
       results: [
         {
           changeId: 'c1',
+          outcome: 'applied',
           wordId: 'w1',
           newStability: 1,
           newDifficulty: 5,
           newState: 'learning',
+          newDueDate: new Date().toISOString(),
+          intervalDays: 0,
+          xpGain: 0,
+        },
+        {
+          changeId: 'c2',
+          outcome: 'stale',
+          wordId: 'w2',
+          newStability: 2,
+          newDifficulty: 4,
+          newState: 'review',
           newDueDate: new Date().toISOString(),
           intervalDays: 0,
           xpGain: 0,

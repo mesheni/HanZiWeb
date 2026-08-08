@@ -58,8 +58,20 @@ export const SyncRequestSchema = z.object({
 });
 export type SyncRequest = z.infer<typeof SyncRequestSchema>;
 
+/** Терминальный исход изменения (F05): каждый вход получает ровно один ack. */
+export const SyncOutcomeSchema = z.enum(['applied', 'duplicate', 'stale', 'rejected']);
+export type SyncOutcome = z.infer<typeof SyncOutcomeSchema>;
+
 export const SyncResultSchema = z.object({
   changeId: z.string(),
+  /**
+   * applied   — ответ применён (поля new* валидны);
+   * duplicate — ответ уже записан (live-пост успел, P2002) — полей new*
+   *             можно не применять;
+   * stale     — изменение старше текущего состояния прогресса — пропущено;
+   * rejected  — сервер не может применить (нет записи прогресса).
+   */
+  outcome: SyncOutcomeSchema,
   wordId: z.string(),
   newStability: z.number(),
   // Difficulty — каноническая FSRS-5 шкала [1, 10], как во всех

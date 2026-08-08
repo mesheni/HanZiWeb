@@ -3,7 +3,40 @@ import { recalcFsrs } from '../sessions/srs.js';
 import { computeElapsedDays, sanitizeClientTimestamp } from '../sessions/timePolicy.js';
 import { markSessionCompleted } from '../sessions/sessions.service.js';
 import * as achievementsService from '../achievements/achievements.service.js';
-import type { SyncRequest, SyncResponse, SyncResult } from '@hanzi/shared';
+import type { SyncRequest, SyncResponse, SyncResult, SyncOutcome } from '@hanzi/shared';
+
+/**
+ * F05: терминальный ack для НЕ применённого изменения. Клиенты (web и
+ * mobile-sdk) отмечают change как isSynced по любому результату с его
+ * changeId — до фикса skip-пути молчали (`continue` без результата),
+ * и изменение оставалось в pending навсегда (бесконечный retry).
+ *
+ * Поля new* для не-applied исходов — информационные (текущее состояние
+ * прогресса, для rejected — нули); применять их не нужно.
+ */
+function skipResult(
+  changeId: string,
+  wordId: string,
+  outcome: Exclude<SyncOutcome, 'applied'>,
+  progress?: {
+    stability: number;
+    difficulty: number;
+    state: string;
+    dueDate: Date;
+  } | null,
+): SyncResult {
+  return {
+    changeId,
+    wordId,
+    outcome,
+    newStability: progress?.stability ?? 0,
+    newDifficulty: progress?.difficulty ?? 5,
+    newState: (progress?.state ?? 'new') as SyncResult['newState'],
+    newDueDate: (progress?.dueDate ?? new Date()).toISOString(),
+    intervalDays: 0,
+    xpGain: 0,
+  };
+}
 
 export async function processSync(userId: string, input: SyncRequest): Promise<SyncResponse> {
   const results: SyncResult[] = [];
@@ -23,6 +56,10 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
       });
 
       if (!progress) {
+        // F05: rejected — запись прогресса не существует (слово удалено /
+        // прогресс не создан). Ack обязателен: клиент должен убрать
+        // изменение из pending, иначе вечный retry.
+        results.push(skipResult(change.id, wordId, 'rejected'));
         continue;
       }
 
@@ -47,6 +84,10 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
       // Для клиентов с ушедшими вперёд часами срабатывает страховка
       // ниже — SessionAnswer по (sessionId, wordId).
       if (changeTime <= existingTime) {
+        // F05: stale — изменение старше текущего lastReviewDate (тот же
+        // ответ после live-поста или устаревшая офлайн-запись). Ack,
+        // иначе pending остаётся навсегда.
+        results.push(skipResult(change.id, wordId, 'stale', progress));
         continue;
       }
 
@@ -59,6 +100,9 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
           where: { sessionId, wordId },
         });
         if (existingAnswer) {
+          // F05: duplicate — этот ответ уже записан в сессии (live-пост
+          // успел примениться, flush догнал). Ack обязателен.
+          results.push(skipResult(change.id, wordId, 'duplicate', progress));
           continue;
         }
       }
@@ -144,6 +188,9 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
         // уникальный индекс (sessionId, wordId) — финальная защита от
         // повторного применения. Прогресс НЕ пересчитываем повторно.
         if ((err as { code?: string }).code === 'P2002') {
+          // F05: duplicate — конкурентный flush уже применил ответ.
+          // Ack обязателен, иначе оба flush будут ретраить вечно.
+          results.push(skipResult(change.id, wordId, 'duplicate', progress));
           continue;
         }
         throw err;
@@ -159,6 +206,7 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
 
       results.push({
         changeId: change.id,
+        outcome: 'applied',
         wordId,
         newStability,
         newDifficulty,

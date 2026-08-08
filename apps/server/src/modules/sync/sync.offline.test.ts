@@ -5,15 +5,19 @@ import { recalcFsrs } from '../sessions/srs.js';
 import * as achievementsService from '../achievements/achievements.service.js';
 import type { SyncRequest } from '@hanzi/shared';
 
-// Офлайн-путь /sync (PLANCorrection #15, #16):
+// Офлайн-путь /sync (PLANCorrection #15, #16, F04, F05):
 // - FSRS-elapsed считается от payload.timestamp (момента ОТВЕТА), а не от
 //   момента flush — retrievability совпадает с live-путём;
 // - офлайн-ответ создаёт SessionAnswer, инкрементит Session.cardsCompleted
 //   и бампает User.lastActiveDate (heatmap/стрик/ачивки видят офлайн-учёбу);
 // - сессия из payload обязана принадлежать юзеру (IDOR-защита, как в
-//   recordAnswer): чужая сессия не получает ответов и не инкрементится.
+//   recordAnswer): чужая сессия не получает ответов и не инкрементится;
+// - F04: lastReviewDate / SessionAnswer.answeredAt / lastActiveDate —
+//   серверное время (клиентский timestamp только для elapsed);
+// - F05: каждый вход получает терминальный ack (results[].outcome).
 
 const testRunId = Date.now();
+const nowToleranceMs = 60_000;
 
 async function createUser(lastActiveDate: Date | null = null): Promise<string> {
   const u = await prisma.user.create({
@@ -81,13 +85,15 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
       const res = await processSync(uid, mkSyncRequest(wid, sid, answeredAt.toISOString()));
 
       expect(res.results).toHaveLength(1);
+      expect(res.results[0]?.outcome).toBe('applied');
       const expected = recalcFsrs(3, 5, 5, 'review', 1);
       expect(res.results[0]?.newStability).toBe(expected.newStability);
 
       const progress = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId: uid, wordId: wid } },
       });
-      expect(progress?.lastReviewDate?.toISOString()).toBe(answeredAt.toISOString());
+      // F04: lastReviewDate — серверное время, а не клиентский timestamp.
+      expect(Math.abs(progress!.lastReviewDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
       expect(progress?.reps).toBe(2);
     } finally {
       await prisma.user.deleteMany({ where: { id: uid } });
@@ -111,17 +117,17 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
       const res = await processSync(uid, mkSyncRequest(wid, sid, timestamp.toISOString()));
       expect(res.results).toHaveLength(1);
 
-      // Heatmap-сырьё: SessionAnswer с answeredAt = момент ответа.
+      // Heatmap-сырьё: SessionAnswer с answeredAt = серверное время (F04).
       const answers = await prisma.sessionAnswer.findMany({ where: { sessionId: sid, wordId: wid } });
       expect(answers).toHaveLength(1);
-      expect(answers[0]?.answeredAt.toISOString()).toBe(timestamp.toISOString());
+      expect(Math.abs(answers[0]!.answeredAt.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
 
       const session = await prisma.session.findUnique({ where: { id: sid } });
       expect(session?.cardsCompleted).toBe(1);
 
-      // Стрик-якорь: lastActiveDate = max(lastActiveDate, answeredAt).
+      // Стрик-якорь: lastActiveDate = серверное «сейчас» (F04).
       const user = await prisma.user.findUnique({ where: { id: uid } });
-      expect(user?.lastActiveDate?.toISOString()).toBe(timestamp.toISOString());
+      expect(Math.abs(user!.lastActiveDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
 
       // Ачивки проверяются best-effort по сессии с записанным ответом.
       expect(achSpy).toHaveBeenCalledTimes(1);
@@ -142,13 +148,15 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
     });
 
     try {
-      // Офлайн-ответ «старше» уже записанной активности.
+      // Офлайн-ответ «старше» уже записанной активности. F04: записывается
+      // серверное «сейчас» (сегодня), которое не может быть раньше
+      // существующего lastActiveDate — отката назад нет.
       const older = new Date('2026-07-15T10:00:00.000Z');
       const res = await processSync(uid, mkSyncRequest(wid, sid, older.toISOString()));
       expect(res.results).toHaveLength(1);
 
       const user = await prisma.user.findUnique({ where: { id: uid } });
-      expect(user?.lastActiveDate?.toISOString()).toBe('2026-07-20T00:00:00.000Z');
+      expect(Math.abs(user!.lastActiveDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
     } finally {
       await prisma.user.deleteMany({ where: { id: uid } });
       await prisma.word.deleteMany({ where: { id: wid } });
@@ -182,9 +190,9 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
       const victimRow = await prisma.session.findUnique({ where: { id: victimSession } });
       expect(victimRow?.cardsCompleted).toBe(0);
 
-      // Собственная активность атакующего всё равно засчитана.
+      // Собственная активность атакующего всё равно засчитана (серверное время).
       const attackerUser = await prisma.user.findUnique({ where: { id: attacker } });
-      expect(attackerUser?.lastActiveDate?.toISOString()).toBe(timestamp.toISOString());
+      expect(Math.abs(attackerUser!.lastActiveDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
     } finally {
       await prisma.user.deleteMany({ where: { id: attacker } });
       await prisma.user.deleteMany({ where: { id: victim } });
