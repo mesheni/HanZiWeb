@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
-import { buildSyllablePool } from '../../utils/distractors';
+import { buildSyllablePool } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
 
 interface SyllableConstructorCardProps {
@@ -26,10 +26,7 @@ export default function SyllableConstructorCard({
   onPlayAudio,
   audioAvailable,
 }: SyllableConstructorCardProps) {
-  const correctSyllables = useMemo(
-    () => word.pinyin.split(/\s+/).filter(Boolean),
-    [word.pinyin],
-  );
+  const correctSyllables = useMemo(() => word.pinyin.split(/\s+/).filter(Boolean), [word.pinyin]);
 
   const [pool, setPool] = useState<string[]>([]);
   const [answer, setAnswer] = useState<string[]>([]);
@@ -69,14 +66,16 @@ export default function SyllableConstructorCard({
   const submit = () => {
     if (submitted || answer.length === 0) return;
     const userAnswer = answer.join(' ');
-    const correct = answer.length === correctSyllables.length &&
+    const correct =
+      answer.length === correctSyllables.length &&
       answer.every((s, i) => normalize(s) === normalize(correctSyllables[i]!));
     setSubmitted(true);
     window.setTimeout(() => onAnswer(correct), 700);
     void userAnswer;
   };
 
-  const isCorrect = submitted &&
+  const isCorrect =
+    submitted &&
     answer.length === correctSyllables.length &&
     answer.every((s, i) => normalize(s) === normalize(correctSyllables[i]!));
 
@@ -210,5 +209,9 @@ export default function SyllableConstructorCard({
 }
 
 function normalize(s: string): string {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[1-4]/g, '');
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[1-4]/g, '');
 }

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { TONE_COLORS, parsePinyin } from './toneColors';
+﻿import { describe, it, expect } from 'vitest';
+import { TONE_COLORS } from './toneColors';
+import { parsePinyin } from '@hanzi/shared';
 
 describe('TONE_COLORS', () => {
   it('покрывает тона 0..4 и ссылается на CSS-переменные', () => {

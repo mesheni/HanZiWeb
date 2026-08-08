@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word, Example, ClozeQuestion } from '@hanzi/shared';
 import { apiPost } from '../../api/client';
 import { useToastStore } from '../../stores/toastStore';
-import { buildClozeQuestion, checkClozeAnswer, CLOZE_MARKER } from '../../utils/cloze';
+import { buildClozeQuestion, checkClozeAnswer, CLOZE_MARKER } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
 
 interface ClozeCardProps {
@@ -77,11 +77,7 @@ export default function ClozeCard({ word, examples, onAnswer }: ClozeCardProps) 
         <div className="practice-card-hint">
           Нет предложений-примеров, содержащих «{word.character}».
         </div>
-        <button
-          type="button"
-          className="practice-submit"
-          onClick={() => onAnswer(false)}
-        >
+        <button type="button" className="practice-submit" onClick={() => onAnswer(false)}>
           Пропустить
         </button>
       </div>
@@ -176,9 +172,7 @@ function SentenceWithCloze({
   return (
     <div className="cloze-sentence">
       <span>{before}</span>
-      <span className="cloze-blank">
-        {revealed ?? marker}
-      </span>
+      <span className="cloze-blank">{revealed ?? marker}</span>
       <span>{after}</span>
     </div>
   );

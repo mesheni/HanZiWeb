@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import type { Word } from '@hanzi/shared';
-import { buildMultipleChoiceOptions, buildReverseChoiceOptions, buildSyllablePool } from './distractors';
+import { buildMultipleChoiceOptions, buildReverseChoiceOptions, buildSyllablePool } from '@hanzi/shared';
 
 const makeWord = (id: string, character: string, pinyin: string, translation: string): Word => ({
   id,

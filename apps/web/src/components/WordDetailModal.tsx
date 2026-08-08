@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, Plus, Trash2, Sparkles, Loader2, WholeWord, X } from 'lucide-react';
 import Modal from './ui/Modal';
 import EtymologyCard from './EtymologyCard';
@@ -11,7 +11,7 @@ import {
   useDeleteExample,
   useFetchTatoebaExamples,
 } from '../queries/examples';
-import { buildClozeQuestion } from '../utils/cloze';
+import { buildClozeQuestion } from '@hanzi/shared';
 import { cn } from '../utils/cn';
 import type { Word, Example } from '@hanzi/shared';
 
@@ -85,10 +85,7 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
       setNewRu('');
       setShowAddForm(false);
     } catch (err) {
-      addToast(
-        err instanceof Error ? err.message : 'Не удалось добавить пример',
-        'error',
-      );
+      addToast(err instanceof Error ? err.message : 'Не удалось добавить пример', 'error');
     }
   }, [word, newZh, newRu, createMut, addToast]);
 
@@ -99,10 +96,7 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
         await deleteMut.mutateAsync({ wordId: word.id, exampleId });
         addToast('Пример удалён', 'success');
       } catch (err) {
-        addToast(
-          err instanceof Error ? err.message : 'Не удалось удалить пример',
-          'error',
-        );
+        addToast(err instanceof Error ? err.message : 'Не удалось удалить пример', 'error');
       }
     },
     [word, deleteMut, addToast],
@@ -120,9 +114,7 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
           <PinyinDisplay pinyin={word.pinyin} className="word-detail-pinyin" />
           <div className="word-detail-translation">{word.translation}</div>
           <div className="word-detail-meta">
-            {word.hskLevel && (
-              <span className="word-detail-hsk-badge">HSK {word.hskLevel}</span>
-            )}
+            {word.hskLevel && <span className="word-detail-hsk-badge">HSK {word.hskLevel}</span>}
             {audio.isAvailable && (
               <button
                 type="button"
@@ -173,11 +165,7 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
           ) : (
             <ul className="word-detail-examples">
               {examples.map((ex) => (
-                <ExampleRow
-                  key={ex.id}
-                  example={ex}
-                  onDelete={() => void handleDelete(ex.id)}
-                />
+                <ExampleRow key={ex.id} example={ex} onDelete={() => void handleDelete(ex.id)} />
               ))}
             </ul>
           )}

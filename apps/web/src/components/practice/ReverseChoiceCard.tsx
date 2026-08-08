@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
-import { buildReverseChoiceOptions } from '../../utils/distractors';
+import { buildReverseChoiceOptions } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
 
 interface ReverseChoiceCardProps {
@@ -27,7 +27,9 @@ export default function ReverseChoiceCard({
 }: ReverseChoiceCardProps) {
   const options = useMemo(() => buildReverseChoiceOptions(word, pool, 4), [word, pool]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [states, setStates] = useState<Record<string, 'idle' | 'correct' | 'wrong' | 'revealed'>>({});
+  const [states, setStates] = useState<Record<string, 'idle' | 'correct' | 'wrong' | 'revealed'>>(
+    {},
+  );
 
   useEffect(() => {
     setSelectedId(null);

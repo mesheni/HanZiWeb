@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { normalizePinyin, pinyinEquals, pinyinSyllableMatches } from './pinyinNormalize';
+﻿import { describe, it, expect } from 'vitest';
+import { normalizePinyin, pinyinEquals, pinyinSyllableMatches } from '@hanzi/shared';
 
 describe('normalizePinyin', () => {
   it('strips tone marks (NFD + combining marks)', () => {

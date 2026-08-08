@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { buildClozeQuestion, checkClozeAnswer, CLOZE_MARKER } from './cloze';
+﻿import { describe, it, expect } from 'vitest';
+import { buildClozeQuestion, checkClozeAnswer, CLOZE_MARKER } from '@hanzi/shared';
 import type { Example } from '@hanzi/shared';
 
 const baseExample: Pick<Example, 'id' | 'chinese' | 'russian'> = {

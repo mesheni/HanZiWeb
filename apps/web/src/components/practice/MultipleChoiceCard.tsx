@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
-import { buildMultipleChoiceOptions } from '../../utils/distractors';
+import { buildMultipleChoiceOptions } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
 
 interface MultipleChoiceCardProps {

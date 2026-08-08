@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
+import { parsePinyin } from '@hanzi/shared';
 import type { Word } from '@hanzi/shared';
 import { useAudio } from '../../hooks/useAudio';
-import { parsePinyin, TONE_COLORS } from '../../utils/toneColors';
+import { TONE_COLORS } from '../../utils/toneColors';
 import { cn } from '../../utils/cn';
 
 interface ToneRecognitionCardProps {

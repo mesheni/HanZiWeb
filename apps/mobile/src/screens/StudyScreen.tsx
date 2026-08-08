@@ -4,10 +4,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api, getSync, useAuthStore } from '../bootstrap';
 import { recalcFsrs, RATING_XP, isOnline } from '@hanzi/mobile-sdk';
-import type { SrsRating, WordState } from '@hanzi/shared';
+import { isTrainingPractice } from '@hanzi/shared';
+import type { SrsRating, WordState, PracticeType, Example, Word } from '@hanzi/shared';
 import type { RootStackParamList } from '../navigation/types';
 import { getDatabase } from '../db/database';
 import { buildLocalSession, type LocalSession } from '../db/localSession';
+import { PracticeTypeSelector } from '../components/practice/PracticeTypeSelector';
+import { MultipleChoiceCard } from '../components/practice/MultipleChoiceCard';
+import { ReverseChoiceCard } from '../components/practice/ReverseChoiceCard';
+import { PinyinInputCard } from '../components/practice/PinyinInputCard';
+import { ToneRecognitionCard } from '../components/practice/ToneRecognitionCard';
+import { SyllableConstructorCard } from '../components/practice/SyllableConstructorCard';
+import { ClozeCard } from '../components/practice/ClozeCard';
+import type { MobileWord } from '../components/practice/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Study'>;
 
@@ -33,6 +42,8 @@ interface Card {
 interface LastAnswer {
   xp: number;
   intervalDays: number;
+  /** F22a: верно/неверно для тренировочных практик (бинарный фидбек). */
+  correct?: boolean;
 }
 
 interface SessionData {
@@ -77,53 +88,113 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastAnswer, setLastAnswer] = useState<LastAnswer | null>(null);
+  // F22a: null — показываем экран выбора практики.
+  const [practiceType, setPracticeType] = useState<PracticeType | null>(null);
+  const [distractorPool, setDistractorPool] = useState<MobileWord[]>([]);
+  const [clozeExamples, setClozeExamples] = useState<Example[]>([]);
 
-  const startSession = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  /** F22a: пул случайных слов для дистракторов (choice/syllable). */
+  const loadDistractorPool = useCallback(async (): Promise<MobileWord[]> => {
+    try {
+      const result = await api.get<Word[]>('/sessions/random-words?count=24');
+      if (!result.ok) return [];
+      return result.data.map((w) => ({
+        id: w.id,
+        character: w.character,
+        pinyin: w.pinyin,
+        translation: w.translation,
+      }));
+    } catch {
+      return [];
+    }
+  }, []);
 
-    // F21: сначала пробуем серверную сессию, но при отсутствии сети или
-    // сбое API собираем сессию из локальных таблиц WatermelonDB
-    // (words + progress). Сессии больше не требуют сеть: офлайн-карточки
-    // оцениваются через recalcFsrs, а ответы уходят в офлайн-очередь.
-    if (isOnline()) {
-      const result = await api.post<SessionData>('/sessions/start', {
-        cardLimit: 20,
-        includeNew: true,
-        mode: 'mixed',
-        practiceType: 'flip-card',
-      });
-      if (result.ok) {
-        setSession({ ...result.data, local: false });
+  const startSession = useCallback(
+    async (practice: PracticeType) => {
+      setPracticeType(practice);
+      setLoading(true);
+      setError(null);
+      setLastAnswer(null);
+      setClozeExamples([]);
+
+      // F22a: дистракторы нужны choice/syllable практикам — грузим
+      // параллельно со стартом (best-effort, офлайн → пусто).
+      if (
+        practice === 'multiple-choice' ||
+        practice === 'reverse-choice' ||
+        practice === 'syllable-constructor'
+      ) {
+        void loadDistractorPool().then(setDistractorPool);
+      } else {
+        setDistractorPool([]);
+      }
+
+      // F21: сначала пробуем серверную сессию, но при отсутствии сети или
+      // сбое API собираем сессию из локальных таблиц WatermelonDB
+      // (words + progress). Сессии больше не требуют сеть: офлайн-карточки
+      // оцениваются через recalcFsrs, а ответы уходят в офлайн-очередь.
+      if (isOnline()) {
+        const result = await api.post<SessionData>('/sessions/start', {
+          cardLimit: 20,
+          includeNew: true,
+          mode: 'mixed',
+          practiceType: practice,
+        });
+        if (result.ok) {
+          setSession({ ...result.data, local: false });
+          setCurrentIndex(0);
+          setFlipped(false);
+          setLoading(false);
+          return;
+        }
+        console.warn('Server session failed; falling back to local session:', result.message);
+      }
+
+      const db = await getDatabase();
+      const authUserId = useAuthStore.getState().user?.id ?? null;
+      const local = await buildLocalSession(db, authUserId, { cardLimit: 20, includeNew: true });
+      if (local) {
+        setSession(toSessionData(local));
         setCurrentIndex(0);
         setFlipped(false);
         setLoading(false);
         return;
       }
-      console.warn('Server session failed; falling back to local session:', result.message);
-    }
 
-    const db = await getDatabase();
-    const authUserId = useAuthStore.getState().user?.id ?? null;
-    const local = await buildLocalSession(db, authUserId, { cardLimit: 20, includeNew: true });
-    if (local) {
-      setSession(toSessionData(local));
-      setCurrentIndex(0);
-      setFlipped(false);
+      setError('Нет сети и нет сохранённых слов. Подключитесь к интернету, чтобы скачать словарь.');
       setLoading(false);
-      return;
-    }
-
-    setError('Нет сети и нет сохранённых слов. Подключитесь к интернету, чтобы скачать словарь.');
-    setLoading(false);
-  }, []);
+    },
+    [loadDistractorPool],
+  );
 
   useEffect(() => {
-    void startSession();
-  }, [startSession]);
+    if (practiceType === 'flip-card') {
+      void startSession('flip-card');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** F22a: примеры для cloze-карточки текущего слова (best-effort). */
+  useEffect(() => {
+    const word = session?.cards[currentIndex]?.word;
+    if (!word || practiceType !== 'cloze') return;
+    let cancelled = false;
+    api
+      .get<Example[]>(`/words/${word.id}/examples`)
+      .then((result) => {
+        if (!cancelled && result.ok) setClozeExamples(result.data);
+      })
+      .catch(() => {
+        if (!cancelled) setClozeExamples([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, currentIndex, practiceType]);
 
   const handleRate = async (rating: SrsRating) => {
     if (!session || submitting) return;
+    if (practiceType && isTrainingPractice(practiceType)) return;
     const card = session.cards[currentIndex];
     if (!card) return;
     setSubmitting(true);
@@ -218,7 +289,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
           text: 'OK',
           onPress: () => {
             setSession(null);
-            void startSession();
+            void startSession(practiceType ?? 'flip-card');
           },
         },
       ]);
@@ -226,6 +297,46 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
     }
     setCurrentIndex((i) => i + 1);
   };
+
+  /**
+   * F22a: ответ в тренировочной практике (multiple-choice, pinyin-input,
+   * …). Тренировки НЕ влияют на FSRS-прогресс, XP и очередь sync —
+   * только UI-прогресс сессии (как в web-версии).
+   */
+  const handleTrainingAnswer = useCallback(
+    (correct: boolean) => {
+      if (!session || submitting) return;
+      setSubmitting(true);
+      setLastAnswer({ xp: 0, intervalDays: 0, correct });
+      setTimeout(() => {
+        setSubmitting(false);
+        if (currentIndex + 1 >= session.cards.length) {
+          Alert.alert('Готово!', 'Сессия завершена.', [
+            {
+              text: 'OK',
+              onPress: () => {
+                setSession(null);
+                void startSession(practiceType ?? 'flip-card');
+              },
+            },
+          ]);
+          return;
+        }
+        setCurrentIndex((i) => i + 1);
+      }, 900);
+    },
+    [session, submitting, currentIndex, practiceType, startSession],
+  );
+
+  // F22a: экран выбора практики до старта сессии.
+  if (practiceType === null) {
+    return (
+      <PracticeTypeSelector
+        onStart={(t) => void startSession(t)}
+        onCancel={() => navigation.goBack()}
+      />
+    );
+  }
 
   if (loading && !session) {
     return (
@@ -243,7 +354,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
           <Text style={styles.error}>{error}</Text>
-          <Pressable style={styles.retry} onPress={startSession}>
+          <Pressable style={styles.retry} onPress={() => void startSession(practiceType)}>
             <Text style={styles.retryText}>Повторить</Text>
           </Pressable>
           <Pressable style={styles.back} onPress={() => navigation.goBack()}>
@@ -270,6 +381,13 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
 
   const card = session.cards[currentIndex]!;
   const progress = (currentIndex + 1) / session.cards.length;
+  const training = isTrainingPractice(practiceType);
+
+  // F22a: объединённый пул для дистракторов — карточки сессии + случайные.
+  const sessionWords: MobileWord[] = session.cards.map((c) => c.word);
+  const seenIds = new Set(sessionWords.map((w) => w.id));
+  const combinedPool = [...sessionWords, ...distractorPool.filter((w) => !seenIds.has(w.id))];
+  const syllablePoolPinyin = combinedPool.map((w) => w.pinyin);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -278,7 +396,7 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
       </View>
       <View style={styles.progressText}>
         <Text style={styles.progressNumber}>
-          {currentIndex + 1} / {session.cards.length}
+          {currentIndex + 1} / {session.cards.length} · {practiceLabel(practiceType)}
         </Text>
         <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
           <Text style={styles.exit}>Выйти</Text>
@@ -292,50 +410,116 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
       ) : null}
 
       {lastAnswer ? (
-        <Text style={styles.lastAnswer}>
-          +{lastAnswer.xp} XP · следующее повторение{' '}
-          {lastAnswer.intervalDays > 0 ? `через ${lastAnswer.intervalDays} дн.` : 'сегодня'}
-        </Text>
+        lastAnswer.correct !== undefined ? (
+          <Text
+            style={[styles.lastAnswer, lastAnswer.correct ? styles.feedbackOk : styles.feedbackBad]}
+          >
+            {lastAnswer.correct ? 'Верно ✓' : 'Неверно ✗'}
+          </Text>
+        ) : (
+          <Text style={styles.lastAnswer}>
+            +{lastAnswer.xp} XP · следующее повторение{' '}
+            {lastAnswer.intervalDays > 0 ? `через ${lastAnswer.intervalDays} дн.` : 'сегодня'}
+          </Text>
+        )
       ) : null}
 
-      <Pressable style={styles.card} onPress={() => setFlipped((f) => !f)} disabled={submitting}>
-        {flipped ? (
-          <View style={styles.cardBack}>
-            <Text style={styles.cardTranslation}>{card.word.translation}</Text>
-          </View>
-        ) : (
-          <View style={styles.cardFront}>
-            <Text style={styles.cardCharacter}>{card.word.character}</Text>
-            <Text style={styles.cardPinyin}>{card.word.pinyin}</Text>
-            <Text style={styles.tapHint}>Нажми, чтобы перевернуть</Text>
-          </View>
-        )}
-      </Pressable>
+      {practiceType === 'flip-card' ? (
+        <>
+          <Pressable
+            style={styles.card}
+            onPress={() => setFlipped((f) => !f)}
+            disabled={submitting}
+          >
+            {flipped ? (
+              <View style={styles.cardBack}>
+                <Text style={styles.cardTranslation}>{card.word.translation}</Text>
+              </View>
+            ) : (
+              <View style={styles.cardFront}>
+                <Text style={styles.cardCharacter}>{card.word.character}</Text>
+                <Text style={styles.cardPinyin}>{card.word.pinyin}</Text>
+                <Text style={styles.tapHint}>Нажми, чтобы перевернуть</Text>
+              </View>
+            )}
+          </Pressable>
 
-      {flipped ? (
-        <View style={styles.rateRow}>
-          {RATING_BUTTONS.map((b) => (
-            <Pressable
-              key={b.rating}
-              style={[
-                styles.rateButton,
-                { backgroundColor: b.color },
-                submitting && styles.rateDisabled,
-              ]}
-              onPress={() => void handleRate(b.rating)}
-              disabled={submitting}
-            >
-              <Text style={styles.rateText}>{b.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+          {flipped ? (
+            <View style={styles.rateRow}>
+              {RATING_BUTTONS.map((b) => (
+                <Pressable
+                  key={b.rating}
+                  style={[
+                    styles.rateButton,
+                    { backgroundColor: b.color },
+                    submitting && styles.rateDisabled,
+                  ]}
+                  onPress={() => void handleRate(b.rating)}
+                  disabled={submitting}
+                >
+                  <Text style={styles.rateText}>{b.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.rateRow}>
+              <Text style={styles.hint}>Переверни карточку и оцени свой ответ</Text>
+            </View>
+          )}
+        </>
       ) : (
-        <View style={styles.rateRow}>
-          <Text style={styles.hint}>Переверни карточку и оцени свой ответ</Text>
+        <View style={styles.practiceBody}>
+          {practiceType === 'multiple-choice' && (
+            <MultipleChoiceCard
+              word={card.word}
+              pool={combinedPool}
+              onAnswer={handleTrainingAnswer}
+            />
+          )}
+          {practiceType === 'reverse-choice' && (
+            <ReverseChoiceCard
+              word={card.word}
+              pool={combinedPool}
+              onAnswer={handleTrainingAnswer}
+            />
+          )}
+          {practiceType === 'pinyin-input' && (
+            <PinyinInputCard word={card.word} onAnswer={handleTrainingAnswer} />
+          )}
+          {practiceType === 'tone-recognition' && (
+            <ToneRecognitionCard word={card.word} onAnswer={handleTrainingAnswer} />
+          )}
+          {practiceType === 'syllable-constructor' && (
+            <SyllableConstructorCard
+              word={card.word}
+              poolPinyin={syllablePoolPinyin}
+              onAnswer={handleTrainingAnswer}
+            />
+          )}
+          {practiceType === 'cloze' && (
+            <ClozeCard word={card.word} examples={clozeExamples} onAnswer={handleTrainingAnswer} />
+          )}
         </View>
       )}
+      {training && !lastAnswer ? <View style={styles.trainingSpacer} /> : null}
     </SafeAreaView>
   );
+}
+
+/** F22a: метка практики для шапки сессии. */
+const PRACTICE_LABELS: Record<PracticeType, string> = {
+  'flip-card': 'Карточки',
+  'multiple-choice': 'Выбор перевода',
+  'reverse-choice': 'Выбор иероглифа',
+  'pinyin-input': 'Ввод пиньиня',
+  'tone-recognition': 'Тон на слух',
+  'syllable-constructor': 'Собери пиньинь',
+  cloze: 'Подстановка',
+  character_assembly: 'Собери слово',
+};
+
+function practiceLabel(type: PracticeType): string {
+  return PRACTICE_LABELS[type] ?? type;
 }
 
 const styles = StyleSheet.create({
@@ -415,6 +599,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: -8,
     marginBottom: 4,
+  },
+  feedbackOk: {
+    color: '#81C784',
+  },
+  feedbackBad: {
+    color: '#E57373',
+  },
+  practiceBody: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+  },
+  trainingSpacer: {
+    height: 8,
   },
   exit: {
     color: '#7B8497',

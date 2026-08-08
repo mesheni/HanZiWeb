@@ -1,5 +1,3 @@
-import type { Word } from '@hanzi/shared';
-
 /**
  * Fisher–Yates shuffle. Возвращает новый массив, исходный не мутирует.
  * Используем `Math.random()` — криптостойкость не нужна, важна равномерность.
@@ -33,12 +31,15 @@ function uniqueBy<T>(arr: T[], key: (t: T) => string): T[] {
  * Возвращает массив длиной 1..count, содержащий правильный ответ
  * и 3 дистрактора из пула. Если в пуле меньше 3 дистракторов, возвращает
  * столько, сколько возможно.
+ *
+ * Типы — структурные минимумы (id/translation), чтобы и полный `Word`
+ * (web), и урезанное слово из мобильной сессии проходили без кастов.
  */
-export function buildMultipleChoiceOptions(
-  correct: Word,
-  pool: Word[],
+export function buildMultipleChoiceOptions<T extends { id: string; translation: string }>(
+  correct: T,
+  pool: readonly T[],
   count = 4,
-): Word[] {
+): T[] {
   const distractors = uniqueBy(
     pool.filter((w) => w.id !== correct.id && w.translation !== correct.translation),
     (w) => w.id,
@@ -51,11 +52,11 @@ export function buildMultipleChoiceOptions(
  * Варианты для reverse-choice: пользователь видит русский перевод,
  * выбирает китайский иероглиф. Возвращает count слов (включая correct).
  */
-export function buildReverseChoiceOptions(
-  correct: Word,
-  pool: Word[],
+export function buildReverseChoiceOptions<T extends { id: string; character: string }>(
+  correct: T,
+  pool: readonly T[],
   count = 4,
-): Word[] {
+): T[] {
   const distractors = uniqueBy(
     pool.filter((w) => w.id !== correct.id && w.character !== correct.character),
     (w) => w.id,

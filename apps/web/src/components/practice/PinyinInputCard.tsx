@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
-import { pinyinSyllableMatches } from '../../utils/pinyinNormalize';
+import { pinyinSyllableMatches } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
 
 interface PinyinInputCardProps {
@@ -87,7 +87,8 @@ export default function PinyinInputCard({
           spellCheck={false}
           className={cn(
             'practice-input',
-            submitted && (matches.every(Boolean) ? 'practice-input-correct' : 'practice-input-wrong'),
+            submitted &&
+              (matches.every(Boolean) ? 'practice-input-correct' : 'practice-input-wrong'),
           )}
           placeholder="например, xǐ huān или xi3 huan1"
           value={input}
@@ -106,7 +107,12 @@ export default function PinyinInputCard({
       </div>
 
       {submitted && (
-        <div className={cn('practice-feedback', matches.every(Boolean) ? 'practice-feedback-ok' : 'practice-feedback-bad')}>
+        <div
+          className={cn(
+            'practice-feedback',
+            matches.every(Boolean) ? 'practice-feedback-ok' : 'practice-feedback-bad',
+          )}
+        >
           {matches.every(Boolean) ? (
             <>
               <Check size={14} /> Верно: {word.pinyin}

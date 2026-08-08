@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 import { useInfiniteWords } from '@/queries/words';
 import { useAuthStore } from '@/stores/authStore';
 import HandwritingPractice from '@/components/HandwritingPractice';
-import { normalizePinyin } from '@/utils/pinyinNormalize';
+import { normalizePinyin } from '@hanzi/shared';
 import type { WordListItem } from '@hanzi/shared';
 
 interface SelectedWord {
@@ -51,22 +51,15 @@ export default function HandwritingScreen() {
   // Серверные фильтры. status работает только при наличии userId
   // (listWords требует userId для фильтра по статусу прогресса).
   const statusFilter =
-    statusChip !== 'all'
-      ? (statusChip as 'new' | 'learning' | 'review' | 'graduated')
-      : undefined;
+    statusChip !== 'all' ? (statusChip as 'new' | 'learning' | 'review' | 'graduated') : undefined;
   const filters = {
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(hskLevel !== null && hskLevel > 0 ? { hskLevel } : {}),
     ...(statusFilter && userId ? { status: statusFilter } : {}),
   };
 
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-  } = useInfiniteWords(filters);
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+    useInfiniteWords(filters);
 
   const allWords: WordListItem[] = useMemo(
     () => data?.pages.flatMap((p) => p.data ?? []) ?? [],
@@ -201,11 +194,7 @@ export default function HandwritingScreen() {
             {filteredWords.map((word, idx) => {
               const isLast = idx === filteredWords.length - 1;
               return (
-                <div
-                  key={word.id}
-                  ref={isLast ? lastWordRef : null}
-                  className="handwriting-word"
-                >
+                <div key={word.id} ref={isLast ? lastWordRef : null} className="handwriting-word">
                   <div className="handwriting-word-chars">
                     {Array.from(word.character).map((char, i) => (
                       <button
@@ -228,9 +217,7 @@ export default function HandwritingScreen() {
               );
             })}
             {!isLoading && filteredWords.length === 0 && (
-              <p className="hw-empty">
-                {filtersActive ? 'Ничего не найдено' : 'Список слов пуст'}
-              </p>
+              <p className="hw-empty">{filtersActive ? 'Ничего не найдено' : 'Список слов пуст'}</p>
             )}
             {isFetchingNextPage && (
               <div className="handwriting-list-loading">

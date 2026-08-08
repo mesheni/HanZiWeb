@@ -58,17 +58,10 @@ function TypeCard({ info, isActive, isTraining, onClick }: TypeCardProps) {
         isActive && 'practice-selector-card-active',
         isTraining && 'practice-selector-card-training',
       )}
-      style={
-        isActive
-          ? { borderColor: info.color, background: info.bg }
-          : undefined
-      }
+      style={isActive ? { borderColor: info.color, background: info.bg } : undefined}
       onClick={onClick}
     >
-      <div
-        className="practice-selector-icon"
-        style={{ color: info.color, background: info.bg }}
-      >
+      <div className="practice-selector-icon" style={{ color: info.color, background: info.bg }}>
         <Icon size={20} />
       </div>
       <div className="practice-selector-label">{info.label}</div>
