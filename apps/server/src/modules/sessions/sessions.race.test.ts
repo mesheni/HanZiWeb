@@ -12,6 +12,7 @@ import { recalcFsrs } from './srs.js';
 // эквивалентно последовательному применению обоих ответов.
 
 const testRunId = Date.now();
+const nowToleranceMs = 60_000;
 let userId = '';
 let wordId = '';
 let session1 = '';
@@ -107,7 +108,9 @@ describe('recordAnswer — concurrent answers serialize without lost update (PLA
     expect(progress?.stability).toBe(second.newStability);
     expect(progress?.difficulty).toBe(second.newDifficulty);
     expect(progress?.state).toBe(second.newState);
-    expect(progress?.lastReviewDate?.toISOString()).toBe(answeredAt.toISOString());
+    // F04: lastReviewDate — серверное время, а не клиентский answeredAt
+    // (клиентское время используется только для elapsed в FSRS).
+    expect(Math.abs(progress!.lastReviewDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
 
     // Каждый ответ попал в свою сессию ровно один раз.
     const [s1, s2] = await Promise.all([
@@ -116,8 +119,12 @@ describe('recordAnswer — concurrent answers serialize without lost update (PLA
     ]);
     expect(s1?.cardsCompleted).toBe(1);
     expect(s2?.cardsCompleted).toBe(1);
-    const answers1 = await prisma.sessionAnswer.findMany({ where: { sessionId: session1, wordId } });
-    const answers2 = await prisma.sessionAnswer.findMany({ where: { sessionId: session2, wordId } });
+    const answers1 = await prisma.sessionAnswer.findMany({
+      where: { sessionId: session1, wordId },
+    });
+    const answers2 = await prisma.sessionAnswer.findMany({
+      where: { sessionId: session2, wordId },
+    });
     expect(answers1).toHaveLength(1);
     expect(answers2).toHaveLength(1);
   });
