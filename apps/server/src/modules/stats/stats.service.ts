@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { deckAccessWhere } from '../../lib/deckAccess.js';
+import type { Prisma } from '@prisma/client';
 import {
   DAILY_GOAL_DEFAULT,
   PROGRESS_EXPORT_VERSION,
@@ -295,9 +296,7 @@ export function daysBetweenKeys(a: string, b: string): number {
   const yb = Number(pb[0]);
   const mb = Number(pb[1]);
   const db = Number(pb[2]);
-  return Math.round(
-    (Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86_400_000,
-  );
+  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86_400_000);
 }
 
 /**
@@ -552,10 +551,7 @@ export async function getActivityData(userId: string, year: number, month?: numb
  * а пустая колода визуально ничтожна. `learnedWords` ограничивается
  * `totalWords` на случай рассинхрона данных.
  */
-export function computeDeckProgressPercentage(
-  totalWords: number,
-  learnedWords: number,
-): number {
+export function computeDeckProgressPercentage(totalWords: number, learnedWords: number): number {
   if (totalWords <= 0) return 0;
   const safe = Math.max(0, Math.min(learnedWords, totalWords));
   return Math.round((safe / totalWords) * 100);
@@ -657,61 +653,101 @@ export async function getStudyMap(userId: string): Promise<StudyMapResponse> {
 }
 
 /**
- * Computes and updates the user's daily streak based on lastActiveDate.
- * Called every time the user is active today (e.g. visits the app).
+ * Чистая функция: считает daily streak по состоянию `User` и моменту `now`.
+ * НЕ пишет в БД — вычисляет, каким был бы стрик при «касании» активности.
  *
- * Logic:
- * - lastActiveDate is null (never active)      → streak = 1, set lastActiveDate = today
- * - today === lastActiveDate (already counted)  → streak unchanged, no DB update
- * - today === lastActiveDate + 1 (consecutive)  → streak = currentStreak + 1
- * - gap > 1 day (streak broken)                 → streak = 1 (new streak)
+ * Логика:
+ * - lastActiveDate null (никогда не был активен) → streak = 1, якорь = сегодня
+ * - today === lastActiveDate (уже засчитан)      → streak без изменений
+ * - today === lastActiveDate + 1 (подряд)        → streak = currentStreak + 1
+ * - разрыв > 1 дня (стрик сломан)                → streak = 1 (новый стрик)
+ * - lastActiveDate в «будущем» (аномалия/гонка)  → без изменений (не откатываем)
+ *
+ * Бакетируем через локальный день пользователя, а не UTC-полночь
+ * (PLAN_Features_v0.4 §24): для не-UTC юзеров прежняя логика сдвигала
+ * «сегодня» на часы и ломала ожидаемый «consecutive local days».
+ */
+export function computeStreak(
+  currentStreak: number,
+  lastActiveDate: Date | null,
+  now: Date,
+  timezone: string,
+): { currentStreak: number; lastActiveDate: Date } {
+  const todayKey = getLocalDayKey(now, timezone);
+  if (lastActiveDate) {
+    const lastKey = getLocalDayKey(lastActiveDate, timezone);
+    if (lastKey === todayKey) {
+      // Уже засчитан сегодня — без изменений.
+      return { currentStreak, lastActiveDate };
+    }
+    // Разница в локальных днях (а не UTC-днях). Парсим ключи и считаем
+    // календарные дни — корректно даже если между двумя днями есть
+    // DST-переход (24 vs 23/25 часов физического времени).
+    const dayDiff = daysBetweenKeys(lastKey, todayKey);
+    // Отрицательная разница = lastActiveDate в будущем (гонка/аномалия):
+    // не откатываем якорь назад (максимум-семантика, PLANCorrection #16).
+    if (dayDiff < 0) return { currentStreak, lastActiveDate };
+    return {
+      currentStreak: dayDiff === 1 ? currentStreak + 1 : 1,
+      lastActiveDate: localMidnightUtc(now, timezone),
+    };
+  }
+  // Никогда не был активен — начинаем с 1.
+  return { currentStreak: 1, lastActiveDate: localMidnightUtc(now, timezone) };
+}
+
+/**
+ * Читает текущий стрик пользователя и вычисляет его на момент `now`
+ * БЕЗ записи в БД. Read-only — просмотр статистики/дашборда не должен
+ * засчитываться как активность (F12: «просмотр дашборда обновлял
+ * lastActiveDate», а live-ответы — нет).
  */
 export async function getUserStreak(userId: string, now: Date = new Date()) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { currentStreak: true, lastActiveDate: true, timezone: true },
   });
+  return computeStreak(
+    user?.currentStreak ?? 0,
+    user?.lastActiveDate ?? null,
+    now,
+    user?.timezone ?? 'UTC',
+  );
+}
 
-  const currentStreak = user?.currentStreak ?? 0;
-  const rawLastActive = user?.lastActiveDate ?? null;
-  const tz = user?.timezone ?? 'UTC';
-
-  // Бакетируем через локальный день пользователя, а не UTC-полночь.
-  // PLAN_Features_v0.4 §24: для не-UTC юзеров прежняя логика сдвигала
-  // «сегодня» на часы и ломала ожидаемый «consecutive local days».
-  const todayKey = getLocalDayKey(now, tz);
-  const lastKey = rawLastActive ? getLocalDayKey(rawLastActive, tz) : null;
-
-  if (lastKey === todayKey) {
-    // Уже засчитан сегодня — без апдейта.
-    return { currentStreak, lastActiveDate: rawLastActive };
-  }
-
-  let newStreak: number;
-  if (!lastKey) {
-    // Никогда не был активен — начинаем с 1.
-    newStreak = 1;
-  } else {
-    // Разница в локальных днях (а не UTC-днях). Парсим ключи и считаем
-    // календарные дни — корректно даже если между двумя днями есть
-    // DST-переход (24 vs 23/25 часов физического времени).
-    const dayDiff = daysBetweenKeys(lastKey, todayKey);
-    newStreak = dayDiff === 1 ? currentStreak + 1 : 1;
-  }
-
-  // Сохраняем локальную полночь в tz как UTC — это якорь, привязанный
-  // к календарному дню, и при смене tz пользователем старые данные
-  // остаются консистентными (сравнение идёт по ключам).
-  const persistedDate = localMidnightUtc(now, tz);
-  await prisma.user.update({
+/**
+ * «Касание» активности: пересчитывает стрик от текущего состояния и
+ * ПЕРСИСТИТ `currentStreak` + `lastActiveDate`. Вызывается только из
+ * путей реальной активности — live-ответов (`recordAnswer`) и
+ * офлайн-flush (`processSync`), а не из read-эндпоинтов (F12).
+ *
+ * Запись идёт через `updateMany` с монотонным условием (как в sync-пути,
+ * PLANCorrection #16): при конкурентной активности с более поздним
+ * `lastActiveDate` запись не откатывает якорь назад.
+ *
+ * Якорь = локальная полночь в tz как UTC — привязан к календарному дню,
+ * и при смене tz пользователем старые данные остаются консистентными
+ * (сравнение идёт по ключам).
+ */
+export async function touchStreak(
+  db: Pick<Prisma.TransactionClient, 'user'>,
+  userId: string,
+  now: Date = new Date(),
+) {
+  const user = await db.user.findUnique({
     where: { id: userId },
-    data: {
-      currentStreak: newStreak,
-      lastActiveDate: persistedDate,
-    },
+    select: { currentStreak: true, lastActiveDate: true, timezone: true },
   });
-
-  return { currentStreak: newStreak, lastActiveDate: persistedDate.toISOString() };
+  if (!user) return { currentStreak: 0, lastActiveDate: null };
+  const next = computeStreak(user.currentStreak, user.lastActiveDate, now, user.timezone ?? 'UTC');
+  await db.user.updateMany({
+    where: {
+      id: userId,
+      OR: [{ lastActiveDate: null }, { lastActiveDate: { lt: next.lastActiveDate } }],
+    },
+    data: { currentStreak: next.currentStreak, lastActiveDate: next.lastActiveDate },
+  });
+  return next;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -723,8 +759,7 @@ export async function getUserStreak(userId: string, now: Date = new Date()) {
  * с полями `ProgressRecordSchema` (camelCase) и используются
  * парсером в `parseProgressCsv` (только на стороне клиента/тестов).
  */
-export const PROGRESS_CSV_HEADER =
-  'wordId,state,stability,difficulty,reps,dueDate,lastReviewDate';
+export const PROGRESS_CSV_HEADER = 'wordId,state,stability,difficulty,reps,dueDate,lastReviewDate';
 
 /**
  * Экранирует значение для CSV-строки. Если значение содержит
@@ -788,9 +823,7 @@ export function parseProgressCsv(csv: string): ProgressRecord[] {
   const lines = csv.split(/\r?\n/).filter((l) => l.length > 0);
   if (lines.length === 0) return [];
   if (lines[0] !== PROGRESS_CSV_HEADER) {
-    throw new Error(
-      `CSV header mismatch: expected "${PROGRESS_CSV_HEADER}", got "${lines[0]}"`,
-    );
+    throw new Error(`CSV header mismatch: expected "${PROGRESS_CSV_HEADER}", got "${lines[0]}"`);
   }
 
   const out: ProgressRecord[] = [];

@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import { recalcFsrs } from '../sessions/srs.js';
 import { computeElapsedDays, sanitizeClientTimestamp } from '../sessions/timePolicy.js';
 import { markSessionCompleted } from '../sessions/sessions.service.js';
+import { touchStreak } from '../stats/stats.service.js';
 import * as achievementsService from '../achievements/achievements.service.js';
 import type { SyncRequest, SyncResponse, SyncResult, SyncOutcome } from '@hanzi/shared';
 
@@ -85,7 +86,9 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
 
         try {
           const txResult = await prisma.$transaction(
-            async (tx): Promise<
+            async (
+              tx,
+            ): Promise<
               | { kind: 'applied'; createdHere: boolean; result: SyncResult }
               | { kind: 'rejected' }
               | { kind: 'stale' }
@@ -201,17 +204,13 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
                 }
               }
 
-              // Стрик/активность (PLANCorrection #16): lastActiveDate =
-              // max(lastActiveDate, серверное «сейчас») — монотонная
-              // идемпотентная операция, безопасна при повторных flush
-              // (F04: серверное время, не клиентский timestamp).
-              await tx.user.updateMany({
-                where: {
-                  id: userId,
-                  OR: [{ lastActiveDate: null }, { lastActiveDate: { lt: serverNow } }],
-                },
-                data: { lastActiveDate: serverNow },
-              });
+              // Стрик/активность (PLANCorrection #16, F12): пересчёт и
+              // запись `currentStreak` + `lastActiveDate` монотонной
+              // операцией (серверное время, не клиентский timestamp —
+              // F04; идемпотентно при повторных flush). До F12 здесь
+              // бампался только lastActiveDate, а currentStreak оставался
+              // протухшим до «касания» дашбордом.
+              await touchStreak(tx, userId, serverNow);
 
               return {
                 kind: 'applied',

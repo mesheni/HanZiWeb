@@ -4,6 +4,7 @@ import { computeElapsedDays, sanitizeClientTimestamp } from './timePolicy.js';
 import type { Prisma } from '@prisma/client';
 import { recalcFsrs } from './srs.js';
 import * as achievementsService from '../achievements/achievements.service.js';
+import { touchStreak } from '../stats/stats.service.js';
 import { wordIdsWithAnyTag } from '../tags/tags.service.js';
 import {
   buildProgressWhereForFilters,
@@ -390,6 +391,10 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
     });
     // F03: завершение сессии — по достижении cardsTotal ставим completedAt.
     await markSessionCompleted(prisma, input.sessionId, session.cardsTotal, new Date());
+    // F12: live-ответ (в т.ч. тренировочный) — это активность: стрик
+    // засчитывается, как в sync-пути. До фикса lastActiveDate трогался
+    // только просмотром дашборда.
+    await touchStreak(prisma, userId, new Date());
     return {
       wordId: input.wordId,
       newStability: progress.stability,
@@ -511,6 +516,12 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
         // F03: завершение сессии — атомарно с ответом: если это был
         // последний ответ (cardsCompleted >= cardsTotal), ставим completedAt.
         await markSessionCompleted(tx, input.sessionId, session.cardsTotal, serverNow);
+
+        // F12: live-ответ — это активность: стрик пересчитывается и
+        // персистится атомарно с ответом (как в sync-пути). До фикса
+        // lastActiveDate трогался только просмотром дашборда, а live-
+        // ответы его не обновляли (асимметрия live/offline стрика).
+        await touchStreak(tx, userId, serverNow);
 
         return { newStability, newDifficulty, newState, newDueDate, intervalDays };
       });

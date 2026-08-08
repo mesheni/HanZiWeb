@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js';
 import { processSync } from './sync.service.js';
 import { recalcFsrs } from '../sessions/srs.js';
 import * as achievementsService from '../achievements/achievements.service.js';
+import { getLocalDayKey } from '../stats/stats.service.js';
 import type { SyncRequest } from '@hanzi/shared';
 
 // Офлайн-путь /sync (PLANCorrection #15, #16, F04, F05):
@@ -93,7 +94,9 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
         where: { userId_wordId: { userId: uid, wordId: wid } },
       });
       // F04: lastReviewDate — серверное время, а не клиентский timestamp.
-      expect(Math.abs(progress!.lastReviewDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
+      expect(Math.abs(progress!.lastReviewDate!.getTime() - Date.now())).toBeLessThan(
+        nowToleranceMs,
+      );
       expect(progress?.reps).toBe(2);
     } finally {
       await prisma.user.deleteMany({ where: { id: uid } });
@@ -118,16 +121,19 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
       expect(res.results).toHaveLength(1);
 
       // Heatmap-сырьё: SessionAnswer с answeredAt = серверное время (F04).
-      const answers = await prisma.sessionAnswer.findMany({ where: { sessionId: sid, wordId: wid } });
+      const answers = await prisma.sessionAnswer.findMany({
+        where: { sessionId: sid, wordId: wid },
+      });
       expect(answers).toHaveLength(1);
       expect(Math.abs(answers[0]!.answeredAt.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
 
       const session = await prisma.session.findUnique({ where: { id: sid } });
       expect(session?.cardsCompleted).toBe(1);
 
-      // Стрик-якорь: lastActiveDate = серверное «сейчас» (F04).
+      // Стрик-якорь: lastActiveDate = сегодня в локальном дне юзера (F04/F12 —
+      // серверное время; якорь локальной полуночи, как в getUserStreak).
       const user = await prisma.user.findUnique({ where: { id: uid } });
-      expect(Math.abs(user!.lastActiveDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
+      expect(getLocalDayKey(user!.lastActiveDate!, 'UTC')).toBe(getLocalDayKey(new Date(), 'UTC'));
 
       // Ачивки проверяются best-effort по сессии с записанным ответом.
       expect(achSpy).toHaveBeenCalledTimes(1);
@@ -156,7 +162,7 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
       expect(res.results).toHaveLength(1);
 
       const user = await prisma.user.findUnique({ where: { id: uid } });
-      expect(Math.abs(user!.lastActiveDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
+      expect(getLocalDayKey(user!.lastActiveDate!, 'UTC')).toBe(getLocalDayKey(new Date(), 'UTC'));
     } finally {
       await prisma.user.deleteMany({ where: { id: uid } });
       await prisma.word.deleteMany({ where: { id: wid } });
@@ -174,7 +180,10 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
     const timestamp = new Date('2026-07-15T10:00:00.000Z');
 
     try {
-      const res = await processSync(attacker, mkSyncRequest(wid, victimSession, timestamp.toISOString()));
+      const res = await processSync(
+        attacker,
+        mkSyncRequest(wid, victimSession, timestamp.toISOString()),
+      );
       // Свой прогресс применён.
       expect(res.results).toHaveLength(1);
       const progress = await prisma.userWordProgress.findUnique({
@@ -192,7 +201,9 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
 
       // Собственная активность атакующего всё равно засчитана (серверное время).
       const attackerUser = await prisma.user.findUnique({ where: { id: attacker } });
-      expect(Math.abs(attackerUser!.lastActiveDate!.getTime() - Date.now())).toBeLessThan(nowToleranceMs);
+      expect(getLocalDayKey(attackerUser!.lastActiveDate!, 'UTC')).toBe(
+        getLocalDayKey(new Date(), 'UTC'),
+      );
     } finally {
       await prisma.user.deleteMany({ where: { id: attacker } });
       await prisma.user.deleteMany({ where: { id: victim } });
