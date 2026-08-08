@@ -165,3 +165,72 @@ describe('GET /stats/activity — валидация year/month (PLANCorrection 
     }
   });
 });
+
+describe('POST /stats/reset-progress — полный сброс прогресса (F16)', () => {
+  let resetUserId = '';
+  let resetWordId = '';
+
+  beforeAll(async () => {
+    const u = await prisma.user.create({
+      data: {
+        email: `reset-${testRunId}@hanzi.local`,
+        role: 'USER',
+        xp: 120,
+        currentStreak: 7,
+        lastActiveDate: new Date(),
+      },
+    });
+    resetUserId = u.id;
+    const w = await prisma.word.create({
+      data: { character: `清${testRunId}`, pinyin: 'qīng', translation: 'reset' },
+    });
+    resetWordId = w.id;
+    await prisma.userWordProgress.create({
+      data: { userId: resetUserId, wordId: resetWordId, state: 'learning', dueDate: new Date() },
+    });
+    const s = await prisma.session.create({
+      data: { userId: resetUserId, cardsTotal: 1, mode: 'mixed', practiceType: 'flip-card' },
+    });
+    await prisma.sessionAnswer.create({
+      data: { sessionId: s.id, wordId: resetWordId, rating: 3, answeredAt: new Date() },
+    });
+    await prisma.userAchievement.create({ data: { userId: resetUserId, type: 'streak_7' } });
+    await prisma.clozeProgress.create({
+      data: { userId: resetUserId, wordId: resetWordId, exampleId: 'example-1' },
+    });
+  });
+
+  afterAll(async () => {
+    if (resetUserId) await prisma.user.deleteMany({ where: { id: resetUserId } });
+    if (resetWordId) await prisma.word.deleteMany({ where: { id: resetWordId } });
+  });
+
+  it('очищает прогресс, ClozeProgress и достижения; сбрасывает xp/стрик', async () => {
+    const app = await buildTestApp();
+    try {
+      const token = await issueAccessToken(resetUserId);
+      const res = await app.inject({
+        method: 'POST',
+        url: '/stats/reset-progress',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().success).toBe(true);
+
+      const user = await prisma.user.findUnique({ where: { id: resetUserId } });
+      expect(user?.xp).toBe(0);
+      expect(user?.currentStreak).toBe(0);
+      expect(user?.lastActiveDate).toBeNull();
+      expect(await prisma.userWordProgress.count({ where: { userId: resetUserId } })).toBe(0);
+      expect(
+        await prisma.sessionAnswer.count({ where: { session: { userId: resetUserId } } }),
+      ).toBe(0);
+      expect(await prisma.session.count({ where: { userId: resetUserId } })).toBe(0);
+      // F16: до фикса достижения и cloze-прогресс переживали сброс.
+      expect(await prisma.userAchievement.count({ where: { userId: resetUserId } })).toBe(0);
+      expect(await prisma.clozeProgress.count({ where: { userId: resetUserId } })).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+});

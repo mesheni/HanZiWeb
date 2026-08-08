@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Trash2, RotateCcw, RefreshCw, DatabaseZap, Bell, BellOff, Target, Moon, Sun } from 'lucide-react';
+import {
+  Trash2,
+  RotateCcw,
+  RefreshCw,
+  DatabaseZap,
+  Bell,
+  BellOff,
+  Target,
+  Moon,
+  Sun,
+} from 'lucide-react';
 import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
 import { Button } from '@/components/ui';
 import ProgressExportImport from '@/components/ProgressExportImport';
@@ -28,7 +38,9 @@ async function fetchAllWords() {
   const limit = 100;
 
   while (true) {
-    const page = await apiGet<PaginatedResponse<WordListItem>>(`/words?limit=${limit}&offset=${offset}`);
+    const page = await apiGet<PaginatedResponse<WordListItem>>(
+      `/words?limit=${limit}&offset=${offset}`,
+    );
     all.push(...page.data);
 
     if (page.data.length < limit || offset + limit >= page.pagination.total) {
@@ -47,6 +59,8 @@ export default function SettingsScreen() {
   const [resetLoading, setResetLoading] = useState(false);
   const [refreshLoading, setRefreshLoading] = useState(false);
   const [reindexLoading, setReindexLoading] = useState(false);
+  // F16: сброс требует подтверждения — одно нажатие не стирает прогресс.
+  const [confirmReset, setConfirmReset] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const [pushSupported] = useState(() => 'serviceWorker' in navigator && 'PushManager' in window);
   const [subscribed, setSubscribed] = useState(false);
@@ -124,7 +138,21 @@ export default function SettingsScreen() {
     }
   };
 
+  // F16: «взведённое» подтверждение живёт 5 секунд — случайно
+  // оставленная кнопка не сработает позже.
+  useEffect(() => {
+    if (!confirmReset) return;
+    const t = setTimeout(() => setConfirmReset(false), 5000);
+    return () => clearTimeout(t);
+  }, [confirmReset]);
+
   const handleResetLocalData = async () => {
+    // F16: первое нажатие только взводит подтверждение.
+    if (!confirmReset) {
+      setConfirmReset(true);
+      return;
+    }
+    setConfirmReset(false);
     setResetLoading(true);
     try {
       await apiPost('/stats/reset-progress');
@@ -357,8 +385,8 @@ export default function SettingsScreen() {
               <div className="settings-card-titles">
                 <div className="settings-card-title">Ежедневная цель</div>
                 <div className="settings-card-description">
-                  Сколько ревью в день вы хотите выполнять. Используется в кольцевом
-                  прогрессе на главной странице.
+                  Сколько ревью в день вы хотите выполнять. Используется в кольцевом прогрессе на
+                  главной странице.
                 </div>
               </div>
             </div>
@@ -416,18 +444,40 @@ export default function SettingsScreen() {
 
           <div className="settings-card-body">
             <div className="settings-card-body--right">
-              <Button variant="secondary" loading={refreshLoading} onClick={handleRefreshWordsCache}>
+              <Button
+                variant="secondary"
+                loading={refreshLoading}
+                onClick={handleRefreshWordsCache}
+              >
                 <RefreshCw size={16} />
                 Обновить кэш слов
               </Button>
-              <Button variant="secondary" loading={reindexLoading} onClick={handleReindexDictionary}>
+              <Button
+                variant="secondary"
+                loading={reindexLoading}
+                onClick={handleReindexDictionary}
+              >
                 <DatabaseZap size={16} />
                 Переиндексировать словарь
               </Button>
               <Button variant="danger" loading={resetLoading} onClick={handleResetLocalData}>
                 <RotateCcw size={16} />
-                Сбросить данные
+                {confirmReset ? 'Точно сбросить?' : 'Сбросить данные'}
               </Button>
+              {confirmReset && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmReset(false)}>
+                    Отмена
+                  </Button>
+                  <p
+                    className="settings-card-description"
+                    style={{ color: 'var(--tone-4)', marginTop: 8 }}
+                  >
+                    Будет удалён весь прогресс на сервере и на устройстве (включая достижения).
+                    Действие необратимо.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </section>

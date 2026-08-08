@@ -504,6 +504,10 @@ export async function resetProgress(userId: string) {
     prisma.sessionAnswer.deleteMany({ where: { session: { userId } } }),
     prisma.session.deleteMany({ where: { userId } }),
     prisma.userWordProgress.deleteMany({ where: { userId } }),
+    // F16: «полный» сброс не чистил cloze-статистику и достижения —
+    // бейджи и ClozeProgress переживали сброс прогресса.
+    prisma.clozeProgress.deleteMany({ where: { userId } }),
+    prisma.userAchievement.deleteMany({ where: { userId } }),
     prisma.user.update({
       where: { id: userId },
       data: {
