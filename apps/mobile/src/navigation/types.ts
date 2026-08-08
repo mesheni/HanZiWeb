@@ -4,6 +4,10 @@ export type RootStackParamList = {
   Study: undefined;
   Library: undefined;
   Stats: undefined;
+  ReadingList: undefined;
+  ReadingText: { id: string; title: string };
+  Tests: undefined;
+  Settings: undefined;
 };
 
 export type TabParamList = {

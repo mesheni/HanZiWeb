@@ -7,6 +7,10 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { StudyScreen } from '../screens/StudyScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { StatsScreen } from '../screens/StatsScreen';
+import { ReadingListScreen } from '../screens/ReadingListScreen';
+import { ReadingTextScreen } from '../screens/ReadingTextScreen';
+import { TestsScreen } from '../screens/TestsScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { useAuthStore } from '../bootstrap';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -60,6 +64,10 @@ export function RootNavigator(): React.ReactElement {
               component={StudyScreen}
               options={{ presentation: 'modal' }}
             />
+            <RootStack.Screen name="ReadingList" component={ReadingListScreen} />
+            <RootStack.Screen name="ReadingText" component={ReadingTextScreen} />
+            <RootStack.Screen name="Tests" component={TestsScreen} />
+            <RootStack.Screen name="Settings" component={SettingsScreen} />
           </>
         ) : (
           <RootStack.Screen name="Login" component={LoginScreen} />

@@ -39,14 +39,10 @@ export function HomeScreen(): React.ReactElement {
 
   useEffect(() => {
     void loadDashboard();
-    void getSync()
-      .pendingCount()
-      .then(setPendingCount);
+    void getSync().pendingCount().then(setPendingCount);
   }, []);
 
-  const progress = data
-    ? Math.min(1, data.todayReviews / Math.max(1, data.dailyGoal))
-    : 0;
+  const progress = data ? Math.min(1, data.todayReviews / Math.max(1, data.dailyGoal)) : 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -93,12 +89,7 @@ export function HomeScreen(): React.ReactElement {
                 </Text>
               </View>
               <View style={styles.progressTrack}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${Math.round(progress * 100)}%` },
-                  ]}
-                />
+                <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
               </View>
               {data.todayReviews >= data.dailyGoal ? (
                 <Text style={styles.goalReached}>✓ Цель на сегодня достигнута</Text>
@@ -115,21 +106,38 @@ export function HomeScreen(): React.ReactElement {
 
             {pendingCount > 0 ? (
               <View style={styles.syncCard}>
-                <Text style={styles.syncText}>
-                  В очереди синхронизации: {pendingCount}
-                </Text>
+                <Text style={styles.syncText}>В очереди синхронизации: {pendingCount}</Text>
                 <Text style={styles.syncHint}>
                   Синхронизируется автоматически при появлении сети.
                 </Text>
               </View>
             ) : null}
 
-            <Pressable
-              style={styles.startButton}
-              onPress={() => navigation.navigate('Study')}
-            >
+            <Pressable style={styles.startButton} onPress={() => navigation.navigate('Study')}>
               <Text style={styles.startButtonText}>Начать тренировку</Text>
             </Pressable>
+
+            {/* F22c: входы в разделы чтение/тесты/настройки */}
+            <View style={styles.featureGrid}>
+              <Pressable
+                style={styles.featureCard}
+                onPress={() => navigation.navigate('ReadingList')}
+              >
+                <Text style={styles.featureEmoji}>📖</Text>
+                <Text style={styles.featureLabel}>Чтение</Text>
+                <Text style={styles.featureDesc}>Тексты по уровням HSK</Text>
+              </Pressable>
+              <Pressable style={styles.featureCard} onPress={() => navigation.navigate('Tests')}>
+                <Text style={styles.featureEmoji}>📝</Text>
+                <Text style={styles.featureLabel}>Тесты HSK</Text>
+                <Text style={styles.featureDesc}>Проверь свои знания</Text>
+              </Pressable>
+              <Pressable style={styles.featureCard} onPress={() => navigation.navigate('Settings')}>
+                <Text style={styles.featureEmoji}>⚙️</Text>
+                <Text style={styles.featureLabel}>Настройки</Text>
+                <Text style={styles.featureDesc}>Цель, зона, сброс</Text>
+              </Pressable>
+            </View>
           </>
         ) : null}
       </ScrollView>
@@ -303,5 +311,33 @@ const styles = StyleSheet.create({
     color: '#0C0E16',
     fontSize: 18,
     fontWeight: '700',
+  },
+  featureGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+    marginTop: 4,
+  },
+  featureCard: {
+    width: '50%',
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  featureEmoji: {
+    fontSize: 22,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  featureLabel: {
+    color: '#E8EAED',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  featureDesc: {
+    color: '#7B8497',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 2,
   },
 });
