@@ -1,10 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import type { ReadingTextDetail, ReadingTextListItem, WordState } from '@hanzi/shared';
 
-export async function listTexts(
-  userId: string,
-  hskLevel?: number,
-): Promise<ReadingTextListItem[]> {
+export async function listTexts(userId: string, hskLevel?: number): Promise<ReadingTextListItem[]> {
   const texts = await prisma.readingText.findMany({
     where: hskLevel !== undefined ? { hskLevel } : {},
     orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
@@ -51,20 +48,22 @@ export async function getText(userId: string, textId: string): Promise<ReadingTe
   });
 
   const wordIds = tokens.map((t) => t.wordId);
-  const progress = wordIds.length > 0
-    ? await prisma.userWordProgress.findMany({
-        where: { userId, wordId: { in: wordIds } },
-        select: { wordId: true, state: true },
-      })
-    : [];
+  const progress =
+    wordIds.length > 0
+      ? await prisma.userWordProgress.findMany({
+          where: { userId, wordId: { in: wordIds } },
+          select: { wordId: true, state: true },
+        })
+      : [];
   const stateMap = new Map(progress.map((p) => [p.wordId, p.state as WordState]));
 
-  const priorities = wordIds.length > 0
-    ? await prisma.userWordPriority.findMany({
-        where: { userId, wordId: { in: wordIds } },
-        select: { wordId: true },
-      })
-    : [];
+  const priorities =
+    wordIds.length > 0
+      ? await prisma.userWordPriority.findMany({
+          where: { userId, wordId: { in: wordIds } },
+          select: { wordId: true },
+        })
+      : [];
   const prioritySet = new Set(priorities.map((p) => p.wordId));
 
   const readProgress = await prisma.userReadingProgress.findUnique({
@@ -126,7 +125,12 @@ export async function markRead(userId: string, textId: string): Promise<void> {
     where: { id: textId },
     select: { id: true },
   });
-  if (!text) return;
+  // F14: до фикса несуществующий текст «отмечался прочитанным» молча
+  // (return без ошибки) — клиент видел success, а прогресс не создавался.
+  // Теперь 404 NOT_FOUND, как в GET /texts/:id.
+  if (!text) {
+    throw Object.assign(new Error('Text not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
 
   await prisma.userReadingProgress.upsert({
     where: { userId_textId: { userId, textId } },
