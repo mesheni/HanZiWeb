@@ -104,10 +104,94 @@ let dbPromise: Promise<RxDatabase<DbCollections>> | null = null;
 function deleteIndexedDb(name: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(name);
-    request.onerror = () => reject(request.error ?? new Error(`Failed to delete IndexedDB ${name}`));
+    request.onerror = () =>
+      reject(request.error ?? new Error(`Failed to delete IndexedDB ${name}`));
     request.onsuccess = () => resolve();
     request.onblocked = () => resolve();
   });
+}
+
+/**
+ * F19: решение о «сбросе» локальной базы принимается только при
+ * несовместимости схемы (коллекции изменились, версия БД выше).
+ * Любая другая ошибка инициализации (quota, private mode, транзиентная)
+ * НЕ должна стирать базу — иначе теряются pending-изменения и локальный
+ * прогресс, которые существуют только на устройстве.
+ */
+export function isSchemaMismatchError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'VersionError' || error.name === 'SchemaError';
+  }
+  const err = error as { code?: string; name?: string; message?: string };
+  const code = err.code ?? '';
+  const name = err.name ?? '';
+  const message = err.message ?? '';
+  return code === 'DB_SCHEMA_MISMATCH' || /schema|version error/i.test(`${name} ${message}`);
+}
+
+function openIndexedDb(name: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name);
+    request.onerror = () => reject(request.error ?? new Error(`Failed to open IndexedDB ${name}`));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+function getAllFromStore(store: IDBObjectStore): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const request = store.getAll();
+    request.onerror = () => reject(request.error ?? new Error('Failed to read IndexedDB store'));
+    request.onsuccess = () => resolve(request.result as unknown[]);
+  });
+}
+
+/**
+ * F19: перед разрушительным rebuild читает коллекции, которые
+ * существуют только локально — очередь pending-изменений и зеркало
+ * прогресса. Словарь words — серверный контент, перекачивается заново,
+ * его спасать не нужно. Если чтение падает (например, хранилище
+ * повреждено) — возвращаем пустые данные, не блокируя восстановление.
+ */
+async function rescueLocalData(): Promise<Record<string, unknown[]>> {
+  const rescued: Record<string, unknown[]> = {};
+  try {
+    const db = await openIndexedDb('hanzi');
+    try {
+      const tx = db.transaction(['pending_changes', 'progress'], 'readonly');
+      for (const name of ['pending_changes', 'progress'] as const) {
+        try {
+          rescued[name] = await getAllFromStore(tx.objectStore(name));
+        } catch {
+          rescued[name] = [];
+        }
+      }
+    } finally {
+      db.close();
+    }
+  } catch {
+    // База недоступна для чтения — rebuild всё равно нужен.
+  }
+  return rescued;
+}
+
+async function restoreLocalData(
+  db: RxDatabase<DbCollections>,
+  rescued: Record<string, unknown[]>,
+): Promise<void> {
+  try {
+    const pending = rescued['pending_changes'] ?? [];
+    if (pending.length > 0) {
+      await db.pending_changes.bulkInsert(pending as never[]);
+    }
+    const progress = rescued['progress'] ?? [];
+    if (progress.length > 0) {
+      await db.progress.bulkInsert(progress as ProgressDoc[]);
+    }
+  } catch (error) {
+    // Документы, не прошедшие валидацию новой схемы, теряются
+    // выборочно — не блокируем запуск из-за одного битого документа.
+    console.warn('Failed to restore local data after schema rebuild:', error);
+  }
 }
 
 async function createDatabase(): Promise<RxDatabase<DbCollections>> {
@@ -168,14 +252,22 @@ export async function initDb(): Promise<RxDatabase<DbCollections>> {
     try {
       dbInstance = await createDatabase();
       return dbInstance;
-    } catch {
+    } catch (error) {
       dbInstance = null;
 
-      // Schema mismatch or duplicate local database can leave old collections behind.
-      // Clear the local database and retry once with a clean slate.
+      // F19: стираем локальную базу ТОЛЬКО при несовместимости схемы —
+      // тогда rebuild неизбежен. Прочие ошибки пробрасываем без удаления:
+      // pending-изменения и прогресс переживают транзиентный сбой.
+      if (!isSchemaMismatchError(error)) throw error;
+
+      // Schema mismatch: старые коллекции не открываются новой схемой.
+      // Сначала спасаем данные, существующие только локально (F19),
+      // затем сбрасываем базу и пересоздаём с чистого листа.
+      const rescued = await rescueLocalData();
       await deleteIndexedDb('hanzi');
 
       dbInstance = await createDatabase();
+      await restoreLocalData(dbInstance, rescued);
       return dbInstance;
     } finally {
       dbPromise = null;
