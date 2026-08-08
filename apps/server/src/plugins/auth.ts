@@ -108,17 +108,28 @@ async function authPlugin(fastify: FastifyInstance): Promise<void> {
       if (!authHeader?.startsWith('Bearer ')) return;
 
       const token = authHeader.slice(7);
+      let payload: JwtPayload;
       try {
-        const payload = jwt.verify(token, config.JWT_ACCESS_SECRET, {
+        payload = jwt.verify(token, config.JWT_ACCESS_SECRET, {
           algorithms: ['HS256'],
         }) as JwtPayload;
-        // Для optional-варианта pv-проверку не делаем: если токен
-        // просрочен по pv, мы просто оставляем request.userId = ''
-        // и не считаем пользователя залогиненным.
-        request.userId = payload.userId;
       } catch {
         // token invalid or expired — proceed without userId
+        return;
       }
+
+      // F10: revoked-токен НЕ проходит optional-auth. Раньше pv не
+      // сверялся вовсе — access-токен, выпущенный до смены пароля,
+      // продолжал читать персональные данные (userProgress в словаре,
+      // аналитика от имени юзера). Теперь, как и в `authenticate`,
+      // несовпадение passwordVersion = аноним (userId остаётся '').
+      const tokenPv = payload.pv ?? 0;
+      const user = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { passwordVersion: true },
+      });
+      if (!user || user.passwordVersion !== tokenPv) return;
+      request.userId = payload.userId;
     },
   );
 
