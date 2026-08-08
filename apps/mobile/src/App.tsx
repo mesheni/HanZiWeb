@@ -6,6 +6,7 @@ import { RootNavigator } from './navigation/RootNavigator';
 import { useAuthStore, setQueueStorage, getSync, api } from './bootstrap';
 import { getDatabase } from './db/database';
 import { createWatermelonQueueStorage } from './db/WatermelonQueueStorage';
+import { applyServerChange } from './db/progressSync';
 import type { AuthResponse } from '@hanzi/shared';
 
 /**
@@ -43,7 +44,17 @@ export default function App(): React.ReactElement {
         //    `pending_changes` table. After this, `getSync()` is bound
         //    to the real on-device queue and will start syncing
         //    pending answers as soon as the user goes online.
-        setQueueStorage(createWatermelonQueueStorage(db));
+        //    F08: pull-merge handler — serverChanges из sync-ответа
+        //    применяются к локальной таблице progress (зеркало
+        //    серверного прогресса), иначе прогресс, изменённый на
+        //    других устройствах, терялся бы.
+        setQueueStorage(createWatermelonQueueStorage(db), (change) => {
+          applyServerChange(db, change, useAuthStore.getState().user?.id ?? null).catch(
+            () => {
+              // Pull-merge best-effort: сбой не должен ронять sync-flush.
+            },
+          );
+        });
 
         // 3. Try to hydrate the auth session. The mobile `api.post`
         //    helper automatically attaches the persisted refresh token

@@ -54,7 +54,7 @@
 | ✅ F05 | Sync skip-пути не возвращают ack → pending-изменения уходят в бесконечный retry | Критично | `sync.service.ts:26-53,129-137` |
 | ✅ F06 | Гонка конкурентных sync-обновлений: прогресс читается вне транзакции | Средний | `sync.service.ts:22-24 vs 81-92` |
 | ✅ F07 | Очереди/курсоры/прогресс не изолированы по аккаунту (веб и мобайл) — чужие ответы и курсоры переживают logout | Критично | `database.ts:62-74`, `sync.ts:6`, `SyncEngine.ts:8-9` |
-| F08 | Мобильный pull-merge не подключён: `onServerChange` никогда не wired → serverChanges теряются | Высокий | `SyncEngine.ts:74-77,193-195`, `bootstrap.ts:193-199` |
+| ✅ F08 | Мобильный pull-merge не подключён: `onServerChange` никогда не wired → serverChanges теряются | Высокий | `SyncEngine.ts:74-77,193-195`, `bootstrap.ts:193-199` |
 | F09 | Гонка mobile auth refresh/logout: `isRefreshing` возвращает null вместо ожидания общего промиса | Высокий | `ApiClient.ts:83,238-247`, `bootstrap.ts:146-155` |
 | F10 | Revoked access token (после смены пароля) продолжает читать прогресс пользователя через optional-auth пути | Средний | `auth.ts:104-120` |
 | F11 | Миграция уникального индекса SessionAnswer — без preflight; упадёт в проде при исторических дубликатах | Критично | `migrations/20260806190600.../migration.sql:1-2` |

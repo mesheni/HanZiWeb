@@ -22,7 +22,7 @@ import {
   type NetworkAdapter,
   type SecureStorage,
 } from '@hanzi/mobile-sdk';
-import type { AuthResponse } from '@hanzi/shared';
+import type { AuthResponse, ServerChange } from '@hanzi/shared';
 
 /* ─── MMKV-backed SecureStorage ──────────────────────────────────────── */
 
@@ -190,13 +190,20 @@ import type { QueueStorage } from '@hanzi/mobile-sdk';
 
 let _queueStorage: QueueStorage = createMemoryQueueStorage();
 let _sync: SyncEngine | null = null;
+// F08: pull-merge handler. Хранится на уровне модуля, чтобы пережить
+// пересоздание движка в setQueueStorage (serverChanges иначе теряются).
+let _serverChangeHandler: ((change: ServerChange) => void) | null = null;
 
 export function getQueueStorage(): QueueStorage {
   return _queueStorage;
 }
 
-export function setQueueStorage(storage: QueueStorage): void {
+export function setQueueStorage(
+  storage: QueueStorage,
+  onServerChange?: (change: ServerChange) => void,
+): void {
   _queueStorage = storage;
+  if (onServerChange) _serverChangeHandler = onServerChange;
   if (_sync) {
     // Re-bind: tear down the old engine and create a new one so it
     // reads from the freshly-wired WatermelonDB collection.
@@ -204,6 +211,8 @@ export function setQueueStorage(storage: QueueStorage): void {
     _sync = new SyncEngine({ api, storage: _queueStorage });
     // F07: перепривязанный движок должен знать текущий аккаунт.
     _sync.setCurrentUserId(useAuthStore.getState().user?.id ?? null);
+    // F08: pull-merge — serverChanges применяются к локальному progress.
+    if (_serverChangeHandler) _sync.setOnServerChange(_serverChangeHandler);
     _sync.start();
   }
 }
@@ -214,6 +223,8 @@ export function getSync(): SyncEngine {
     // F07: курсор читается per-user (аккаунт известен к моменту
     // первого getSync в App.tsx — после hydrateAuth).
     _sync.setCurrentUserId(useAuthStore.getState().user?.id ?? null);
+    // F08: pull-merge — serverChanges применяются к локальному progress.
+    if (_serverChangeHandler) _sync.setOnServerChange(_serverChangeHandler);
     _sync.start();
   }
   return _sync;
