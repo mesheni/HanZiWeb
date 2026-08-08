@@ -155,6 +155,31 @@ describe('getActivityData — tz-aware heatmap (PLAN_Features_v0.4 §25)', () =>
     expect(map.get('2026-07-16') ?? 0).toBe(1);
   });
 
+  it('LA user: 2025-12-31T21:00Z stays in 2025 (local 2025-12-31), not in 2026 (F13)', async () => {
+    // F13: до фикса граница окна для negative-offset зон считалась через
+    // `localMidnightUtc(Jan 1 00:00Z)` — инстант 00:00 UTC 1 января в LA
+    // это ещё 31 декабря, окно года сдвигалось на день: ответ 31.12.2025
+    // попадал в 2026-й и пропадал из 2025-го.
+    const data2025 = await getActivityData(laUserId, 2025);
+    const map2025 = new Map(data2025.map((d) => [d.date, d.count]));
+    expect(map2025.get('2025-12-31') ?? 0).toBe(1);
+
+    const data2026 = await getActivityData(laUserId, 2026);
+    const map2026 = new Map(data2026.map((d) => [d.date, d.count]));
+    expect(map2026.get('2025-12-31') ?? 0).toBe(0);
+  });
+
+  it('LA user: локальный 2026-12-31 попадает в окно года 2026 (F13)', async () => {
+    // 2026-12-31T10:00:00Z = 2026-12-31T02:00 PST — локальный день 2026-12-31.
+    // До фикса окно 2026 заканчивалось в 2026-12-31T08:00Z (полночь
+    // 31.12 по UTC-инстансу 01.01.2027 00:00Z) — ответ терялся.
+    const session = await createSession(laUserId);
+    await recordAnswerAt(session, sharedWordId, 3, new Date('2026-12-31T10:00:00.000Z'));
+    const data = await getActivityData(laUserId, 2026);
+    const map = new Map(data.map((d) => [d.date, d.count]));
+    expect(map.get('2026-12-31') ?? 0).toBe(1);
+  });
+
   it('returns empty for year with no answers', async () => {
     const freshUserId = await createUser('empty', 'UTC');
     try {

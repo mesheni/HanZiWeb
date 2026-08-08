@@ -337,6 +337,34 @@ function tzOffsetMsAt(utc: Date, timezone: string): number {
 }
 
 /**
+ * Возвращает UTC Date локальной полуночи КАЛЕНДАРНОЙ даты (year, month, day)
+ * в `timezone` — обратная операция к `getLocalDayKey`. Не зависит от того,
+ * в какой локальный день попадает какой-либо UTC-инстант: граница
+ * привязывается к локальному календарю напрямую.
+ *
+ * Нужен для окон активности (F13): `localMidnightUtc(new Date(Date.UTC(y,0,1)))`
+ * для negative-offset зон (America/Los_Angeles) возвращал полночь ПРЕДЫДУЩЕГО
+ * локального дня (инстант 1 января 00:00 UTC там — ещё 31 декабря) — окно
+ * года сдвигалось на день: включало 31.12 прошлого года и теряло 31.12
+ * текущего. Чистая функция.
+ */
+function localMidnightUtcForYmd(year: number, month: number, day: number, timezone: string): Date {
+  if (timezone === 'UTC') {
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+  // Date.UTC сам переводит переполнение календаря (например, 32 февраля →
+  // 4 марта, месяц 13 → январь следующего года).
+  const guess = Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+  // tz-offset в точке guess — аппроксимация для offset в точке localMidnight.
+  // Корректно для всех случаев кроме самого момента DST-перехода
+  // (когда смещение меняется на ±1ч). В этом случае оффсет
+  // переключается в 02:00–03:00 локального времени, что не задевает
+  // локальную полночь (00:00).
+  const offset = tzOffsetMsAt(new Date(guess), timezone);
+  return new Date(guess - offset);
+}
+
+/**
  * Возвращает UTC Date, соответствующий локальной полуночи того дня,
  * в котором находится `date` в `timezone` (или `dayOffset` календарных
  * дней спустя — для вычисления «следующей полуночи» в getTodayUtcRange).
@@ -365,16 +393,7 @@ function localMidnightUtc(date: Date, timezone: string, dayOffset = 0): Date {
   if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
     throw new Error(`Invalid day key from Intl: ${dayKey}`);
   }
-  // Date.UTC сам переводит переполнение календаря (например, 32 февраля →
-  // 4 марта), поэтому `d + dayOffset` корректен и через границу месяца/года.
-  const guess = Date.UTC(y, m - 1, d + dayOffset, 0, 0, 0, 0);
-  // tz-offset в точке guess — аппроксимация для offset в точке localMidnight.
-  // Корректно для всех случаев кроме самого момента DST-перехода
-  // (когда смещение меняется на ±1ч). В этом случае оффсет
-  // переключается в 02:00–03:00 локального времени, что не задевает
-  // локальную полночь (00:00).
-  const offset = tzOffsetMsAt(new Date(guess), timezone);
-  return new Date(guess - offset);
+  return localMidnightUtcForYmd(y, m, d + dayOffset, timezone);
 }
 
 /**
@@ -505,20 +524,23 @@ export async function getActivityData(userId: string, year: number, month?: numb
   });
   const timezone = user?.timezone ?? 'UTC';
 
-  // Окно выборки строим по локальному календарю пользователя. Для
-  // пользователя в Europe/Moscow год 2026 начинается в 2025-12-31T21:00Z
+  // Окно выборки строим по ЛОКАЛЬНОМУ календарю пользователя (F13).
+  // Для пользователя в Europe/Moscow год 2026 начинается в 2025-12-31T21:00Z
   // и заканчивается в 2027-01-01T00:00Z — фиксированный «календарный»
-  // год в UTC обрезал бы ответы за 00:00..02:59 локального 1 января
+  // год в UTC отрезал бы ответы за 00:00..02:59 локального 1 января
   // (PLAN_Features_v0.4 §25). Аналогично для месяца: конец июля = 1 августа.
-  const startLocal = new Date(Date.UTC(year, 0, 1));
+  // До фикса границы считались через `localMidnightUtc(Jan 1 00:00Z)`,
+  // что для negative-offset зон (America/Los_Angeles) давало полночь
+  // ПРЕДЫДУЩЕГО локального дня (инстант 00:00 UTC 1 января там — ещё
+  // 31 декабря): окно года сдвигалось на день — ответы 31 декабря
+  // текущего года терялись, а 31 декабря прошлого попадали в год.
   const endLocalYear = month ? year : year + 1;
   // month=7 → конец июля = 1 августа → endLocalMonth=8. Date.UTC
   // нормализует month=12 → январь следующего года, так что переполнение
   // через 12 безопасно.
   const endLocalMonth = month ? month + 1 : 1;
-  const endLocal = new Date(Date.UTC(endLocalYear, endLocalMonth - 1, 1));
-  const startDate = localMidnightUtc(startLocal, timezone);
-  const endDate = localMidnightUtc(endLocal, timezone);
+  const startDate = localMidnightUtcForYmd(year, 1, 1, timezone);
+  const endDate = localMidnightUtcForYmd(endLocalYear, endLocalMonth, 1, timezone);
 
   const answers = await prisma.sessionAnswer.findMany({
     where: {
