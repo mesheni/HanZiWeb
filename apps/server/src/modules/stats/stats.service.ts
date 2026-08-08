@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { deckAccessWhere } from '../../lib/deckAccess.js';
 import {
   DAILY_GOAL_DEFAULT,
   PROGRESS_EXPORT_VERSION,
@@ -581,9 +582,12 @@ export function computeDeckProgressPercentage(
  *                       если totalWords = 0
  */
 export async function getStudyMap(userId: string): Promise<StudyMapResponse> {
-  // 1. Все колоды (системные + кастомные).
+  // 1. Колоды, доступные пользователю: системные (HSK) + свои кастомные.
+  //    Чужие приватные колоды исключены (F02) — до фикса study-map
+  //    отдавал ВСЕ колоды, включая чужие.
   //    Сортировка: сначала системные (HSK), потом по имени.
   const decks = await prisma.deck.findMany({
+    where: deckAccessWhere(userId),
     select: {
       id: true,
       name: true,

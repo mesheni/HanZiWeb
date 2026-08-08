@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { deckAccessWhere, findAccessibleDeck } from '../../lib/deckAccess.js';
 import type { Prisma } from '@prisma/client';
 import { recalcFsrs } from './srs.js';
 import * as achievementsService from '../achievements/achievements.service.js';
@@ -131,8 +132,18 @@ export async function startSession(userId: string, input: StartSession) {
   const filters = input.filters;
   const unlockedLevel = input.deckId ? null : await getUnlockedHskLevel(userId);
 
+  // F02: чужая приватная колода не должна ни отдавать свои слова, ни
+  // светиться в deckName. Проверяем доступ ДО выборки слов; 404-shaped —
+  // чтобы не утекать существование чужой приватной колоды.
+  if (input.deckId) {
+    const deck = await findAccessibleDeck(input.deckId, userId);
+    if (!deck) {
+      throw Object.assign(new Error('Deck not found'), { statusCode: 404, code: 'NOT_FOUND' });
+    }
+  }
+
   const deckWhere: Prisma.WordWhereInput = input.deckId
-    ? { deckWords: { some: { deckId: input.deckId } } }
+    ? { deckWords: { some: { deckId: input.deckId, deck: deckAccessWhere(userId) } } }
     : unlockedLevel
       ? { hskLevel: unlockedLevel }
       : { hskLevel: { in: HSK_LEVEL_LIST } };

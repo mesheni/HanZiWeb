@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { deckAccessWhere } from '../../lib/deckAccess.js';
 import type {
   CreateWord,
   UpdateWord,
@@ -44,7 +45,11 @@ export async function listWords(filters: WordFilters, userId?: string) {
   }
 
   if (filters.deckId) {
-    where.deckWords = { some: { deckId: filters.deckId } };
+    // F02: чужая приватная колода не отдаёт свои слова — deckId
+    // принимается только при доступе к колоде (системная или своя).
+    where.deckWords = {
+      some: { deckId: filters.deckId, deck: deckAccessWhere(userId) },
+    };
   }
 
   if (filters.status && userId) {
