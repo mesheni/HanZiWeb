@@ -77,7 +77,7 @@
 |----|------|-------------|
 | ✅ F19 | Web storage стартует после React; `initDb` при ошибке удаляет ВСЮ базу включая pending | Высокий |
 | ✅ F20 | Кэш слов перезаписывается бедными WordListItem (audioUrl, mnemonic, examples, tags → null) | Средний |
-| F21 | Мобильный не офлайн: сессии всегда требуют сеть; таблицы WatermelonDB объявлены но не заполняются | Высокий |
+| ✅ F21 | Мобильный не офлайн: сессии всегда требуют сеть; таблицы WatermelonDB объявлены но не заполняются | Высокий |
 | F22 | Мобильный паритет: только flip-card; library/stats read-only; нет push/audio/reading/tests/settings | Средний |
 | F23 | PWA precache: 9,587 файлов (~32 MiB), 766 kB main chunk; нет skipWaiting/navigation fallback | Средний |
 

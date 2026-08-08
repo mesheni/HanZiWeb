@@ -7,6 +7,8 @@ import { useAuthStore, setQueueStorage, getSync, api } from './bootstrap';
 import { getDatabase } from './db/database';
 import { createWatermelonQueueStorage } from './db/WatermelonQueueStorage';
 import { applyServerChange } from './db/progressSync';
+import { syncWordLibrary } from './db/wordsSync';
+import { pullProgressSnapshot } from './db/progressSnapshot';
 import type { AuthResponse } from '@hanzi/shared';
 
 /**
@@ -49,11 +51,9 @@ export default function App(): React.ReactElement {
         //    серверного прогресса), иначе прогресс, изменённый на
         //    других устройствах, терялся бы.
         setQueueStorage(createWatermelonQueueStorage(db), (change) => {
-          applyServerChange(db, change, useAuthStore.getState().user?.id ?? null).catch(
-            () => {
-              // Pull-merge best-effort: сбой не должен ронять sync-flush.
-            },
-          );
+          applyServerChange(db, change, useAuthStore.getState().user?.id ?? null).catch(() => {
+            // Pull-merge best-effort: сбой не должен ронять sync-flush.
+          });
         });
 
         // 3. Try to hydrate the auth session. The mobile `api.post`
@@ -76,6 +76,22 @@ export default function App(): React.ReactElement {
         //      follow-up). Fire-and-forget, non-critical.
         if (useAuthStore.getState().isAuthenticated) {
           void syncDeviceTimezone();
+        }
+
+        // 3.6. F21: наполняем локальные таблицы WatermelonDB. `words` —
+        //      словарь для офлайн-карточек (публичный каталог), `progress` —
+        //      снапшот серверного прогресса (только когда таблица пуста,
+        //      иначе её держит pull-merge F08 при flush'ах). Обе операции
+        //      best-effort: при отсутствии сети молча пропускаются, а
+        //      офлайн-сессия соберётся из того, что уже есть на устройстве.
+        void syncWordLibrary(db, api).catch(() => {
+          // Офлайн или API недоступен — словарь докачается при следующем старте.
+        });
+        const authUserId = useAuthStore.getState().user?.id ?? null;
+        if (authUserId) {
+          void pullProgressSnapshot(db, api, authUserId).catch(() => {
+            // Best-effort: снапшот повторится при следующем старте.
+          });
         }
 
         // 4. Boot the sync engine. It will auto-flush any pending

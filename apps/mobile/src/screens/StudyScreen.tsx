@@ -2,10 +2,12 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { api, getSync } from '../bootstrap';
+import { api, getSync, useAuthStore } from '../bootstrap';
 import { recalcFsrs, RATING_XP, isOnline } from '@hanzi/mobile-sdk';
 import type { SrsRating, WordState } from '@hanzi/shared';
 import type { RootStackParamList } from '../navigation/types';
+import { getDatabase } from '../db/database';
+import { buildLocalSession, type LocalSession } from '../db/localSession';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Study'>;
 
@@ -38,6 +40,8 @@ interface SessionData {
   cards: Card[];
   cardsTotal: number;
   cardsCompleted: number;
+  /** F21: true — сессия собрана локально (офлайн), без серверной сессии. */
+  local: boolean;
 }
 
 const RATING_BUTTONS: Array<{ rating: SrsRating; label: string; color: string }> = [
@@ -46,6 +50,24 @@ const RATING_BUTTONS: Array<{ rating: SrsRating; label: string; color: string }>
   { rating: 3, label: 'Помню', color: '#81C784' },
   { rating: 4, label: 'Легко', color: '#4FC3F7' },
 ];
+
+/** F21: локальная сессия (WatermelonDB) приводится к виду серверной. */
+function toSessionData(local: LocalSession): SessionData {
+  return {
+    id: local.id,
+    cards: local.cards.map((card, index) => ({
+      index,
+      word: card.word,
+      state: card.state as WordState,
+      stability: card.stability,
+      difficulty: card.difficulty,
+      answered: false,
+    })),
+    cardsTotal: local.cardsTotal,
+    cardsCompleted: local.cardsCompleted,
+    local: true,
+  };
+}
 
 export function StudyScreen({ navigation }: Props): React.ReactElement {
   const [session, setSession] = useState<SessionData | null>(null);
@@ -59,20 +81,40 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
   const startSession = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = await api.post<SessionData>('/sessions/start', {
-      cardLimit: 20,
-      includeNew: true,
-      mode: 'mixed',
-      practiceType: 'flip-card',
-    });
-    if (!result.ok) {
-      setError(result.message);
+
+    // F21: сначала пробуем серверную сессию, но при отсутствии сети или
+    // сбое API собираем сессию из локальных таблиц WatermelonDB
+    // (words + progress). Сессии больше не требуют сеть: офлайн-карточки
+    // оцениваются через recalcFsrs, а ответы уходят в офлайн-очередь.
+    if (isOnline()) {
+      const result = await api.post<SessionData>('/sessions/start', {
+        cardLimit: 20,
+        includeNew: true,
+        mode: 'mixed',
+        practiceType: 'flip-card',
+      });
+      if (result.ok) {
+        setSession({ ...result.data, local: false });
+        setCurrentIndex(0);
+        setFlipped(false);
+        setLoading(false);
+        return;
+      }
+      console.warn('Server session failed; falling back to local session:', result.message);
+    }
+
+    const db = await getDatabase();
+    const authUserId = useAuthStore.getState().user?.id ?? null;
+    const local = await buildLocalSession(db, authUserId, { cardLimit: 20, includeNew: true });
+    if (local) {
+      setSession(toSessionData(local));
+      setCurrentIndex(0);
+      setFlipped(false);
       setLoading(false);
       return;
     }
-    setSession(result.data);
-    setCurrentIndex(0);
-    setFlipped(false);
+
+    setError('Нет сети и нет сохранённых слов. Подключитесь к интернету, чтобы скачать словарь.');
     setLoading(false);
   }, []);
 
@@ -243,6 +285,12 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
         </Pressable>
       </View>
 
+      {session.local ? (
+        <Text style={styles.offlineBadge}>
+          Офлайн-режим · ответы синхронизируются при появлении сети
+        </Text>
+      ) : null}
+
       {lastAnswer ? (
         <Text style={styles.lastAnswer}>
           +{lastAnswer.xp} XP · следующее повторение{' '}
@@ -371,6 +419,13 @@ const styles = StyleSheet.create({
   exit: {
     color: '#7B8497',
     fontSize: 14,
+  },
+  offlineBadge: {
+    color: '#FFB74D',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: -8,
+    marginBottom: 8,
   },
   card: {
     flex: 1,
