@@ -41,6 +41,10 @@ const WORDS_SCHEMA = {
   required: ['id', 'character', 'pinyin', 'translation'],
 } as const;
 
+// Экспортируются для тестов (F20): тест создаёт изолированные базы
+// с реальными схемами вместо синглтона 'hanzi'.
+export { WORDS_SCHEMA };
+
 const PROGRESS_SCHEMA = {
   version: 0,
   primaryKey: 'id',

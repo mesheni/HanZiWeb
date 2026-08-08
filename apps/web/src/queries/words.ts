@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { apiGet } from '../api/client';
 import { getDb } from '../db/database';
+import { cacheWordFull, cacheWordListItems } from '../db/wordsCache';
 import type { Word, WordListItem, WordFilters, PaginatedResponse } from '@hanzi/shared';
 
 function buildWordParams(filters: Partial<WordFilters>): URLSearchParams {
@@ -27,20 +28,9 @@ export function useWords(filters: UseWordsFilters = {}) {
       const result = await apiGet<PaginatedResponse<WordListItem>>(`/words?${params.toString()}`);
       const db = getDb();
       if (db) {
-        for (const item of result.data) {
-          const w = item as any;
-          await db.words.upsert({
-            id: w.id,
-            character: w.character,
-            pinyin: w.pinyin,
-            translation: w.translation,
-            hskLevel: w.hskLevel,
-            audioUrl: w.audioUrl ?? null,
-            mnemonic: w.mnemonic ?? null,
-            createdAt: w.createdAt ?? new Date().toISOString(),
-            examples: w.examples ?? [],
-          });
-        }
+        // F20: merge-кэш — list-item не затирает rich-поля (mnemonic,
+        // examples, audioUrl, tags) уже закэшированных полных слов.
+        await cacheWordListItems(db, result.data);
       }
       return result;
     },
@@ -65,20 +55,7 @@ export function useInfiniteWords(filters: WordInfiniteFilters = {}) {
       const result = await apiGet<PaginatedResponse<WordListItem>>(`/words?${params.toString()}`);
       const db = getDb();
       if (db) {
-        for (const item of result.data) {
-          const w = item as any;
-          await db.words.upsert({
-            id: w.id,
-            character: w.character,
-            pinyin: w.pinyin,
-            translation: w.translation,
-            hskLevel: w.hskLevel,
-            audioUrl: w.audioUrl ?? null,
-            mnemonic: w.mnemonic ?? null,
-            createdAt: w.createdAt ?? new Date().toISOString(),
-            examples: w.examples ?? [],
-          });
-        }
+        await cacheWordListItems(db, result.data);
       }
       return result;
     },
@@ -97,7 +74,15 @@ export function useInfiniteWords(filters: WordInfiniteFilters = {}) {
 export function useWord(id: string | null) {
   return useQuery({
     queryKey: ['word', id],
-    queryFn: () => apiGet<Word>(`/words/${id}`),
+    queryFn: async () => {
+      const word = await apiGet<Word>(`/words/${id}`);
+      const db = getDb();
+      if (db) {
+        // F20: полный Word — источник rich-полей офлайн-кэша.
+        await cacheWordFull(db, word);
+      }
+      return word;
+    },
     enabled: !!id,
   });
 }
@@ -121,19 +106,9 @@ export function useRecentWords(limit = 10) {
       const result = await apiGet<WordListItem[]>(`/words/recent?limit=${limit}`);
       const db = getDb();
       if (db) {
-        for (const w of result) {
-          await db.words.upsert({
-            id: w.id,
-            character: w.character,
-            pinyin: w.pinyin,
-            translation: w.translation,
-            hskLevel: w.hskLevel,
-            audioUrl: null,
-            mnemonic: null,
-            createdAt: new Date().toISOString(),
-            examples: [],
-          });
-        }
+        // F20: не хардкодим null/новый createdAt — merge сохраняет
+        // rich-поля и дату создания уже закэшированных слов.
+        await cacheWordListItems(db, result);
       }
       return result;
     },
