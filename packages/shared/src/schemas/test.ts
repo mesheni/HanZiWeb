@@ -43,11 +43,11 @@ export const TestQuestionTypeSchema = z.enum([
 export type TestQuestionType = z.infer<typeof TestQuestionTypeSchema>;
 
 /**
- * Один вопрос теста. Поле `correctAnswer` присутствует в ответе клиенту —
- * в PLAN_Features_v0.3 §6 оно явно входит в `TestQuestionSchema`.
- * Это не строгая защита от читерства (клиент технически может подменить),
- * но даёт UI возможность сразу подсвечивать правильный ответ на финальном
- * экране результатов.
+ * Один вопрос теста (внутреннее представление сервера).
+ * `correctAnswer` НЕ уходит клиенту до сабмита (F18) — он хранится
+ * в Redis-сессии для grading в `submitTest` и попадает в ответ только
+ * в разборе результатов (`TestAnswerResult`). Клиент получает
+ * `TestQuestionPublic` без этого поля.
  */
 export const TestQuestionSchema = z.object({
   id: z.string().uuid(),
@@ -72,6 +72,15 @@ export const TestQuestionSchema = z.object({
 });
 export type TestQuestion = z.infer<typeof TestQuestionSchema>;
 
+/**
+ * Публичный DTO вопроса — то, что реально уходит клиенту в
+ * `POST /tests/start`. Без `correctAnswer`: ответы не видны в DevTools
+ * до отправки (F18). UI узнаёт длину слова для character-assembly из
+ * `wordCharacter`, а не из ответа.
+ */
+export const TestQuestionPublicSchema = TestQuestionSchema.omit({ correctAnswer: true });
+export type TestQuestionPublic = z.infer<typeof TestQuestionPublicSchema>;
+
 /** Один ответ пользователя (отправляется в `POST /api/tests/:id/submit`). */
 export const TestAnswerSchema = z.object({
   questionId: z.string().uuid(),
@@ -84,7 +93,8 @@ export type TestAnswer = z.infer<typeof TestAnswerSchema>;
 export const TestSessionSchema = z.object({
   id: z.string().uuid(),
   level: TestLevelSchema,
-  questions: z.array(TestQuestionSchema),
+  /** Публичные вопросы БЕЗ `correctAnswer` (F18) — ответы не видны до сабмита. */
+  questions: z.array(TestQuestionPublicSchema),
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable().default(null),
   /** Ответы, накопленные на клиенте. На сервер не отправляются —

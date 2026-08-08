@@ -13,13 +13,13 @@
 
 Регистрация нового пользователя.
 
-| | |
-|---|---|
-| **Auth** | Нет |
-| **Request** | `RegisterSchema` |
-| **Response 201** | `{ success: true, data: AuthResponseSchema }` |
+|                  |                                                                                                                                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auth**         | Нет                                                                                                                                                                                             |
+| **Request**      | `RegisterSchema`                                                                                                                                                                                |
+| **Response 201** | `{ success: true, data: AuthResponseSchema }`                                                                                                                                                   |
 | **Response 400** | `{ success: false, error: { code: "EMAIL_DOMAIN_NOT_ALLOWED", message: "Регистрация доступна только с почтой в домене .ru…" } }` — TLD email не в `ALLOWED_EMAIL_TLDS` (PLAN_Features_v0.3 §3). |
-| **Response 409** | `{ success: false, error: { code: "EMAIL_EXISTS", message: "Email already registered" } }` |
+| **Response 409** | `{ success: false, error: { code: "EMAIL_EXISTS", message: "Email already registered" } }`                                                                                                      |
 
 ```json
 // Request
@@ -47,31 +47,31 @@
 
 Вход в аккаунт. Устанавливает HttpOnly cookie `refreshToken` (30 дней).
 
-| | |
-|---|---|
-| **Auth** | Нет |
-| **Request** | `LoginSchema` |
-| **Response 200** | `{ success: true, data: AuthResponseSchema }` |
+|                  |                                                              |
+| ---------------- | ------------------------------------------------------------ |
+| **Auth**         | Нет                                                          |
+| **Request**      | `LoginSchema`                                                |
+| **Response 200** | `{ success: true, data: AuthResponseSchema }`                |
 | **Response 401** | `{ success: false, error: { code: "INVALID_CREDENTIALS" } }` |
 
 ### POST /api/auth/refresh
 
 Обновление access-токена. Читает `refreshToken` из cookie.
 
-| | |
-|---|---|
-| **Auth** | Cookie (`refreshToken`) |
-| **Request** | `RefreshSchema` (body опционален) |
+|                  |                                               |
+| ---------------- | --------------------------------------------- |
+| **Auth**         | Cookie (`refreshToken`)                       |
+| **Request**      | `RefreshSchema` (body опционален)             |
 | **Response 200** | `{ success: true, data: AuthResponseSchema }` |
-| **Response 401** | `{ success: false, error: { code: "NO_TOKEN" | "INVALID_TOKEN" } }` |
+| **Response 401** | `{ success: false, error: { code: "NO_TOKEN"  | "INVALID_TOKEN" } }` |
 
 ### POST /api/auth/logout
 
 Выход. Очищает cookie `refreshToken`.
 
-| | |
-|---|---|
-| **Auth** | Cookie |
+|                  |                     |
+| ---------------- | ------------------- |
+| **Auth**         | Cookie              |
 | **Response 200** | `{ success: true }` |
 
 ### PUT /api/auth/change-password
@@ -87,15 +87,15 @@ OAuth-only пользователи (`passwordHash === null`) получают
 `400 PASSWORD_NOT_SET` с подсказкой установить пароль через
 восстановление (см. PLAN_Features_v0.3 §2).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `ChangePasswordSchema` |
-| **Response 200** | `{ success: true }` |
-| **Response 400** | `{ success: false, error: { code: "PASSWORD_NOT_SET" } }` — OAuth-only аккаунт |
+|                  |                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                                        |
+| **Request**      | `ChangePasswordSchema`                                                                                            |
+| **Response 200** | `{ success: true }`                                                                                               |
+| **Response 400** | `{ success: false, error: { code: "PASSWORD_NOT_SET" } }` — OAuth-only аккаунт                                    |
 | **Response 400** | `{ success: false, error: { code: "WEAK_PASSWORD" } }` — новый пароль совпадает с текущим или не прошёл валидацию |
-| **Response 401** | `{ success: false, error: { code: "INVALID_PASSWORD" } }` — `currentPassword` не совпал |
-| **Response 401** | `{ success: false, error: { code: "UNAUTHORIZED" \| "TOKEN_EXPIRED" } }` — нет валидного access-токена |
+| **Response 401** | `{ success: false, error: { code: "INVALID_PASSWORD" } }` — `currentPassword` не совпал                           |
+| **Response 401** | `{ success: false, error: { code: "UNAUTHORIZED" \| "TOKEN_EXPIRED" } }` — нет валидного access-токена            |
 
 ```json
 // Request
@@ -117,16 +117,16 @@ OAuth-only пользователи (`passwordHash === null`) получают
 Защита от enumeration-атак: ответ **всегда** `{ success: true }`, даже
 если такого email нет в системе.
 
-| | |
-|---|---|
-| **Auth** | Нет |
-| **Rate-limit** | 3 запроса / 15 минут / IP |
-| **Request** | `ForgotPasswordSchema` (`{ email: string email() }`) |
-| **Response 200** | `{ success: true }` |
-| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR" } }` — невалидный email |
-| **Response 429** | `{ success: false, error: { code: "RATE_LIMIT_EXCEEDED" } }` |
+|                  |                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------- |
+| **Auth**         | Нет                                                                              |
+| **Rate-limit**   | 3 запроса / 15 минут / IP                                                        |
+| **Request**      | `ForgotPasswordSchema` (`{ email: string email() }`)                             |
+| **Response 200** | `{ success: true }`                                                              |
+| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR" } }` — невалидный email     |
+| **Response 429** | `{ success: false, error: { code: "RATE_LIMIT_EXCEEDED" } }`                     |
 | **Response 503** | `{ success: false, error: { code: "EMAIL_NOT_CONFIGURED" } }` — SMTP не настроен |
-| **Response 500** | `{ success: false, error: { code: "EMAIL_SEND_FAILED" } }` — SMTP упал |
+| **Response 500** | `{ success: false, error: { code: "EMAIL_SEND_FAILED" } }` — SMTP упал           |
 
 ```json
 // Request
@@ -148,16 +148,16 @@ OAuth-only пользователи (`passwordHash === null`) получают
 становятся невалидны, не дожидаясь истечения 15-минутного срока).
 Токен — одноразовый: сразу удаляется из Redis.
 
-| | |
-|---|---|
-| **Auth** | Нет (одноразовый токен) |
-| **Rate-limit** | 5 запросов / 15 минут / IP |
-| **Request** | `ResetPasswordSchema` (`{ token: string, newPassword: string min(8) max(128) }`) |
-| **Response 200** | `{ success: true }` |
-| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR" } }` — невалидный пароль |
-| **Response 400** | `{ success: false, error: { code: "INVALID_TOKEN" } }` — токен не найден или истёк (15 минут) |
+|                  |                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Auth**         | Нет (одноразовый токен)                                                                                    |
+| **Rate-limit**   | 5 запросов / 15 минут / IP                                                                                 |
+| **Request**      | `ResetPasswordSchema` (`{ token: string, newPassword: string min(8) max(128) }`)                           |
+| **Response 200** | `{ success: true }`                                                                                        |
+| **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR" } }` — невалидный пароль                              |
+| **Response 400** | `{ success: false, error: { code: "INVALID_TOKEN" } }` — токен не найден или истёк (15 минут)              |
 | **Response 404** | `{ success: false, error: { code: "USER_NOT_FOUND" } }` — пользователь был удалён между запросом и сбросом |
-| **Response 429** | `{ success: false, error: { code: "RATE_LIMIT_EXCEEDED" } }` |
+| **Response 429** | `{ success: false, error: { code: "RATE_LIMIT_EXCEEDED" } }`                                               |
 
 ```json
 // Request
@@ -185,9 +185,9 @@ OAuth-only пользователи (`passwordHash === null`) получают
 Список провайдеров и их статус (используется web-клиентом, чтобы
 показать или скрыть кнопки).
 
-| | |
-|---|---|
-| **Auth** | Нет |
+|                  |                                                                   |
+| ---------------- | ----------------------------------------------------------------- |
+| **Auth**         | Нет                                                               |
 | **Response 200** | `{ success: true, data: { providers: [{ provider, enabled }] } }` |
 
 ```json
@@ -210,12 +210,12 @@ OAuth-only пользователи (`passwordHash === null`) получают
 на 10 минут и делает 302-редирект на authorize-endpoint
 провайдера.
 
-| | |
-|---|---|
-| **Auth** | Нет |
+|                  |                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| **Auth**         | Нет                                                                                     |
 | **Response 302** | Redirect → `https://accounts.google.com/o/oauth2/v2/auth?…` (или аналог Apple / Яндекс) |
-| **Response 404** | `{ success: false, error: { code: "UNKNOWN_PROVIDER" } }` |
-| **Response 503** | `{ success: false, error: { code: "PROVIDER_NOT_CONFIGURED" } }` |
+| **Response 404** | `{ success: false, error: { code: "UNKNOWN_PROVIDER" } }`                               |
+| **Response 503** | `{ success: false, error: { code: "PROVIDER_NOT_CONFIGURED" } }`                        |
 
 `:provider` — `google` \| `apple` \| `yandex`.
 
@@ -231,9 +231,9 @@ authorization `code` на `access_token` (POST на token-endpoint
 <WEB_PUBLIC_URL>/auth/callback?provider=<p>&code=<one-time>
 ```
 
-| | |
-|---|---|
-| **Auth** | Нет |
+|                  |                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| **Auth**         | Нет                                                                                       |
 | **Response 302** | Redirect → `<WEB_PUBLIC_URL>/auth/callback?provider=…&code=…` (или `?error=…` при ошибке) |
 
 Apple использует `response_mode=form_post`, поэтому callback
@@ -245,20 +245,20 @@ Apple использует `response_mode=form_post`, поэтому callback
 CSRF и replay-атак: код живёт в Redis ровно 60 секунд и может
 быть использован только один раз.
 
-| | |
-|---|---|
-| **Auth** | Нет (одноразовый код) |
-| **Request** | `OAuthExchangeSchema` (`{ code: string }`) |
+|                  |                                                                           |
+| ---------------- | ------------------------------------------------------------------------- |
+| **Auth**         | Нет (одноразовый код)                                                     |
+| **Request**      | `OAuthExchangeSchema` (`{ code: string }`)                                |
 | **Response 200** | `{ success: true, data: AuthResponseSchema }` (refresh в HttpOnly cookie) |
-| **Response 400** | `{ success: false, error: { code: "INVALID_CODE" } }` |
+| **Response 400** | `{ success: false, error: { code: "INVALID_CODE" } }`                     |
 
 ### GET /api/auth/accounts
 
 Список привязанных OAuth-аккаунтов текущего пользователя.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                       |
+| ---------------- | ----------------------------------------------------- |
+| **Auth**         | Bearer JWT                                            |
 | **Response 200** | `{ success: true, data: UserAccountsResponseSchema }` |
 
 ```json
@@ -288,13 +288,13 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 Отвязать OAuth-аккаунт. Защита от «замка»: 409, если
 `canUnlink = false`.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Response 200** | `{ success: true }` |
-| **Response 400** | `{ success: false, error: { code: "UNKNOWN_PROVIDER" } }` |
+|                  |                                                                          |
+| ---------------- | ------------------------------------------------------------------------ |
+| **Auth**         | Bearer JWT                                                               |
+| **Response 200** | `{ success: true }`                                                      |
+| **Response 400** | `{ success: false, error: { code: "UNKNOWN_PROVIDER" } }`                |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` (аккаунт не привязан) |
-| **Response 409** | `{ success: false, error: { code: "CANNOT_UNLINK" } }` |
+| **Response 409** | `{ success: false, error: { code: "CANNOT_UNLINK" } }`                   |
 
 ### Поведение auto-link
 
@@ -317,10 +317,10 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Список слов с фильтрацией и пагинацией.
 
-| | |
-|---|---|
-| **Auth** | Нет |
-| **Query** | `WordFiltersSchema` |
+|                  |                                                                 |
+| ---------------- | --------------------------------------------------------------- |
+| **Auth**         | Нет                                                             |
+| **Query**        | `WordFiltersSchema`                                             |
 | **Response 200** | `{ success: true, data: Word[], pagination: PaginationSchema }` |
 
 ```json
@@ -332,39 +332,39 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Одно слово с примерами.
 
-| | |
-|---|---|
-| **Auth** | Нет |
-| **Response 200** | `{ success: true, data: WordSchema }` |
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **Auth**         | Нет                                                |
+| **Response 200** | `{ success: true, data: WordSchema }`              |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
 
 ### POST /api/words
 
 Создание слова (только авторизованные).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `CreateWordSchema` |
+|                  |                                       |
+| ---------------- | ------------------------------------- |
+| **Auth**         | Bearer JWT                            |
+| **Request**      | `CreateWordSchema`                    |
 | **Response 201** | `{ success: true, data: WordSchema }` |
 
 ### PUT /api/words/:id
 
 Обновление слова (только авторизованные).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `UpdateWordSchema` |
+|                  |                                       |
+| ---------------- | ------------------------------------- |
+| **Auth**         | Bearer JWT                            |
+| **Request**      | `UpdateWordSchema`                    |
 | **Response 200** | `{ success: true, data: WordSchema }` |
 
 ### DELETE /api/words/:id
 
 Удаление слова (только авторизованные).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                     |
+| ---------------- | ------------------- |
+| **Auth**         | Bearer JWT          |
 | **Response 200** | `{ success: true }` |
 
 ---
@@ -377,10 +377,10 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Начать новую учебную сессию. Сервер выбирает слова для повторения (dueDate ≤ now) + новые слова.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `StartSessionSchema` |
+|                  |                                              |
+| ---------------- | -------------------------------------------- |
+| **Auth**         | Bearer JWT                                   |
+| **Request**      | `StartSessionSchema`                         |
 | **Response 201** | `{ success: true, data: FullSessionSchema }` |
 
 ```json
@@ -407,10 +407,10 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Записать ответ на карточку. Сервер пересчитывает FSRS (stability, difficulty, dueDate), начисляет XP, проверяет условия достижений (см. §8).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `RecordAnswerSchema` |
+|                  |                                                                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                     |
+| **Request**      | `RecordAnswerSchema`                                                                           |
 | **Response 200** | `{ success: true, data: SrsRecalcResultSchema & { unlockedAchievements: UserAchievement[] } }` |
 
 ```json
@@ -426,10 +426,10 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Детали сессии (с ответами).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Response 200** | `{ success: true, data: Session (с answers[]) }` |
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **Auth**         | Bearer JWT                                         |
+| **Response 200** | `{ success: true, data: Session (с answers[]) }`   |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
 
 ---
@@ -442,9 +442,9 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Общая статистика пользователя: XP, streak, количество слов по состояниям, точность.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                                                               |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                    |
 | **Response 200** | `{ success: true, data: { xp, currentStreak, totalWords, learnedWords, accuracy, byState } }` |
 
 ```json
@@ -466,25 +466,31 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 Календарь активности за месяц (для heatmap).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Query** | `year` (int), `month` (int, 1-12) |
+|                  |                                                       |
+| ---------------- | ----------------------------------------------------- |
+| **Auth**         | Bearer JWT                                            |
+| **Query**        | `year` (int), `month` (int, 1-12)                     |
 | **Response 200** | `{ success: true, data: [{ day: int, count: int }] }` |
 
 ```json
 // Response
-{ "success": true, "data": [{ "day": 1, "count": 12 }, { "day": 2, "count": 8 }] }
+{
+  "success": true,
+  "data": [
+    { "day": 1, "count": 12 },
+    { "day": 2, "count": 8 }
+  ]
+}
 ```
 
 ### GET /api/stats/leaderboard
 
 Таблица лидеров (PLAN_Features_v0.2 §7).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Query** | `period` (`week` \| `all`, default `week`), `limit` (int, 1-100, default 100) |
+|                  |                                                                                |
+| ---------------- | ------------------------------------------------------------------------------ |
+| **Auth**         | Bearer JWT                                                                     |
+| **Query**        | `period` (`week` \| `all`, default `week`), `limit` (int, 1-100, default 100)  |
 | **Response 200** | см. `LeaderboardResponseSchema` (`packages/shared/src/schemas/leaderboard.ts`) |
 
 ```json
@@ -519,14 +525,15 @@ SRS, согласовано с `getOverview.learnedWords`). Колоды отс�
 процента изучения.
 
 Цветовые уровни (UI-подсказка для прогресс-бара):
-- `low`      — 0..24%   (красный)
-- `medium`   — 25..49%  (жёлтый)
-- `high`     — 50..74%  (зелёный)
+
+- `low` — 0..24% (красный)
+- `medium` — 25..49% (жёлтый)
+- `high` — 50..74% (зелёный)
 - `complete` — 75..100% (ярко-зелёный)
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                                       |
+| ---------------- | --------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                            |
 | **Response 200** | см. `StudyMapResponseSchema` (`packages/shared/src/schemas/stats.ts`) |
 
 ```json
@@ -571,9 +578,9 @@ SRS, согласовано с `getOverview.learnedWords`). Колоды отс�
 
 Текущие пользовательские настройки (ежедневная цель и т.п.).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                               |
+| ---------------- | --------------------------------------------- |
+| **Auth**         | Bearer JWT                                    |
 | **Response 200** | `{ success: true, data: UserSettingsSchema }` |
 
 ```json
@@ -585,11 +592,11 @@ SRS, согласовано с `getOverview.learnedWords`). Колоды отс�
 
 Обновление пользовательских настроек. Сейчас поддерживается `dailyGoal` (1–200).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `UpdateUserSettingsSchema` (все поля optional) |
-| **Response 200** | `{ success: true, data: UserSettingsSchema }` |
+|                  |                                                |
+| ---------------- | ---------------------------------------------- |
+| **Auth**         | Bearer JWT                                     |
+| **Request**      | `UpdateUserSettingsSchema` (все поля optional) |
+| **Response 200** | `{ success: true, data: UserSettingsSchema }`  |
 
 ```json
 // Request
@@ -609,12 +616,12 @@ SRS, согласовано с `getOverview.learnedWords`). Колоды отс�
 
 Экспорт всего `UserWordProgress` пользователя — бэкап или аналитика.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Query** | `format` (`json` \| `csv`, default `json`) |
+|                         |                                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auth**                | Bearer JWT                                                                                                                                                             |
+| **Query**               | `format` (`json` \| `csv`, default `json`)                                                                                                                             |
 | **Response 200 (json)** | Тело соответствует `ProgressExportSchema` (`packages/shared/src/schemas/progressExport.ts`), `Content-Disposition: attachment; filename="hanzi-progress-<date>.json"`. |
-| **Response 200 (csv)**  | Текстовый CSV с заголовком `wordId,state,stability,difficulty,reps,dueDate,lastReviewDate`, `Content-Disposition: attachment; filename="hanzi-progress-<date>.csv"`. |
+| **Response 200 (csv)**  | Текстовый CSV с заголовком `wordId,state,stability,difficulty,reps,dueDate,lastReviewDate`, `Content-Disposition: attachment; filename="hanzi-progress-<date>.csv"`.   |
 
 ```json
 // Response (format=json)
@@ -647,14 +654,14 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 
 Восстановление прогресса из JSON-бэкапа (см. `ProgressImportRequestSchema`).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `{ mode: "merge" \| "replace", progress: ProgressRecord[] }` |
-| **Response 200** | `{ success: true, data: ProgressImportResponseSchema }` |
+|                  |                                                                |
+| ---------------- | -------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                     |
+| **Request**      | `{ mode: "merge" \| "replace", progress: ProgressRecord[] }`   |
+| **Response 200** | `{ success: true, data: ProgressImportResponseSchema }`        |
 | **Response 400** | `{ success: false, error: { code: "VALIDATION_ERROR", ... } }` |
 
-- `merge`   — добавляет новые записи, обновляет поля существующих.
+- `merge` — добавляет новые записи, обновляет поля существующих.
 - `replace` — сначала удаляет весь текущий прогресс пользователя, затем вставляет.
 
 Записи с `wordId`, которых нет в таблице `Word`, молча пропускаются (считаются в `skipped`).
@@ -700,9 +707,9 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 
 Список разблокированных достижений пользователя. Типы и метаданные — в `ACHIEVEMENT_CATALOG` (`packages/shared/src/schemas/achievement.ts`).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                                |
+| ---------------- | -------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                     |
 | **Response 200** | `{ success: true, data: { achievements: UserAchievement[] } }` |
 
 ```json
@@ -726,9 +733,9 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 
 Проверка работоспособности сервера.
 
-| | |
-|---|---|
-| **Auth** | Нет |
+|                  |                                          |
+| ---------------- | ---------------------------------------- |
+| **Auth**         | Нет                                      |
 | **Response 200** | `{ status: "ok", timestamp: "ISO8601" }` |
 
 ---
@@ -745,20 +752,26 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 результат пишется в `TestResult` (Postgres).
 
 Схемы: `TestLevelSchema`, `TestQuestionTypeSchema`, `TestQuestionSchema`,
-`TestSessionSchema`, `TestAnswerSchema`, `StartTestSchema`, `SubmitTestSchema`,
-`TestBreakdownItemSchema`, `TestAnswerResultSchema`, `TestResultSchema`,
-`TestHistoryItemSchema` → `packages/shared/src/schemas/test.ts`.
+`TestQuestionPublicSchema`, `TestSessionSchema`, `TestAnswerSchema`,
+`StartTestSchema`, `SubmitTestSchema`, `TestBreakdownItemSchema`,
+`TestAnswerResultSchema`, `TestResultSchema`, `TestHistoryItemSchema`
+→ `packages/shared/src/schemas/test.ts`.
+
+> **F18**: `correctAnswer` в `TestSession.questions` НЕ возвращается
+> клиенту (ответы не видны в DevTools до сабмита). Эталонные ответы
+> хранятся в Redis-сессии для grading и приходят только в разборе
+> результата `TestResult.answers` (`TestAnswerResult.correctAnswer`).
 
 ### POST /api/tests/start
 
 Сгенерировать новый тест выбранного уровня HSK.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `StartTestSchema` (`{ level: 1..6 }`) |
-| **Response 201** | `{ success: true, data: TestSession }` |
-| **Response 400** | `{ success: false, error: { code: "INSUFFICIENT_WORDS" } }` — в уровне меньше 4 слов |
+|                  |                                                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                            |
+| **Request**      | `StartTestSchema` (`{ level: 1..6 }`)                                                                 |
+| **Response 201** | `{ success: true, data: TestSession }`                                                                |
+| **Response 400** | `{ success: false, error: { code: "INSUFFICIENT_WORDS" } }` — в уровне меньше 4 слов                  |
 | **Response 400** | `{ success: false, error: { code: "INSUFFICIENT_QUESTIONS" } }` — не удалось собрать минимальный тест |
 
 ```json
@@ -782,7 +795,6 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
         "wordHskLevel": 2,
         "wordAudioUrl": null,
         "options": ["нравиться, любить", "работать", "жить", "учиться"],
-        "correctAnswer": "нравиться, любить",
         "audioUrl": null,
         "clozeSentence": null,
         "characterPool": []
@@ -803,12 +815,12 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 Отправить ответы, получить результат с разбором. Сессия удаляется
 из Redis сразу после успешной проверки.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `SubmitTestSchema` (`{ answers: TestAnswer[], timeSpentMs: number }`) |
-| **Response 200** | `{ success: true, data: TestResult }` |
-| **Response 404** | `{ success: false, error: { code: "TEST_SESSION_NOT_FOUND" } }` — сессия истекла (>2ч) |
+|                  |                                                                                                           |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                                |
+| **Request**      | `SubmitTestSchema` (`{ answers: TestAnswer[], timeSpentMs: number }`)                                     |
+| **Response 200** | `{ success: true, data: TestResult }`                                                                     |
+| **Response 404** | `{ success: false, error: { code: "TEST_SESSION_NOT_FOUND" } }` — сессия истекла (>2ч)                    |
 | **Response 403** | `{ success: false, error: { code: "TEST_SESSION_FORBIDDEN" } }` — сессия принадлежит другому пользователю |
 
 ```json
@@ -861,10 +873,10 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 
 Список последних результатов тестов пользователя (без деталей ответов).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Query** | `?limit=20` (1..50, default 20) |
+|                  |                                                                                         |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                              |
+| **Query**        | `?limit=20` (1..50, default 20)                                                         |
 | **Response 200** | `{ success: true, data: TestResult[] }` (каждый элемент — `TestResult` с `answers: []`) |
 
 ```json
@@ -897,6 +909,7 @@ wordId,state,stability,difficulty,reps,dueDate,lastReviewDate
 `practice:multiple-choice`, …) и будущих экспериментов.
 
 Оценка флага:
+
 1. Если `key` не зарегистрирован → `enabled: false, reason: unknown`.
 2. Если `enabled: false` → `enabled: false, reason: disabled`.
 3. Если `userId ∈ whitelist` → `enabled: true, reason: whitelist`.
@@ -912,10 +925,10 @@ Override через ENV (без перезапуска кода):
 
 Снимок всех известных флагов для текущего пользователя.
 
-| | |
-|---|---|
-| **Auth** | Опционально (Bearer JWT) — если задан, `userId` из JWT используется для whitelist/rollout |
-| **Response 200** | `{ success: true, data: FlagsResponseSchema }` |
+|                  |                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| **Auth**         | Опционально (Bearer JWT) — если задан, `userId` из JWT используется для whitelist/rollout |
+| **Response 200** | `{ success: true, data: FlagsResponseSchema }`                                            |
 
 ```json
 // Response
@@ -924,7 +937,11 @@ Override через ENV (без перезапуска кода):
   "data": {
     "flags": {
       "practice:cloze": { "key": "practice:cloze", "enabled": true, "reason": "rollout" },
-      "practice:multiple-choice": { "key": "practice:multiple-choice", "enabled": true, "reason": "rollout" },
+      "practice:multiple-choice": {
+        "key": "practice:multiple-choice",
+        "enabled": true,
+        "reason": "rollout"
+      },
       "practice:flip-card": { "key": "practice:flip-card", "enabled": true, "reason": "rollout" }
     }
   }
@@ -935,10 +952,10 @@ Override через ENV (без перезапуска кода):
 
 Оценка одного флага. 404, если флаг с таким `key` не зарегистрирован.
 
-| | |
-|---|---|
-| **Auth** | Опционально (Bearer JWT) |
-| **Response 200** | `{ success: true, data: FlagEvaluationSchema }` |
+|                  |                                                         |
+| ---------------- | ------------------------------------------------------- |
+| **Auth**         | Опционально (Bearer JWT)                                |
+| **Response 200** | `{ success: true, data: FlagEvaluationSchema }`         |
 | **Response 404** | `{ success: false, error: { code: "FLAG_NOT_FOUND" } }` |
 
 ```json
@@ -960,24 +977,36 @@ Override через ENV (без перезапуска кода):
 
 Список всех тегов с подсчётом слов.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                                         |
+| ---------------- | ------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                              |
 | **Response 200** | `{ success: true, data: (Tag & { wordCount: int })[] }` |
 
 ```json
 // Response
-{ "success": true, "data": [{ "id": "uuid", "name": "С трудным тоном", "slug": "hard-tones", "color": "FFB74D", "createdAt": "ISO8601", "wordCount": 24 }] }
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "name": "С трудным тоном",
+      "slug": "hard-tones",
+      "color": "FFB74D",
+      "createdAt": "ISO8601",
+      "wordCount": 24
+    }
+  ]
+}
 ```
 
 ### POST /api/tags
 
 Создать новый тег.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `CreateTagSchema` |
+|                  |                                |
+| ---------------- | ------------------------------ |
+| **Auth**         | Bearer JWT                     |
+| **Request**      | `CreateTagSchema`              |
 | **Response 201** | `{ success: true, data: Tag }` |
 
 ```json
@@ -989,29 +1018,29 @@ Override через ENV (без перезапуска кода):
 
 Удалить тег (каскадно удаляет WordTag).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Response 200** | `{ success: true, data: { deleted: "uuid" } }` |
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **Auth**         | Bearer JWT                                         |
+| **Response 200** | `{ success: true, data: { deleted: "uuid" } }`     |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
 
 ### GET /api/tags/words/:wordId/tags
 
 Получить теги конкретного слова.
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
+|                  |                                  |
+| ---------------- | -------------------------------- |
+| **Auth**         | Bearer JWT                       |
 | **Response 200** | `{ success: true, data: Tag[] }` |
 
 ### PUT /api/tags/words/:wordId/tags
 
 Заменить набор тегов слова (replace).
 
-| | |
-|---|---|
-| **Auth** | Bearer JWT |
-| **Request** | `SetWordTagsSchema` |
+|                  |                                  |
+| ---------------- | -------------------------------- |
+| **Auth**         | Bearer JWT                       |
+| **Request**      | `SetWordTagsSchema`              |
 | **Response 200** | `{ success: true, data: Tag[] }` |
 
 ```json
@@ -1031,6 +1060,7 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 со своим `POSTHOG_API_KEY` (env).
 
 События:
+
 - `session_started` — старт учебной сессии.
 - `answer_rated` — пользователь оценил карточку.
 - `audio_generated` — пользователь прослушал аудио слова (клиент
@@ -1041,11 +1071,11 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 
 ### POST /api/ingest
 
-| | |
-|---|---|
-| **Auth** | Опционально (Bearer JWT) — если задан, сервер проставит `userId` как `distinct_id` |
-| **Request** | `AnalyticsIngestSchema` (`{ events: AnalyticsEventInput[] }`) |
-| **Response 200** | `{ success: true, data: { forwarded, skipped } }` |
+|                  |                                                                                                           |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| **Auth**         | Опционально (Bearer JWT) — если задан, сервер проставит `userId` как `distinct_id`                        |
+| **Request**      | `AnalyticsIngestSchema` (`{ events: AnalyticsEventInput[] }`)                                             |
+| **Response 200** | `{ success: true, data: { forwarded, skipped } }`                                                         |
 | **Response 204** | `No Content` — PostHog не сконфигурирован на сервере (`POSTHOG_API_KEY` пуст), события тихо отбрасываются |
 
 ```json
@@ -1095,10 +1125,10 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 
 Список текстов для чтения. Поддерживает фильтр по уровню HSK.
 
-| | |
-|---|---|
-| **Auth** | JWT |
-| **Query** | `?hskLevel=1..6` (опционально) |
+|                  |                                                  |
+| ---------------- | ------------------------------------------------ |
+| **Auth**         | JWT                                              |
+| **Query**        | `?hskLevel=1..6` (опционально)                   |
 | **Response 200** | `{ success: true, data: ReadingTextListItem[] }` |
 
 `ReadingTextListItem` содержит базовые мета-данные текста, процент
@@ -1109,10 +1139,10 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 
 Детальная карточка текста с токенизированным содержимым.
 
-| | |
-|---|---|
-| **Auth** | JWT |
-| **Response 200** | `{ success: true, data: ReadingTextDetail }` |
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **Auth**         | JWT                                                |
+| **Response 200** | `{ success: true, data: ReadingTextDetail }`       |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
 
 `ReadingTextDetail` включает параграфы и `tokens` — результат
@@ -1127,21 +1157,21 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 Приоритетные слова встраиваются в начало следующей сессии
 `POST /api/sessions/start` при `includePriority=true`.
 
-| | |
-|---|---|
-| **Auth** | JWT |
-| **Request** | `{ wordIds: string[] }` |
-| **Response 200** | `{ success: true, data: { added: number } }` |
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **Auth**         | JWT                                                |
+| **Request**      | `{ wordIds: string[] }`                            |
+| **Response 200** | `{ success: true, data: { added: number } }`       |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
 
 ### POST /api/reading/texts/:id/progress
 
 Отмечает текст как прочитанный (`UserReadingProgress.readAt`).
 
-| | |
-|---|---|
-| **Auth** | JWT |
-| **Response 200** | `{ success: true }` |
+|                  |                                                    |
+| ---------------- | -------------------------------------------------- |
+| **Auth**         | JWT                                                |
+| **Response 200** | `{ success: true }`                                |
 | **Response 404** | `{ success: false, error: { code: "NOT_FOUND" } }` |
 
 ---
@@ -1149,16 +1179,19 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 ## Стандартные форматы ответов
 
 ### Успех (единичный объект)
+
 ```json
 { "success": true, "data": { ... } }
 ```
 
 ### Успех (список с пагинацией)
+
 ```json
 { "success": true, "data": [ ... ], "pagination": { "total": 100, "limit": 50, "offset": 0 } }
 ```
 
 ### Ошибка
+
 ```json
 { "success": false, "error": { "code": "ERROR_CODE", "message": "Human-readable description" } }
 ```
@@ -1185,51 +1218,51 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 
 ## Сводка эндпоинтов
 
-| # | Method | Path | Auth | Module |
-|---|--------|------|------|--------|
-| 1 | POST | /api/auth/register | No | Auth |
-| 2 | POST | /api/auth/login | No | Auth |
-| 3 | POST | /api/auth/refresh | Cookie | Auth |
-| 4 | POST | /api/auth/logout | Cookie | Auth |
-| 4a | PUT | /api/auth/change-password | JWT | Auth |
-| 5 | GET | /api/auth/oauth/providers | No | Auth (OAuth) |
-| 6 | GET | /api/auth/oauth/:provider | No | Auth (OAuth) |
-| 7 | GET/POST | /api/auth/oauth/:provider/callback | No | Auth (OAuth) |
-| 8 | POST | /api/auth/oauth/exchange | Code | Auth (OAuth) |
-| 9 | GET | /api/auth/accounts | JWT | Auth (OAuth) |
-| 10 | DELETE | /api/auth/accounts/:provider | JWT | Auth (OAuth) |
-| 11 | GET | /api/words | No | Words |
-| 12 | GET | /api/words/:id | No | Words |
-| 13 | POST | /api/words | JWT | Words |
-| 14 | PUT | /api/words/:id | JWT | Words |
-| 15 | DELETE | /api/words/:id | JWT | Words |
-| 16 | POST | /api/sessions/start | JWT | Sessions |
-| 16a | POST | /api/sessions/start?includePriority=true | JWT | Sessions |
-| 17 | POST | /api/sessions/:id/answer | JWT | Sessions |
-| 18 | GET | /api/sessions/:id | JWT | Sessions |
-| 38 | GET | /api/reading/texts | JWT | Reading |
-| 39 | GET | /api/reading/texts/:id | JWT | Reading |
-| 40 | POST | /api/reading/texts/:id/priority-words | JWT | Reading |
-| 41 | POST | /api/reading/texts/:id/progress | JWT | Reading |
-| 19 | GET | /api/stats/overview | JWT | Stats |
-| 20 | GET | /api/stats/activity | JWT | Stats |
-| 21 | GET | /api/stats/leaderboard | JWT | Stats |
-| 21a | GET | /api/stats/study-map | JWT | Stats |
-| 22 | GET | /api/stats/export | JWT | Stats |
-| 23 | POST | /api/stats/import | JWT | Stats |
-| 24 | GET | /api/achievements | JWT | Achievements |
-| 25 | GET | /api/users/settings | JWT | Users |
-| 26 | PUT | /api/users/settings | JWT | Users |
-| 27 | GET | /api/tags | JWT | Tags |
-| 28 | POST | /api/tags | JWT | Tags |
-| 29 | DELETE | /api/tags/:id | JWT | Tags |
-| 30 | GET | /api/tags/words/:wordId/tags | JWT | Tags |
-| 31 | PUT | /api/tags/words/:wordId/tags | JWT | Tags |
-| 32 | POST | /api/ingest | Optional | Analytics |
-| 33 | GET | /api/flags | Optional | Feature Flags |
-| 34 | GET | /api/flags/:key | Optional | Feature Flags |
-| 35 | POST | /api/tests/start | JWT | Tests |
-| 36 | POST | /api/tests/:id/submit | JWT | Tests |
-| 37 | GET | /api/tests/history | JWT | Tests |
+| #   | Method   | Path                                     | Auth     | Module        |
+| --- | -------- | ---------------------------------------- | -------- | ------------- |
+| 1   | POST     | /api/auth/register                       | No       | Auth          |
+| 2   | POST     | /api/auth/login                          | No       | Auth          |
+| 3   | POST     | /api/auth/refresh                        | Cookie   | Auth          |
+| 4   | POST     | /api/auth/logout                         | Cookie   | Auth          |
+| 4a  | PUT      | /api/auth/change-password                | JWT      | Auth          |
+| 5   | GET      | /api/auth/oauth/providers                | No       | Auth (OAuth)  |
+| 6   | GET      | /api/auth/oauth/:provider                | No       | Auth (OAuth)  |
+| 7   | GET/POST | /api/auth/oauth/:provider/callback       | No       | Auth (OAuth)  |
+| 8   | POST     | /api/auth/oauth/exchange                 | Code     | Auth (OAuth)  |
+| 9   | GET      | /api/auth/accounts                       | JWT      | Auth (OAuth)  |
+| 10  | DELETE   | /api/auth/accounts/:provider             | JWT      | Auth (OAuth)  |
+| 11  | GET      | /api/words                               | No       | Words         |
+| 12  | GET      | /api/words/:id                           | No       | Words         |
+| 13  | POST     | /api/words                               | JWT      | Words         |
+| 14  | PUT      | /api/words/:id                           | JWT      | Words         |
+| 15  | DELETE   | /api/words/:id                           | JWT      | Words         |
+| 16  | POST     | /api/sessions/start                      | JWT      | Sessions      |
+| 16a | POST     | /api/sessions/start?includePriority=true | JWT      | Sessions      |
+| 17  | POST     | /api/sessions/:id/answer                 | JWT      | Sessions      |
+| 18  | GET      | /api/sessions/:id                        | JWT      | Sessions      |
+| 38  | GET      | /api/reading/texts                       | JWT      | Reading       |
+| 39  | GET      | /api/reading/texts/:id                   | JWT      | Reading       |
+| 40  | POST     | /api/reading/texts/:id/priority-words    | JWT      | Reading       |
+| 41  | POST     | /api/reading/texts/:id/progress          | JWT      | Reading       |
+| 19  | GET      | /api/stats/overview                      | JWT      | Stats         |
+| 20  | GET      | /api/stats/activity                      | JWT      | Stats         |
+| 21  | GET      | /api/stats/leaderboard                   | JWT      | Stats         |
+| 21a | GET      | /api/stats/study-map                     | JWT      | Stats         |
+| 22  | GET      | /api/stats/export                        | JWT      | Stats         |
+| 23  | POST     | /api/stats/import                        | JWT      | Stats         |
+| 24  | GET      | /api/achievements                        | JWT      | Achievements  |
+| 25  | GET      | /api/users/settings                      | JWT      | Users         |
+| 26  | PUT      | /api/users/settings                      | JWT      | Users         |
+| 27  | GET      | /api/tags                                | JWT      | Tags          |
+| 28  | POST     | /api/tags                                | JWT      | Tags          |
+| 29  | DELETE   | /api/tags/:id                            | JWT      | Tags          |
+| 30  | GET      | /api/tags/words/:wordId/tags             | JWT      | Tags          |
+| 31  | PUT      | /api/tags/words/:wordId/tags             | JWT      | Tags          |
+| 32  | POST     | /api/ingest                              | Optional | Analytics     |
+| 33  | GET      | /api/flags                               | Optional | Feature Flags |
+| 34  | GET      | /api/flags/:key                          | Optional | Feature Flags |
+| 35  | POST     | /api/tests/start                         | JWT      | Tests         |
+| 36  | POST     | /api/tests/:id/submit                    | JWT      | Tests         |
+| 37  | GET      | /api/tests/history                       | JWT      | Tests         |
 
 Всего: **43 эндпоинта** в 12 модулях.

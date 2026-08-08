@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Volume2 } from 'lucide-react';
-import type { TestQuestion } from '@hanzi/shared';
+import type { TestQuestionPublic } from '@hanzi/shared';
 import { useAudio } from '../../hooks/useAudio';
 import { cn } from '../../utils/cn';
 import { TONE_COLORS } from '../../utils/toneColors';
 
 interface TestQuestionCardProps {
-  question: TestQuestion;
+  question: TestQuestionPublic;
   index: number;
   total: number;
   onAnswer: (answer: string) => void;
@@ -47,7 +47,7 @@ export default function TestQuestionCard({
   );
 }
 
-function typeLabel(type: TestQuestion['type']): string {
+function typeLabel(type: TestQuestionPublic['type']): string {
   switch (type) {
     case 'multiple-choice-translation':
       return 'Выбор перевода';
@@ -64,7 +64,7 @@ function typeLabel(type: TestQuestion['type']): string {
   }
 }
 
-function renderBody(question: TestQuestion, onAnswer: (answer: string) => void): JSX.Element {
+function renderBody(question: TestQuestionPublic, onAnswer: (answer: string) => void): JSX.Element {
   switch (question.type) {
     case 'multiple-choice-translation':
       return <MultipleChoiceBody question={question} onAnswer={onAnswer} />;
@@ -296,7 +296,10 @@ function CharacterAssemblyBody({
     setAnswer([]);
   }, [question.id, question.characterPool]);
 
-  const totalSlots = question.correctAnswer.length;
+  // F18: у публичного DTO нет correctAnswer. Для character-assembly
+  // длина слова = количество слотов — берём из wordCharacter
+  // (это и есть эталонный ответ для этого типа вопроса).
+  const totalSlots = question.wordCharacter.length;
   const finished = answer.length === totalSlots;
 
   const moveToAnswer = (ch: string, poolIdx: number) => {

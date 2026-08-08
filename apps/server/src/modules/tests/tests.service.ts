@@ -6,10 +6,12 @@ import {
   type TestAnswerResult,
   type TestBreakdownItem,
   type TestQuestion,
+  type TestQuestionPublic,
   type TestQuestionType,
   type TestResult,
   type TestSession,
   TestBreakdownItemSchema,
+  TestQuestionPublicSchema,
   TestQuestionSchema,
   TestResultSchema,
 } from '@hanzi/shared';
@@ -312,11 +314,14 @@ function buildQuestions(words: readonly WordRow[]): TestQuestion[] {
 /** Записать сессию в Redis и вернуть TestSession для клиента. */
 async function persistSession(record: TestSessionRecord): Promise<TestSession> {
   const redis = getRedis();
+  // В Redis пишется ПОЛНАЯ запись (включая correctAnswer) — она нужна
+  // для grading в submitTest. Клиенту уходит только публичный DTO без
+  // ответов (F18).
   await redis.setex(TEST_SESSION_KEY(record.id), TEST_SESSION_TTL_SECONDS, JSON.stringify(record));
   return {
     id: record.id,
     level: record.level as 1 | 2 | 3 | 4 | 5 | 6,
-    questions: record.questions,
+    questions: record.questions.map((q): TestQuestionPublic => TestQuestionPublicSchema.parse(q)),
     startedAt: record.startedAt,
     completedAt: null,
     answers: [],

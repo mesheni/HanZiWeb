@@ -8,11 +8,22 @@ vi.mock('../../lib/prisma.js', () => ({
   },
 }));
 
+// In-memory Redis: setex кладёт значение, get его читает — чтобы тест
+// F18 мог заглянуть в серверную запись сессии (с correctAnswer).
+const { redisStore } = vi.hoisted(() => ({ redisStore: new Map<string, string>() }));
+
 vi.mock('../../lib/redis.js', () => ({
-  getRedis: () => ({ setex: vi.fn().mockResolvedValue('OK') }),
+  getRedis: () => ({
+    setex: vi.fn().mockImplementation(async (key: string, _ttl: number, value: string) => {
+      redisStore.set(key, value);
+      return 'OK';
+    }),
+    get: vi.fn().mockImplementation(async (key: string) => redisStore.get(key) ?? null),
+    del: vi.fn().mockResolvedValue(1),
+  }),
 }));
 
-import { generateTest } from './tests.service.js';
+import { generateTest, loadTestSession } from './tests.service.js';
 import { prisma } from '../../lib/prisma.js';
 
 const findManyMock = prisma.word.findMany as ReturnType<typeof vi.fn>;
@@ -60,5 +71,26 @@ describe('generateTest question-count contract — PLAN_Features_v0.4 §39', () 
     findManyMock.mockResolvedValue(mkWords(100));
     const session = await generateTest('user-1', { level: 5 });
     expect(session.questions.length).toBeLessThanOrEqual(30);
+  });
+
+  it('F18: публичный DTO вопросов не содержит correctAnswer, в Redis-записи ответы остаются', async () => {
+    findManyMock.mockResolvedValue(mkWords(25));
+    const session = await generateTest('user-1', { level: 5 });
+    expect(session.questions.length).toBeGreaterThan(0);
+
+    // Клиентский DTO: ответов нет (F18 — иначе они видны в DevTools
+    // до отправки).
+    for (const q of session.questions) {
+      expect(q).not.toHaveProperty('correctAnswer');
+    }
+
+    // Серверная запись сессии (Redis): correctAnswer на месте —
+    // submitTest градирует по ней, а не по клиентским данным.
+    const record = await loadTestSession(session.id, 'user-1');
+    expect(record.questions).toHaveLength(session.questions.length);
+    for (const q of record.questions) {
+      expect(typeof q.correctAnswer).toBe('string');
+      expect(q.correctAnswer.length).toBeGreaterThan(0);
+    }
   });
 });
