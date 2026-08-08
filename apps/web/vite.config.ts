@@ -13,7 +13,12 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,json}'],
+        // F23: `json` в globPatterns тащил в precache ВСЕ 9.5k файлов
+        // public/hanzi-writer-data (~32 MiB). Данные иероглифов
+        // кэшируются runtime (CacheFirst в sw.ts) при первом
+        // использовании — в манифест они не нужны.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        globIgnores: ['hanzi-writer-data/**'],
       },
       manifest: {
         name: 'HanZi — Китайские слова',
@@ -34,6 +39,26 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // F23: 766 kB main chunk — ручной vendor-split: реакт-стек,
+        // rxdb и UI-библиотеки в отдельные chunk'и, которые грузятся
+        // параллельно и кэшируются независимо.
+        manualChunks: {
+          'react-vendor': [
+            'react',
+            'react-dom',
+            'react-router-dom',
+            'zustand',
+            '@tanstack/react-query',
+          ],
+          rxdb: ['rxdb', 'rxjs'],
+          ui: ['lucide-react', 'canvas-confetti', 'hanzi-writer'],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),

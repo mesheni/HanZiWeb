@@ -82,7 +82,7 @@
 | ✅ F22b | Мобильный Library/Stats read-only: создать колоду, join share code, детальные статы | Средний |
 | ✅ F22c | Мобильные экраны reading/tests/settings | Средний |
 | ✅ F22d | Мобильный push (FCM-регистрация /devices) + аудио-озвучка карточек | Средний |
-| F23 | PWA precache: 9,587 файлов (~32 MiB), 766 kB main chunk; нет skipWaiting/navigation fallback | Средний |
+| ✅ F23 | PWA precache: 9,587 файлов (~32 MiB), 766 kB main chunk; нет skipWaiting/navigation fallback | Средний |
 
 ### Релиз/контракты/CI/observability (F24–F34)
 
