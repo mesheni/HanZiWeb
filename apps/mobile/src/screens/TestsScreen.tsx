@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Audio } from 'expo-av';
 import { api } from '../bootstrap';
 import type { RootStackParamList } from '../navigation/types';
 import type { TestSession, TestQuestionPublic, TestLevel } from '@hanzi/shared';
@@ -166,6 +167,34 @@ export function TestsScreen(): React.ReactElement | null {
   );
 }
 
+/** F22d: кнопка озвучки в тесте (audioUrl приходит в вопросе). */
+function TestAudioButton({ uri }: { uri: string | null }): React.ReactElement | null {
+  const playingRef = React.useRef<Audio.Sound | null>(null);
+  if (!uri) return null;
+  return (
+    <Pressable
+      style={styles.toneAudioBtn}
+      onPress={() => {
+        void (async () => {
+          try {
+            if (playingRef.current) {
+              await playingRef.current.unloadAsync();
+              playingRef.current = null;
+            }
+            const { sound } = await Audio.Sound.createAsync({ uri });
+            playingRef.current = sound;
+            await sound.playAsync();
+          } catch {
+            // Тихий сбой озвучки.
+          }
+        })();
+      }}
+    >
+      <Text style={styles.toneAudioText}>🔊</Text>
+    </Pressable>
+  );
+}
+
 /** F22c: рендер одного вопроса по типу. */
 function QuestionView({
   question,
@@ -268,6 +297,7 @@ function QuestionView({
 
       {question.type === 'tone-recognition' && (
         <>
+          <TestAudioButton uri={question.wordAudioUrl} />
           <Text style={styles.toneHint}>{question.wordPinyin}</Text>
           <View style={styles.toneRow}>
             {['1', '2', '3', '4'].map((t) => (
@@ -285,7 +315,6 @@ function QuestionView({
               </Pressable>
             ))}
           </View>
-          <Text style={styles.smallHint}>Пока без аудио — по пиньиню (аудио в F22d).</Text>
         </>
       )}
 
@@ -539,11 +568,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
-  smallHint: {
-    color: '#4A5161',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 14,
+  toneAudioBtn: {
+    backgroundColor: '#1E2330',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  toneAudioText: {
+    color: '#E8EAED',
+    fontSize: 20,
   },
   assemblyZone: {
     minHeight: 64,

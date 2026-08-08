@@ -17,7 +17,7 @@
         "backgroundColor": "#0C0E16"
       }
     },
-    "plugins": ["expo-secure-store"],
+    "plugins": ["expo-secure-store", "expo-notifications"],
     "splash": {
       "backgroundColor": "#0C0E16",
       "resizeMode": "contain"

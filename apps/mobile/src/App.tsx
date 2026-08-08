@@ -9,6 +9,7 @@ import { createWatermelonQueueStorage } from './db/WatermelonQueueStorage';
 import { applyServerChange } from './db/progressSync';
 import { syncWordLibrary } from './db/wordsSync';
 import { pullProgressSnapshot } from './db/progressSnapshot';
+import { registerForPushNotifications } from './push';
 import type { AuthResponse } from '@hanzi/shared';
 
 /**
@@ -92,6 +93,8 @@ export default function App(): React.ReactElement {
           void pullProgressSnapshot(db, api, authUserId).catch(() => {
             // Best-effort: снапшот повторится при следующем старте.
           });
+          // F22d: регистрация устройства для push-напоминаний.
+          void registerForPushNotifications();
         }
 
         // 4. Boot the sync engine. It will auto-flush any pending

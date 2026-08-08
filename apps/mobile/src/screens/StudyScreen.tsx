@@ -16,6 +16,7 @@ import { PinyinInputCard } from '../components/practice/PinyinInputCard';
 import { ToneRecognitionCard } from '../components/practice/ToneRecognitionCard';
 import { SyllableConstructorCard } from '../components/practice/SyllableConstructorCard';
 import { ClozeCard } from '../components/practice/ClozeCard';
+import { useWordAudio } from '../hooks/useWordAudio';
 import type { MobileWord } from '../components/practice/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Study'>;
@@ -191,6 +192,16 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
       cancelled = true;
     };
   }, [session, currentIndex, practiceType]);
+
+  // F22d: озвучка текущего слова + автоплей при смене карточки.
+  const currentWordId = session?.cards[currentIndex]?.word.id ?? null;
+  const audio = useWordAudio(currentWordId);
+  useEffect(() => {
+    if (!audio.isAvailable || submitting) return;
+    const t = setTimeout(() => void audio.play(), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWordId, audio.isAvailable]);
 
   const handleRate = async (rating: SrsRating) => {
     if (!session || submitting) return;
@@ -439,6 +450,17 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
               <View style={styles.cardFront}>
                 <Text style={styles.cardCharacter}>{card.word.character}</Text>
                 <Text style={styles.cardPinyin}>{card.word.pinyin}</Text>
+                {/* F22d: ручная озвучка слова (помимо автоплея). */}
+                <Pressable
+                  style={[styles.speakerButton, audio.isLoading && styles.speakerDisabled]}
+                  onPress={() => void audio.play()}
+                  disabled={!audio.isAvailable || audio.isLoading}
+                  hitSlop={10}
+                >
+                  <Text style={styles.speakerText}>
+                    {audio.isLoading ? '…' : audio.isAvailable ? '🔊' : '🔇'}
+                  </Text>
+                </Pressable>
                 <Text style={styles.tapHint}>Нажми, чтобы перевернуть</Text>
               </View>
             )}
@@ -487,7 +509,12 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
             <PinyinInputCard word={card.word} onAnswer={handleTrainingAnswer} />
           )}
           {practiceType === 'tone-recognition' && (
-            <ToneRecognitionCard word={card.word} onAnswer={handleTrainingAnswer} />
+            <ToneRecognitionCard
+              word={card.word}
+              onAnswer={handleTrainingAnswer}
+              onPlayAudio={() => void audio.play()}
+              audioAvailable={audio.isAvailable}
+            />
           )}
           {practiceType === 'syllable-constructor' && (
             <SyllableConstructorCard
@@ -651,6 +678,20 @@ const styles = StyleSheet.create({
     color: '#7B8497',
     fontSize: 13,
     marginTop: 32,
+  },
+  speakerButton: {
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#1E2330',
+    borderRadius: 10,
+  },
+  speakerDisabled: {
+    opacity: 0.5,
+  },
+  speakerText: {
+    color: '#E8EAED',
+    fontSize: 18,
   },
   cardBack: {
     alignItems: 'center',

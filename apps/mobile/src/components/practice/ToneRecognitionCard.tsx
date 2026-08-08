@@ -7,6 +7,10 @@ import { TONE_COLORS_HEX } from './types';
 interface Props {
   word: MobileWord;
   onAnswer: (correct: boolean) => void;
+  /** F22d: ручное озвучивание слова. */
+  onPlayAudio?: () => void;
+  /** Доступно ли аудио (дизейбл кнопки). */
+  audioAvailable?: boolean;
 }
 
 type Tone = 1 | 2 | 3 | 4;
@@ -20,9 +24,13 @@ function detectTargetTone(pinyin: string): Tone {
   return 1;
 }
 
-/** F22a: распознавание тона — выбор тона (1/2/3/4). Аудио — F22d; без
- * него карточка работает как «выбор наугад», как и web-версия. */
-export function ToneRecognitionCard({ word, onAnswer }: Props): React.ReactElement {
+/** F22d: распознавание тона — выбор тона (1/2/3/4) с озвучкой слова. */
+export function ToneRecognitionCard({
+  word,
+  onAnswer,
+  onPlayAudio,
+  audioAvailable,
+}: Props): React.ReactElement {
   const targetTone = useMemo(() => detectTargetTone(word.pinyin), [word.pinyin]);
   const [selected, setSelected] = useState<Tone | null>(null);
 
@@ -39,7 +47,19 @@ export function ToneRecognitionCard({ word, onAnswer }: Props): React.ReactEleme
   return (
     <View style={styles.card}>
       <Text style={styles.cue}>Какой тон?</Text>
-      <Text style={styles.hint}>Аудио пока недоступно — выбор наугад</Text>
+      {onPlayAudio ? (
+        <Pressable
+          style={[styles.audioButton, audioAvailable === false && styles.audioDisabled]}
+          onPress={onPlayAudio}
+          disabled={audioAvailable === false}
+        >
+          <Text style={styles.audioButtonText}>
+            {audioAvailable === false ? 'Аудио недоступно' : '🔊 Послушать'}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.hint}>Аудио пока недоступно — выбор наугад</Text>
+      )}
       <View style={styles.row}>
         {TONE_OPTIONS.map((tone) => {
           const isTarget = selected !== null && tone === targetTone;
@@ -88,6 +108,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 36,
+  },
+  audioButton: {
+    backgroundColor: '#1E2330',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignSelf: 'center',
+    marginBottom: 36,
+  },
+  audioButtonText: {
+    color: '#4FC3F7',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  audioDisabled: {
+    opacity: 0.5,
   },
   row: {
     flexDirection: 'row',
