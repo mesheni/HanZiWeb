@@ -151,14 +151,16 @@ export async function checkGlobalAchievements(
 /**
  * Проверяет, была ли сессия «идеальной» — все ответы = Easy (4).
  *
- * Сессия считается «идеальной», только если в ней есть хотя бы
- * один ответ (иначе это пустая сессия) и все они Easy.
+ * Сессия считается «идеальной», только если она ПОЛНОСТЬЮ завершена
+ * (cardsCompleted >= cardsTotal, cardsTotal > 0) и все ответы Easy.
+ * До фикса F03 одного ответа Easy в незавершённой сессии хватало
+ * для разблокировки.
  */
 export async function checkPerfectSession(
   userId: string,
   sessionId: string,
 ): Promise<UserAchievement | null> {
-  const [answers, existing] = await Promise.all([
+  const [answers, existing, session] = await Promise.all([
     prisma.sessionAnswer.findMany({
       where: { sessionId, session: { userId } },
       select: { rating: true },
@@ -166,9 +168,15 @@ export async function checkPerfectSession(
     prisma.userAchievement.findUnique({
       where: { userId_type: { userId, type: 'perfect_session' } },
     }),
+    prisma.session.findFirst({
+      where: { id: sessionId, userId },
+      select: { cardsTotal: true, cardsCompleted: true },
+    }),
   ]);
 
   if (existing) return null;
+  if (!session || session.cardsTotal <= 0) return null;
+  if (session.cardsCompleted < session.cardsTotal) return null;
   if (answers.length === 0) return null;
   const allEasy = answers.every((a) => a.rating === 4);
   if (!allEasy) return null;

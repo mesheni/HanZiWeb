@@ -31,6 +31,24 @@ const HSK_LEVEL_LIST = [...HSK_LEVELS];
 const MS_PER_DAY = 86_400_000;
 
 /**
+ * F03: если все карточки сессии отвечены (cardsCompleted >= cardsTotal) —
+ * проставляем `completedAt` идемпотентно. Пустая сессия (cardsTotal = 0)
+ * не «завершается». Принимает `prisma` или транзакционный клиент.
+ */
+async function markSessionCompleted(
+  db: Pick<Prisma.TransactionClient, 'session'>,
+  sessionId: string,
+  cardsTotal: number,
+  at: Date,
+) {
+  if (cardsTotal <= 0) return;
+  await db.session.updateMany({
+    where: { id: sessionId, cardsCompleted: { gte: cardsTotal }, completedAt: null },
+    data: { completedAt: at },
+  });
+}
+
+/**
  * Внутренний сигнал оптимистичной блокировки: строка прогресса изменилась
  * между чтением и записью (конкурентный ответ) — транзакция откатывается,
  * recordAnswer перечитывает и пересчитывает FSRS (PLANCorrection #17).
@@ -331,10 +349,27 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // (PLAN_Features_v0.4 §20).
   const session = await prisma.session.findFirst({
     where: { id: input.sessionId, userId },
-    select: { practiceType: true },
+    select: { practiceType: true, deckId: true, cardsTotal: true },
   });
   if (!session) {
     throw Object.assign(new Error('Session not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  // F03: сессия принимает ответы только на слова своей колоды. До фикса
+  // можно было отвечать любое слово из своего прогресса — SessionAnswer,
+  // прогресс слова и cardsCompleted загрязнялись словами вне колоды,
+  // а cardsCompleted мог превысить cardsTotal.
+  if (session.deckId) {
+    const inDeck = await prisma.deckWord.findUnique({
+      where: { deckId_wordId: { deckId: session.deckId, wordId: input.wordId } },
+      select: { wordId: true },
+    });
+    if (!inDeck) {
+      throw Object.assign(new Error('Word is not in the session deck'), {
+        statusCode: 400,
+        code: 'WORD_NOT_IN_DECK',
+      });
+    }
   }
   const parsedPracticeType = PracticeTypeSchema.safeParse(session.practiceType);
   const sessionPracticeType: PracticeType = parsedPracticeType.success
@@ -354,6 +389,8 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
       where: { id: input.sessionId },
       data: { cardsCompleted: { increment: 1 } },
     });
+    // F03: завершение сессии — по достижении cardsTotal ставим completedAt.
+    await markSessionCompleted(prisma, input.sessionId, session.cardsTotal, new Date());
     return {
       wordId: input.wordId,
       newStability: progress.stability,
@@ -465,6 +502,10 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
           where: { id: input.sessionId },
           data: { cardsCompleted: { increment: 1 } },
         });
+
+        // F03: завершение сессии — атомарно с ответом: если это был
+        // последний ответ (cardsCompleted >= cardsTotal), ставим completedAt.
+        await markSessionCompleted(tx, input.sessionId, session.cardsTotal, answeredAt);
 
         return { newStability, newDifficulty, newState, newDueDate, intervalDays };
       });
