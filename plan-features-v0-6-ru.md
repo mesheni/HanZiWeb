@@ -47,7 +47,7 @@
 
 | ID | Суть | Серьёзность | Где |
 |----|------|-------------|-----|
-| F01 | `Example.tatoebaId` BigInt → Fastify падает с 500 на всех word/example/session ответах | Критично | `prisma/schema.prisma:179`, `words.service.ts:12-16` |
+| ✅ F01 | `Example.tatoebaId` BigInt → Fastify падает с 500 на всех word/example/session ответах | Критично | `prisma/schema.prisma:179`, `words.service.ts:12-16` |
 | F02 | Цепочка IDOR приватных колод: study-map → words?deckId → sessions.start (любой пользователь выгружает чужие колоды) | Критично | `stats.service.ts:586`, `words.service.ts:46-48`, `sessions.service.ts:134` |
 | F03 | Сессии принимают ответы на слова не из колоды; completedAt никогда не выставляется; perfect_session без полного завершения | Высокий | `sessions.service.ts:321-458`, `achievements.service.ts:161-175` |
 | F04 | Клиентские таймстемпы полностью доверяются сервером для lastReviewDate/стрика/FSRS (манипуляция расписанием) | Средний | `sessions.service.ts:369-395`, `sync.service.ts:30-78` |

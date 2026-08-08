@@ -27,6 +27,7 @@ import { readingRoutes } from './modules/reading/reading.routes.js';
 import { getRedis, closeRedis } from './lib/redis.js';
 import { prisma } from './lib/prisma.js';
 import { initCronJobs } from './lib/cron.js';
+import { normalizeBigInts } from './lib/serialize.js';
 
 async function main() {
   const config = loadConfig();
@@ -37,6 +38,11 @@ async function main() {
         ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
         : true,
   });
+
+  // F01 (plan-features-v0-6-ru): Prisma `Example.tatoebaId` — BigInt, а
+  // JSON.stringify на BigInt падает → 500 на всех word/example/session
+  // ответах. Нормализуем BigInt → number/string до сериализации.
+  app.addHook('preSerialization', async (_request, _reply, payload) => normalizeBigInts(payload));
 
   // Plugins
   // CORS в function-form (PLAN_Features_v0.4 §32): credentials: true,
