@@ -8,11 +8,16 @@ import type { SyncRequest } from '@hanzi/shared';
 // применяться ровно один раз при любом порядке доставки.
 //
 // Клиент штампует `answeredAt` один раз и использует его и в live-post,
-// и в payload очереди. Сервер ставит `lastReviewDate = answeredAt`,
-// поэтому дедуп `changeTime <= existingTime` отбрасывает flush после
-// успешного live-post (T1 === T2). Если flush пришёл с более поздним
-// timestamp — срабатывает страховка findFirst по (sessionId, wordId),
-// а уникальный индекс SessionAnswer — финальная защита на уровне БД.
+// и в payload очереди. Сервер ставит `lastReviewDate` = серверное время
+// (F04), поэтому дедуп `changeTime <= existingTime` отбрасывает flush
+// после успешного live-post (T1 <= серверное время). Если flush пришёл
+// с более поздним timestamp — срабатывает страховка findFirst по
+// (sessionId, wordId), а уникальный индекс SessionAnswer — финальная
+// защита на уровне БД. Все пропуски возвращают терминальный ack (F05).
+//
+// F06: конкурентные flush обрабатываются в транзакции с CAS-записью
+// (stability/reps как «версия») — проигравший перечитывает и получает
+// ack, потерянных обновлений нет.
 
 const testRunId = Date.now();
 let userId = '';
@@ -78,7 +83,7 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
   it('live-post применился (T1), flush догоняет с тем же timestamp → reps ровно 1', async () => {
     const answeredAt = new Date().toISOString();
 
-    // Live-post применяется (lastReviewDate = answeredAt).
+    // Live-post применяется (lastReviewDate = серверное время ≈ T1).
     const live = await recordAnswer(userId, {
       sessionId,
       wordId,
@@ -90,8 +95,10 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
     // Fallback-очередь flush'ится с тем же timestamp (T1 === T2).
     const sync = await processSync(userId, mkSyncRequest(wordId, sessionId, answeredAt));
 
-    // Дедуп `changeTime <= existingTime` отбросил повторный apply.
-    expect(sync.results).toHaveLength(0);
+    // F05: дедуп `changeTime <= existingTime` отбросил повторный apply,
+    // но терминальный ack (stale) пришёл — иначе pending живёт вечно.
+    expect(sync.results).toHaveLength(1);
+    expect(sync.results[0]?.outcome).toBe('stale');
 
     const progress = await prisma.userWordProgress.findUnique({
       where: { userId_wordId: { userId, wordId } },
@@ -114,11 +121,12 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
     // Тот же ответ, но очередь штампанула более поздний timestamp
     // (старый клиент / разнесённые часы): дедуп по времени не
     // срабатывает, но SessionAnswer для (sessionId, wordId) уже
-    // существует → пропуск.
+    // существует → пропуск с ack duplicate (F05).
     const lateTs = new Date(Date.now() + 60_000).toISOString();
     const sync = await processSync(userId, mkSyncRequest(wordId, sessionId, lateTs, 'c2'));
 
-    expect(sync.results).toHaveLength(0);
+    expect(sync.results).toHaveLength(1);
+    expect(sync.results[0]?.outcome).toBe('duplicate');
 
     const progress = await prisma.userWordProgress.findUnique({
       where: { userId_wordId: { userId, wordId } },
@@ -142,17 +150,20 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
 
       const first = await processSync(uid, req);
       expect(first.results).toHaveLength(1);
+      expect(first.results[0]?.outcome).toBe('applied');
       expect(first.results[0]?.xpGain).toBe(3);
 
       const progress = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId: uid, wordId: wid } },
       });
       expect(progress?.reps).toBe(1);
-      expect(progress?.lastReviewDate?.toISOString()).toBe(timestamp);
+      // F04: lastReviewDate — серверное время, не клиентский timestamp.
+      expect(Math.abs(progress!.lastReviewDate!.getTime() - Date.now())).toBeLessThan(60_000);
 
-      // Повторный flush того же изменения (retry сети) — пропуск.
+      // Повторный flush того же изменения (retry сети) — пропуск с ack (F05).
       const second = await processSync(uid, req);
-      expect(second.results).toHaveLength(0);
+      expect(second.results).toHaveLength(1);
+      expect(second.results[0]?.outcome).toBe('stale');
 
       const after = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId: uid, wordId: wid } },
@@ -201,6 +212,41 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
 
       const answers = await prisma.sessionAnswer.findMany({ where: { sessionId: sid, wordId: wid } });
       expect(answers).toHaveLength(1);
+    } finally {
+      await prisma.user.deleteMany({ where: { id: uid } });
+      await prisma.word.deleteMany({ where: { id: wid } });
+    }
+  });
+
+  it('F06: два конкурентных flush одного изменения → ровно один apply, второй получает терминальный ack', async () => {
+    const uid = await createUser();
+    const wid = await createWord();
+    const sid = await createSession(uid);
+    await createProgress(uid, wid);
+
+    try {
+      const timestamp = new Date().toISOString();
+      const req = mkSyncRequest(wid, sid, timestamp, 'race-1');
+
+      // Оба flush стартуют одновременно — до фикса оба читали прогресс
+      // вне транзакции и могли оба пересчитать FSRS от одного состояния.
+      const [a, b] = await Promise.all([processSync(uid, req), processSync(uid, req)]);
+
+      const outcomes = [...a.results, ...b.results].map((r) => r.outcome);
+      // Ровно один применён; второй получил терминальный ack (stale/duplicate).
+      expect(outcomes.filter((o) => o === 'applied')).toHaveLength(1);
+      expect(outcomes.filter((o) => o !== 'applied')).toHaveLength(1);
+
+      const progress = await prisma.userWordProgress.findUnique({
+        where: { userId_wordId: { userId: uid, wordId: wid } },
+      });
+      expect(progress?.reps).toBe(1);
+
+      const answers = await prisma.sessionAnswer.findMany({ where: { sessionId: sid } });
+      expect(answers).toHaveLength(1);
+
+      const user = await prisma.user.findUnique({ where: { id: uid } });
+      expect(user?.xp).toBe(3);
     } finally {
       await prisma.user.deleteMany({ where: { id: uid } });
       await prisma.word.deleteMany({ where: { id: wid } });
