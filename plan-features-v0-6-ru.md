@@ -89,7 +89,7 @@
 | ID | Суть | Серьёзность |
 |----|------|-------------|
 | ✅ F24 | Root `pnpm test` отсутствует; CI не запускает тесты | Высокий |
-| F25 | Мобильная production-сборка ложно-зелёная: root build пропускает mobile; `build:tsc` падает | Высокий |
+| ✅ F25 | Мобильная production-сборка ложно-зелёная: root build пропускает mobile; `build:tsc` падает | Высокий |
 | F26 | API-спецификация разошлась с кодом (`{day,count}` vs `{date,count}`; отсутствуют /sync, /devices, /stats/reset-progress) | Средний |
 | F27 | Нет тестов для devices, reading, featureFlags, achievements, tests, sync, cron; нет structured observability | Средний |
 | F28 | Product roadmap: нет тематических колод; handwriting — только анимация; нет удаления аккаунта | Фича |

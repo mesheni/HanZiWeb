@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "vitest run",
+    "build": "pnpm build:tsc",
     "build:tsc": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist"
   },
