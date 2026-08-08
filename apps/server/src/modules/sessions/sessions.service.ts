@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { deckAccessWhere, findAccessibleDeck } from '../../lib/deckAccess.js';
+import { computeElapsedDays, sanitizeClientTimestamp } from './timePolicy.js';
 import type { Prisma } from '@prisma/client';
 import { recalcFsrs } from './srs.js';
 import * as achievementsService from '../achievements/achievements.service.js';
@@ -27,15 +28,13 @@ type ProgressWithWord = Prisma.UserWordProgressGetPayload<{
 
 const HSK_LEVELS = [1, 2, 3, 4, 5, 6] as const;
 const HSK_LEVEL_LIST = [...HSK_LEVELS];
-/** Мс в сутках — для elapsed-времени в FSRS (PLAN_Features_v0.4 §35). */
-const MS_PER_DAY = 86_400_000;
 
 /**
  * F03: если все карточки сессии отвечены (cardsCompleted >= cardsTotal) —
  * проставляем `completedAt` идемпотентно. Пустая сессия (cardsTotal = 0)
  * не «завершается». Принимает `prisma` или транзакционный клиент.
  */
-async function markSessionCompleted(
+export async function markSessionCompleted(
   db: Pick<Prisma.TransactionClient, 'session'>,
   sessionId: string,
   cardsTotal: number,
@@ -414,8 +413,17 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
   // (timestamp = тот же answeredAt) дедуп `changeTime <= existingTime`
   // в sync.service.ts срабатывает строго: T1 === T2 → повторный
   // пересчёт отбрасывается.
-  const answeredAt = input.answeredAt ? new Date(input.answeredAt) : new Date();
-  const answeredAtMs = answeredAt.getTime();
+  // F04: сервер — источник истины для таймстемпов. Клиентский `answeredAt`
+  // используется ТОЛЬКО для расчёта elapsed (реальное время офлайн-
+  // ответа), и то с серверной границей — в `lastReviewDate`,
+  // `SessionAnswer.answeredAt` и `completedAt` пишется серверное время.
+  // Иначе клиент мог бы подделывать даты ответов и манипулировать
+  // расписанием FSRS/стриком.
+  const serverNow = new Date();
+  const answeredAtMs = sanitizeClientTimestamp(
+    input.answeredAt ? new Date(input.answeredAt).getTime() : undefined,
+    serverNow.getTime(),
+  );
 
   // Прогресс читается ВНУТРИ транзакции, а запись идёт через updateMany
   // с optimistic-условием (stability/reps как «версия» строки): два
@@ -438,10 +446,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
         }
 
         const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
-        const elapsedDays =
-          lastReviewMs > 0 && answeredAtMs > lastReviewMs
-            ? (answeredAtMs - lastReviewMs) / MS_PER_DAY
-            : 0;
+        const elapsedDays = computeElapsedDays(lastReviewMs, answeredAtMs, serverNow.getTime());
         const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
           input.rating,
           progress.stability,
@@ -480,7 +485,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
             difficulty: newDifficulty,
             reps: { increment: 1 },
             dueDate: newDueDate,
-            lastReviewDate: answeredAt,
+            lastReviewDate: serverNow,
           },
         });
         if (updated.count === 0) {
@@ -494,7 +499,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
             sessionId: input.sessionId,
             wordId: input.wordId,
             rating: input.rating,
-            answeredAt,
+            answeredAt: serverNow,
           },
         });
 
@@ -505,7 +510,7 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
 
         // F03: завершение сессии — атомарно с ответом: если это был
         // последний ответ (cardsCompleted >= cardsTotal), ставим completedAt.
-        await markSessionCompleted(tx, input.sessionId, session.cardsTotal, answeredAt);
+        await markSessionCompleted(tx, input.sessionId, session.cardsTotal, serverNow);
 
         return { newStability, newDifficulty, newState, newDueDate, intervalDays };
       });

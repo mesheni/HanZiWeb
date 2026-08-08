@@ -1,10 +1,9 @@
 import { prisma } from '../../lib/prisma.js';
 import { recalcFsrs } from '../sessions/srs.js';
+import { computeElapsedDays, sanitizeClientTimestamp } from '../sessions/timePolicy.js';
+import { markSessionCompleted } from '../sessions/sessions.service.js';
 import * as achievementsService from '../achievements/achievements.service.js';
 import type { SyncRequest, SyncResponse, SyncResult } from '@hanzi/shared';
-
-/** Мс в сутках — для elapsed-времени в FSRS (PLAN_Features_v0.4 §35). */
-const MS_PER_DAY = 86_400_000;
 
 export async function processSync(userId: string, input: SyncRequest): Promise<SyncResponse> {
   const results: SyncResult[] = [];
@@ -30,12 +29,23 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
       const existingTime = progress.lastReviewDate?.getTime() ?? 0;
       const changeTime = new Date(timestamp).getTime();
 
+      // F04: сервер — источник истины. Клиентский `timestamp` остаётся
+      // только для дедупа и офлайн-elapsed (с серверной границей);
+      // в lastReviewDate/SessionAnswer.answeredAt/lastActiveDate пишется
+      // серверное время — иначе клиент подделывал бы расписание FSRS
+      // и стрик произвольными датами.
+      const serverNow = new Date();
+      const boundedChangeTime = sanitizeClientTimestamp(changeTime, serverNow.getTime());
+
       // Дедуп по времени (fix v0.4 §45 follow-up). Клиент штампует
       // `answeredAt` один раз на ответ и кладёт его же в payload
       // очереди, поэтому после успешного live-post (lastReviewDate =
-      // answeredAt) flush приходит с ровно тем же timestamp →
+      // серверное время ответа ≈ клиентский timestamp при синхронных
+      // часах) flush приходит с тем же timestamp →
       // `changeTime <= existingTime` → пропуск. Строгое `<` пропускало
       // этот случай, и ответ применялся второй раз (reps/XP ×2).
+      // Для клиентов с ушедшими вперёд часами срабатывает страховка
+      // ниже — SessionAnswer по (sessionId, wordId).
       if (changeTime <= existingTime) {
         continue;
       }
@@ -56,15 +66,11 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
       // Elapsed с последнего повторения (PLAN_Features_v0.4 §35):
       // офлайн-ответ может прийти с опозданием — это должно влиять
       // на retrievability и пересчёт stability. Отсчитываем от
-      // timestamp'а ответа, а не от момента flush, чтобы серверный
-      // пересчёт совпадал с live-путём.
+      // timestamp'а ответа (ограниченного серверным «сейчас» и
+      // серверным elapsed — F04), чтобы серверный пересчёт совпадал
+      // с live-путём, а клиент не мог накручивать дефицит R.
       const lastReviewMs = progress.lastReviewDate?.getTime() ?? 0;
-      // Guard на отрицательный elapsed (PLANCorrection #15): после
-      // дедупа выше changeTime > lastReviewDate всегда, но при ушедших
-      // назад часах клиента страхуемся — FSRS получит elapsed = 0
-      // (R = 1), а не отрицательную retrievability.
-      const elapsedDays =
-        lastReviewMs > 0 && changeTime > lastReviewMs ? (changeTime - lastReviewMs) / MS_PER_DAY : 0;
+      const elapsedDays = computeElapsedDays(lastReviewMs, boundedChangeTime, serverNow.getTime());
       const { newStability, newDifficulty, newState, intervalDays } = recalcFsrs(
         rating,
         progress.stability,
@@ -75,7 +81,6 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
 
       const newDueDate = new Date();
       newDueDate.setDate(newDueDate.getDate() + intervalDays);
-      const answeredAt = new Date(changeTime);
 
       try {
         const created = await prisma.$transaction(async (tx) => {
@@ -87,7 +92,7 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
               difficulty: newDifficulty,
               reps: { increment: 1 },
               dueDate: newDueDate,
-              lastReviewDate: answeredAt,
+              lastReviewDate: serverNow,
             },
           });
 
@@ -104,21 +109,29 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
             });
             if (owned.count === 1) {
               await tx.sessionAnswer.create({
-                data: { sessionId, wordId, rating, answeredAt },
+                data: { sessionId, wordId, rating, answeredAt: serverNow },
               });
               createdHere = true;
+              // F03: sync-путь тоже завершает сессию — по достижении
+              // cardsTotal проставляем completedAt.
+              const row = await tx.session.findUnique({
+                where: { id: sessionId },
+                select: { cardsTotal: true },
+              });
+              await markSessionCompleted(tx, sessionId, row?.cardsTotal ?? 0, serverNow);
             }
           }
 
           // Стрик/активность (PLANCorrection #16): lastActiveDate =
-          // max(lastActiveDate, answeredAt) — монотонная идемпотентная
-          // операция, безопасна при повторных flush.
+          // max(lastActiveDate, серверное «сейчас») — монотонная
+          // идемпотентная операция, безопасна при повторных flush
+          // (F04: серверное время, не клиентский timestamp).
           await tx.user.updateMany({
             where: {
               id: userId,
-              OR: [{ lastActiveDate: null }, { lastActiveDate: { lt: answeredAt } }],
+              OR: [{ lastActiveDate: null }, { lastActiveDate: { lt: serverNow } }],
             },
-            data: { lastActiveDate: answeredAt },
+            data: { lastActiveDate: serverNow },
           });
 
           return createdHere;
