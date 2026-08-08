@@ -57,7 +57,7 @@
 | ✅ F08 | Мобильный pull-merge не подключён: `onServerChange` никогда не wired → serverChanges теряются | Высокий | `SyncEngine.ts:74-77,193-195`, `bootstrap.ts:193-199` |
 | ✅ F09 | Гонка mobile auth refresh/logout: `isRefreshing` возвращает null вместо ожидания общего промиса | Высокий | `ApiClient.ts:83,238-247`, `bootstrap.ts:146-155` |
 | ✅ F10 | Revoked access token (после смены пароля) продолжает читать прогресс пользователя через optional-auth пути | Средний | `auth.ts:104-120` |
-| F11 | Миграция уникального индекса SessionAnswer — без preflight; упадёт в проде при исторических дубликатах | Критично | `migrations/20260806190600.../migration.sql:1-2` |
+| ✅ F11 | Миграция уникального индекса SessionAnswer — без preflight; упадёт в проде при исторических дубликатах | Критично | `migrations/20260806190600.../migration.sql:1-2` |
 
 ### Баги обучения и статистики (F12–F18)
 
