@@ -13,14 +13,16 @@ import { loadConfig, type Config } from '../../config.js';
  * Поддерживает два режима (PLAN_Features_v0.4 §30):
  *  1. Production: mp3 загружается в GCS-бакет (GCS_BUCKET_NAME задан),
  *     публичный URL — `https://storage.googleapis.com/<bucket>/<file>`.
- *     Объект публикуется на чтение сразу при загрузке
- *     (`file.makePublic()`), поэтому бакет может быть приватным
- *     (uniform bucket-level access) — service account нужны права
- *     storage.objectAdmin (PLANCorrection #18).
+ *     На legacy-бакетах объект публикуется на чтение сразу при загрузке
+ *     (`file.makePublic()`); на UBL-бакетах (uniform bucket-level access —
+ *     дефолт новых проектов) per-object ACL запрещён, публичный доступ
+ *     настраивается на уровне бакета (F15). Требование к ролям
+ *     service account — storage.objectAdmin (PLANCorrection #18).
  *  2. Dev: локальное сохранение в AUDIO_STORAGE_PATH и раздача через
  *     GET /audio/files/:fileName.
  *
- * Если GOOGLE_APPLICATION_CREDENTIALS не задан — эндпоинт вернёт 501.
+ * Если GOOGLE_APPLICATION_CREDENTIALS не задан — эндпоинт вернёт 501,
+ * и per-user квота генераций при этом НЕ тратится (F15).
  */
 
 const STORAGE_DIR = loadConfig().AUDIO_STORAGE_PATH;
@@ -54,10 +56,36 @@ export function createLocalStorage(config: Config): AudioStorage {
   };
 }
 
+/** Таймауты внешних вызовов (F15): OAuth token exchange и Google TTS. */
+const OAUTH_TOKEN_TIMEOUT_MS = 10_000;
+const TTS_TIMEOUT_MS = 30_000;
+
 /** Production-режим: mp3 загружается в GCS-бакет. */
 export function createGcsStorage(config: Config): AudioStorage {
   const storage = new Storage();
   const bucket: Bucket = storage.bucket(config.GCS_BUCKET_NAME!);
+  // Режим UBL бакета кэшируем после первого запроса (F15): per-object
+  // ACL (makePublic) на UBL-бакете запрещён, а getMetadata на каждый
+  // save — лишний сетевой вызов.
+  let uniformBucketLevelAccess: boolean | null = null;
+
+  async function isUniformBucketLevelAccess(): Promise<boolean> {
+    if (uniformBucketLevelAccess === null) {
+      try {
+        const [metadata] = await bucket.getMetadata();
+        uniformBucketLevelAccess =
+          metadata.iamConfiguration?.uniformBucketLevelAccess?.enabled === true;
+      } catch (err) {
+        // Не смогли прочитать метаданные — предполагаем UBL (дефолт
+        // новых проектов), где makePublic гарантированно падает с 403:
+        // молчаливо приватный объект лучше сломанной генерации.
+        console.error('GCS bucket metadata fetch failed', err);
+        uniformBucketLevelAccess = true;
+      }
+    }
+    return uniformBucketLevelAccess;
+  }
+
   return {
     async exists(fileName) {
       const [ok] = await bucket.file(fileName).exists();
@@ -69,11 +97,14 @@ export function createGcsStorage(config: Config): AudioStorage {
         contentType: 'audio/mpeg',
         resumable: false,
       });
-      // Публикуем объект на чтение сразу после загрузки: при приватном
-      // бакете (uniform bucket-level access — дефолт новых проектов)
-      // publicUrl() без этого отдавал бы 403. Требование к ролям
-      // service account — storage.objectAdmin (PLANCorrection #18).
-      await file.makePublic();
+      // F15: `file.makePublic()` (per-object ACL) НЕСОВМЕСТИМ с UBL-бакетами
+      // (uniform bucket-level access — дефолт новых проектов): GCS отвечает
+      // 403. На UBL-бакете публичный доступ настраивается на уровне БАКЕТА
+      // (roles/storage.objectViewer для allUsers), и объекты публикуются
+      // автоматически. makePublic оставлен только для legacy-бакетов без UBL.
+      if (!(await isUniformBucketLevelAccess())) {
+        await file.makePublic();
+      }
     },
     publicUrl(fileName) {
       return `https://storage.googleapis.com/${config.GCS_BUCKET_NAME}/${fileName}`;
@@ -143,6 +174,8 @@ export function localAudioPath(text: string, language: string): string {
  * через JWT exchange (RFC 7523).
  *
  * Возвращает null, если credentials не заданы или обмен не удался.
+ * F15: на внешний вызов стоит таймаут — зависший token endpoint не
+ * вешает генерацию (раньше fetch ждал без ограничений).
  */
 async function getGoogleAccessToken(): Promise<string | null> {
   const config = loadConfig();
@@ -188,18 +221,38 @@ async function getGoogleAccessToken(): Promise<string | null> {
   const signatureB64 = Buffer.from(new Uint8Array(signature)).toString('base64url');
   const jwt = `${signingInput}.${signatureB64}`;
 
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
-    }),
-  });
+  let tokenRes: Response;
+  try {
+    tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: jwt,
+      }),
+      signal: AbortSignal.timeout(OAUTH_TOKEN_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw Object.assign(new Error('Google OAuth token exchange timed out'), {
+        statusCode: 502,
+        code: 'TTS_PROVIDER_ERROR',
+      });
+    }
+    throw Object.assign(new Error('Google OAuth token exchange failed'), {
+      statusCode: 502,
+      code: 'TTS_PROVIDER_ERROR',
+    });
+  }
 
   if (!tokenRes.ok) return null;
   const tokenJson = (await tokenRes.json()) as { access_token?: string };
   return tokenJson.access_token ?? null;
+}
+
+/** F15: отличаем abort/timeout от обычных ошибок сети. */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
 }
 
 /** Конвертирует PEM-строку в ArrayBuffer (для WebCrypto). */
@@ -248,12 +301,9 @@ export async function generateAudio(
     return { audioUrl: storage.publicUrl(fileName), source: 'cache' };
   }
 
-  // Per-user дневной лимит платных генераций — только cache-miss'ы
-  // тратят TTS (PLANCorrection #19). Скрипты (без userId) не лимитируются.
-  if (options.userId) {
-    await consumeGenerationQuota(options.userId);
-  }
-
+  // F15: проверяем Google-credentials ДО списания per-user квоты — если
+  // TTS не настроен (501), дневной лимит не должен тратиться впустую
+  // (раньше quota инкрементилась раньше и сгорала на каждом 501).
   const accessToken = await getGoogleAccessToken();
   if (!accessToken) {
     throw Object.assign(new Error('Google TTS credentials not configured'), {
@@ -262,18 +312,41 @@ export async function generateAudio(
     });
   }
 
-  const ttsRes = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      input: { text },
-      voice: { languageCode: language, ssmlGender: 'NEUTRAL' },
-      audioConfig: { audioEncoding: 'MP3', speakingRate: 0.9 },
-    }),
-  });
+  // Per-user дневной лимит платных генераций — только cache-miss'ы
+  // тратят TTS (PLANCorrection #19). Скрипты (без userId) не лимитируются.
+  if (options.userId) {
+    await consumeGenerationQuota(options.userId);
+  }
+
+  let ttsRes: Response;
+  try {
+    ttsRes = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: language, ssmlGender: 'NEUTRAL' },
+        audioConfig: { audioEncoding: 'MP3', speakingRate: 0.9 },
+      }),
+      // F15: таймаут на платный TTS-вызов — зависший провайдер не вешает
+      // запрос навсегда (раньше fetch ждал без ограничений).
+      signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw Object.assign(new Error('Google TTS request timed out'), {
+        statusCode: 502,
+        code: 'TTS_PROVIDER_ERROR',
+      });
+    }
+    throw Object.assign(new Error('Google TTS request failed'), {
+      statusCode: 502,
+      code: 'TTS_PROVIDER_ERROR',
+    });
+  }
 
   if (!ttsRes.ok) {
     const errText = await ttsRes.text();

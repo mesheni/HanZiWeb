@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,26 +11,40 @@ import {
   generateAudio,
 } from './audio.service.js';
 
-const { saveMock, existsMock, makePublicMock, fileMock, bucketMock, incrMock, expireMock } =
-  vi.hoisted(() => {
-    const saveMock = vi.fn().mockResolvedValue(undefined);
-    const existsMock = vi.fn();
-    const makePublicMock = vi.fn().mockResolvedValue(undefined);
-    const fileMock = vi.fn(() => ({
-      save: saveMock,
-      exists: existsMock,
-      makePublic: makePublicMock,
-    }));
-    return {
-      saveMock,
-      existsMock,
-      makePublicMock,
-      fileMock,
-      bucketMock: vi.fn(() => ({ file: fileMock })),
-      incrMock: vi.fn(),
-      expireMock: vi.fn(),
-    };
-  });
+const {
+  saveMock,
+  existsMock,
+  makePublicMock,
+  getMetadataMock,
+  fileMock,
+  bucketMock,
+  incrMock,
+  expireMock,
+} = vi.hoisted(() => {
+  const saveMock = vi.fn().mockResolvedValue(undefined);
+  const existsMock = vi.fn();
+  const makePublicMock = vi.fn().mockResolvedValue(undefined);
+  // F15: UBL-режим бакета. По умолчанию UBL выключен (legacy) — makePublic
+  // должен вызываться; отдельные тесты переключают в UBL.
+  const getMetadataMock = vi
+    .fn()
+    .mockResolvedValue([{ iamConfiguration: { uniformBucketLevelAccess: { enabled: false } } }]);
+  const fileMock = vi.fn(() => ({
+    save: saveMock,
+    exists: existsMock,
+    makePublic: makePublicMock,
+  }));
+  return {
+    saveMock,
+    existsMock,
+    makePublicMock,
+    getMetadataMock,
+    fileMock,
+    bucketMock: vi.fn(() => ({ file: fileMock, getMetadata: getMetadataMock })),
+    incrMock: vi.fn(),
+    expireMock: vi.fn(),
+  };
+});
 
 vi.mock('@google-cloud/storage', () => ({
   Storage: class {
@@ -89,13 +103,20 @@ describe('createGcsStorage', () => {
   beforeAll(() => {
     process.env.GCS_BUCKET_NAME = 'test-bucket';
   });
-  afterAll(() => {
-    delete process.env.GCS_BUCKET_NAME;
+  beforeEach(() => {
     saveMock.mockClear();
     existsMock.mockClear();
     makePublicMock.mockClear();
+    getMetadataMock.mockClear();
     fileMock.mockClear();
     bucketMock.mockClear();
+    // Дефолт: legacy-бакет без UBL (makePublic разрешён).
+    getMetadataMock.mockResolvedValue([
+      { iamConfiguration: { uniformBucketLevelAccess: { enabled: false } } },
+    ]);
+  });
+  afterAll(() => {
+    delete process.env.GCS_BUCKET_NAME;
   });
 
   it('save: bucket.file(name).save с contentType audio/mpeg + makePublic после загрузки', async () => {
@@ -107,9 +128,30 @@ describe('createGcsStorage', () => {
       contentType: 'audio/mpeg',
       resumable: false,
     });
-    // Приватный бакет (uniform bucket-level access) без публикации объекта
-    // отдавал бы 403 по publicUrl() (PLANCorrection #18).
+    // Legacy-бакет (UBL выключен): объект публикуется на чтение —
+    // иначе publicUrl() отдавал бы 403 (PLANCorrection #18).
     expect(makePublicMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('UBL-бакет (uniform bucket level access) → makePublic НЕ вызывается (F15)', async () => {
+    getMetadataMock.mockResolvedValue([
+      { iamConfiguration: { uniformBucketLevelAccess: { enabled: true } } },
+    ]);
+    const storage = createGcsStorage(loadConfig());
+    await storage.save('abc.mp3', Buffer.from('MP3'));
+    expect(saveMock).toHaveBeenCalledTimes(1);
+    // Per-object ACL на UBL-бакете запрещён (403) — публикация на
+    // уровне бакета, объекты публикуются автоматически.
+    expect(makePublicMock).not.toHaveBeenCalled();
+  });
+
+  it('ошибка чтения метаданных бакета → makePublic пропускается (F15, fail-safe)', async () => {
+    getMetadataMock.mockRejectedValue(new Error('permission denied'));
+    const storage = createGcsStorage(loadConfig());
+    await storage.save('abc.mp3', Buffer.from('MP3'));
+    // Не знаем режим — предполагаем UBL: сломанная генерация (403 от
+    // makePublic после оплаты TTS) хуже приватного объекта.
+    expect(makePublicMock).not.toHaveBeenCalled();
   });
 
   it('exists: bucket.file(name).exists', async () => {
@@ -254,5 +296,60 @@ describe('generateAudio — GCS upload + кэш (PLAN_Features_v0.4 §30)', () =
     const r = await generateAudio('скрипт', 'zh-CN');
     expect(r.source).toBe('generated');
     expect(incrMock).not.toHaveBeenCalled();
+  });
+
+  it('без Google-credentials → 501, квота НЕ тратится (F15)', async () => {
+    // Раньше consumeGenerationQuota вызывался ДО проверки credentials —
+    // каждый 501 сжигал дневной лимит пользователя.
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    existsMock.mockResolvedValue([false]);
+    incrMock.mockReset();
+    fetchMock.mockClear();
+
+    try {
+      await expect(generateAudio('некс', 'zh-CN', { userId: 'u1' })).rejects.toMatchObject({
+        statusCode: 501,
+        code: 'TTS_NOT_CONFIGURED',
+      });
+      expect(incrMock).not.toHaveBeenCalled();
+    } finally {
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+    }
+  });
+
+  it('таймаут token-exchange → 502 TTS_PROVIDER_ERROR, квота НЕ тратится (F15)', async () => {
+    existsMock.mockResolvedValue([false]);
+    incrMock.mockReset();
+    fetchMock.mockClear();
+    fetchMock.mockImplementationOnce(async () => {
+      const e = new Error('The operation was aborted due to timeout');
+      e.name = 'TimeoutError';
+      throw e;
+    });
+
+    await expect(generateAudio('таймаут', 'zh-CN', { userId: 'u1' })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'TTS_PROVIDER_ERROR',
+    });
+    // Падение на этапе token'а — до списания квоты.
+    expect(incrMock).not.toHaveBeenCalled();
+  });
+
+  it('таймаут TTS-вызова → 502 TTS_PROVIDER_ERROR (F15)', async () => {
+    existsMock.mockResolvedValue([false]);
+    fetchMock.mockClear();
+    fetchMock.mockImplementation(async (url: string | URL | Request) => {
+      if (String(url).includes('oauth2.googleapis.com/token')) {
+        return { ok: true, json: async () => ({ access_token: 'test-token' }) };
+      }
+      const e = new Error('The operation was aborted due to timeout');
+      e.name = 'TimeoutError';
+      throw e;
+    });
+
+    await expect(generateAudio('таймаут-tts', 'zh-CN')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'TTS_PROVIDER_ERROR',
+    });
   });
 });
