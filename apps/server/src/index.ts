@@ -184,6 +184,15 @@ async function main() {
           error: { code: 'CONFLICT', message: 'Resource already exists' },
         });
       }
+      if (err.code === 'P2003') {
+        // F17: удаление слова/колоды с FK-связями (SessionAnswer.word,
+        // Session.deck без onDelete: Cascade) падало в 500. Теперь —
+        // контролируемый 409: ресурс используется другими записями.
+        return reply.status(409).send({
+          success: false,
+          error: { code: 'CONFLICT', message: 'Resource is referenced by other records' },
+        });
+      }
       if (err.code === 'RATE_LIMIT_EXCEEDED') {
         return reply.status(429).send({
           success: false,
