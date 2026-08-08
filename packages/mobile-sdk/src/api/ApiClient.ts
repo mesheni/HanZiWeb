@@ -80,7 +80,13 @@ export class ApiClient {
   private onSessionExpired?: () => Promise<boolean> | boolean | void;
   private fetchImpl: typeof fetch;
   private clientType?: string;
-  private isRefreshing = false;
+  /**
+   * F09: общий промис in-flight refresh. N конкурентных 401 ждут ОДИН
+   * refresh вместо того, чтобы каждый слал свой (раньше `isRefreshing`
+   * заставлял остальных считать refresh проваленным → каскадный
+   * onSessionExpired и ложный logout при ротации refresh-токена).
+   */
+  private refreshPromise: Promise<AuthResponse | null> | null = null;
 
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -235,15 +241,20 @@ export class ApiClient {
     return { ok: true, status: res.status, data: json.data as T };
   }
 
-  private async tryRefresh(): Promise<AuthResponse | null> {
-    if (this.isRefreshing) return null;
-    this.isRefreshing = true;
+  private tryRefresh(): Promise<AuthResponse | null> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.performRefresh();
+    }
+    return this.refreshPromise;
+  }
+
+  private async performRefresh(): Promise<AuthResponse | null> {
     try {
       const result = await this.refresh();
       if (result) this.onRefreshed?.(result);
       return result;
     } finally {
-      this.isRefreshing = false;
+      this.refreshPromise = null;
     }
   }
 }

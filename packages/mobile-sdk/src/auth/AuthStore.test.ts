@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createAuthStore } from './AuthStore';
+import {
+  createAuthStore,
+  getAuthGeneration,
+  isSessionExpiredHandled,
+  markSessionExpiredHandled,
+} from './AuthStore';
 import { setTokenStore, createDefaultTokenStore, getTokenStore } from './TokenStore';
 import { setSecureStorage, getSecureStorage } from '../storage/SecureStorage';
+import type { AuthResponse } from '@hanzi/shared';
 
 class MemoryStorage {
   private data = new Map<string, string>();
@@ -60,5 +66,60 @@ describe('createAuthStore', () => {
     store.getState().logout();
     expect(onLogout).toHaveBeenCalledTimes(1);
     expect(store.getState().isAuthenticated).toBe(false);
+  });
+
+  it('F09: logout инкрементирует поколение — in-flight refresh не восстановит сессию', () => {
+    const store = createAuthStore();
+    store
+      .getState()
+      .login(
+        { id: '33333333-3333-3333-3333-333333333333', email: 'c@c.ru', xp: 0, currentStreak: 0 },
+        'tok-4',
+      );
+    const genBefore = getAuthGeneration();
+    store.getState().logout();
+    expect(getAuthGeneration()).toBe(genBefore + 1);
+  });
+
+  it('F09: login сбрасывает флаг идемпотентности — следующий expire снова сделает logout', () => {
+    const store = createAuthStore();
+    const user = {
+      id: '44444444-4444-4444-4444-444444444444',
+      email: 'd@d.ru',
+      xp: 0,
+      currentStreak: 0,
+    };
+    markSessionExpiredHandled();
+    expect(isSessionExpiredHandled()).toBe(true);
+    store.getState().login(user, 'tok-5');
+    expect(isSessionExpiredHandled()).toBe(false);
+  });
+
+  it('F09: hydrateAuth, резолвнувшийся после logout, не восстанавливает сессию', async () => {
+    const store = createAuthStore();
+    const late: AuthResponse = {
+      user: {
+        id: '55555555-5555-5555-5555-555555555555',
+        email: 'e@e.ru',
+        xp: 0,
+        currentStreak: 0,
+      },
+      accessToken: 'late-token',
+      expiresIn: 900,
+    };
+    let resolveRefresh!: (r: AuthResponse | null) => void;
+    const deferred = new Promise<AuthResponse | null>((res) => {
+      resolveRefresh = res;
+    });
+
+    const hydrate = store.getState().hydrateAuth(() => deferred);
+    // logout пока hydrate-запрос летит
+    store.getState().logout();
+    resolveRefresh(late);
+
+    await hydrate;
+    expect(store.getState().isAuthenticated).toBe(false);
+    expect(store.getState().accessToken).toBeNull();
+    expect(getTokenStore().getAccessToken()).toBeNull();
   });
 });

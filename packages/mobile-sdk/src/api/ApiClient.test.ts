@@ -174,6 +174,49 @@ describe('ApiClient', () => {
     expect(onSessionExpired).toHaveBeenCalledTimes(1);
   });
 
+  it('F09: N конкурентных 401 ждут один общий refresh (refresh вызывается ровно 1 раз)', async () => {
+    getTokenStore().setAccessToken('expired');
+    const refreshed: AuthResponse = {
+      user: { id: 'u1', email: 'u@x.com', xp: 0, currentStreak: 0 },
+      accessToken: 'fresh',
+      expiresIn: 900,
+    };
+    let refreshCalls = 0;
+    const refreshFn = vi.fn().mockImplementation(async () => {
+      refreshCalls += 1;
+      await new Promise((r) => setTimeout(r, 10));
+      applyAuthResponse(refreshed);
+      return refreshed;
+    });
+    // Детерминированно: первый вызов на URL — 401, повторный — ok.
+    const counters = new Map<string, number>();
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      const key = String(url);
+      const n = (counters.get(key) ?? 0) + 1;
+      counters.set(key, n);
+      return Promise.resolve(n === 1 ? errJson('NO_TOKEN', 'expired', 401) : okJson({ url: key }));
+    });
+
+    const client = new ApiClient({
+      baseUrl: 'https://api.example.com',
+      refresh: refreshFn,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const [r1, r2, r3] = await Promise.all([
+      client.get<{ url: string }>('/a'),
+      client.get<{ url: string }>('/b'),
+      client.get<{ url: string }>('/c'),
+    ]);
+
+    // Ровно один /auth/refresh на пачку — ротация refresh-токена
+    // не ломается, никто не падает в onSessionExpired.
+    expect(refreshCalls).toBe(1);
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    expect(r3.ok).toBe(true);
+  });
+
   it('falls back to PARSE_ERROR when response is not JSON', async () => {
     const fetchMock = vi
       .fn()

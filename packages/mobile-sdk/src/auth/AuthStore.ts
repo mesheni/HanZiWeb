@@ -39,6 +39,45 @@ export interface AuthStoreOptions {
   onLogout?: () => void;
 }
 
+/**
+ * Поколение авторизации (F09, как fix v0.4 §5 на web). Инкрементируется
+ * при каждом logout: любой in-flight refresh/hydrate, стартовавший ДО
+ * logout, после резолва видит устаревшее поколение и не восстанавливает
+ * сессию — «Выйти» окончателен.
+ */
+let authGeneration = 0;
+
+export function getAuthGeneration(): number {
+  return authGeneration;
+}
+
+/** Инвалидирует все in-flight refresh/hydrate. Вызывается в `logout()`. */
+export function bumpAuthGeneration(): number {
+  authGeneration += 1;
+  return authGeneration;
+}
+
+/**
+ * Идемпотентность onSessionExpired (F09, как fix v0.4 §9 на web):
+ * при N конкурентных 401 после проваленного refresh каждый ожидающий
+ * запрос зовёт onSessionExpired. Флаг берётся синхронно при входе —
+ * ровно один silent-refresh и ровно один logout-флоу на пачку.
+ * Сбрасывается при успешном login / hydrate.
+ */
+let sessionExpiredHandled = false;
+
+export function isSessionExpiredHandled(): boolean {
+  return sessionExpiredHandled;
+}
+
+export function markSessionExpiredHandled(): void {
+  sessionExpiredHandled = true;
+}
+
+export function resetSessionExpiredHandled(): void {
+  sessionExpiredHandled = false;
+}
+
 export const createAuthStore = (options: AuthStoreOptions = {}) =>
   create<AuthState>((set) => ({
     user: null,
@@ -48,13 +87,18 @@ export const createAuthStore = (options: AuthStoreOptions = {}) =>
     lastError: null,
 
     login: (user, accessToken, refreshToken) => {
+      // Новая сессия — следующий реальный expire снова сможет logout (F09).
+      resetSessionExpiredHandled();
       applyAuthResponse({ user, accessToken, expiresIn: 900 }, refreshToken ?? null);
       set({ user, accessToken, isAuthenticated: true, lastError: null });
     },
 
     logout: () => {
+      // Инвалидируем in-flight refresh/hydrate: их резолвы после этого
+      // увидят новое поколение и не восстановят сессию (F09, §5).
+      bumpAuthGeneration();
       clearTokens();
-      set({ user: null, accessToken: null, isAuthenticated: false });
+      set({ user: null, accessToken: null, isAuthenticated: false, isHydrating: false });
       try {
         options.onLogout?.();
       } catch {
@@ -89,8 +133,13 @@ export const createAuthStore = (options: AuthStoreOptions = {}) =>
         set({ accessToken: existing });
       }
 
+      const gen = getAuthGeneration();
       const result = await doRefresh();
+      // logout случился во время hydrate — сессию не восстанавливаем
+      // (isHydrating уже сброшен в logout(), F09 §5).
+      if (gen !== getAuthGeneration()) return;
       if (result) {
+        resetSessionExpiredHandled();
         applyAuthResponse(result, getTokenStore().getRefreshToken());
         set({
           user: result.user,

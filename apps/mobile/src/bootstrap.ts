@@ -16,6 +16,10 @@ import {
   SyncEngine,
   createDefaultTokenStore,
   createAuthStore,
+  getAuthGeneration,
+  isSessionExpiredHandled,
+  markSessionExpiredHandled,
+  resetSessionExpiredHandled,
   setNetworkAdapter,
   setSecureStorage,
   setTokenStore,
@@ -142,16 +146,27 @@ export const api = new ApiClient({
    * `PLAN_Features_v0.3 §15` — на случай транзиентной сетевой ошибки.
    * Возвращаем `true`, если восстановились (ApiClient повторит исходный
    * запрос), `false` если пришлось чистить токены и логаутить стор.
+   *
+   * F09 (как fix v0.4 §5/§9 на web): пачка конкурентных 401 после
+   * проваленного refresh вызывает onSessionExpired N раз — флаг
+   * гарантирует ровно один silent-refresh и ровно один logout-флоу,
+   * а поколение авторизации — что refresh, резолвнувшийся после logout,
+   * не восстановит сессию.
    */
   onSessionExpired: async () => {
+    if (isSessionExpiredHandled()) return false;
+    markSessionExpiredHandled();
+    const gen = getAuthGeneration();
     const recovered = await doRefresh();
-    if (recovered) {
+    if (recovered && gen === getAuthGeneration()) {
       tokenStore.setAccessToken(recovered.accessToken);
+      resetSessionExpiredHandled();
       return true;
     }
-    tokenStore.setAccessToken(null);
-    tokenStore.setRefreshToken(null);
-    useAuthStore.getState().logout();
+    // Явный logout уже снял isAuthenticated — не дублируем logout-флоу.
+    if (useAuthStore.getState().isAuthenticated) {
+      useAuthStore.getState().logout();
+    }
     return false;
   },
 });
