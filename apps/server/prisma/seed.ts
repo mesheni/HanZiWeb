@@ -122,6 +122,92 @@ async function linkWordsToDeck(deckId: string, hskLevel: number): Promise<number
   return newEntries.length;
 }
 
+/**
+ * Тематические колоды (F28a, PLAN_Features_v0.2 §5): «Еда»,
+ * «Путешествия», «Работа» — несистемные колоды из слов, уже
+ * засиженных HSK-сидом (по иероглифам). Идемпотентно.
+ */
+interface ThematicDeck {
+  name: string;
+  description: string;
+  characters: string[];
+}
+
+const THEMATIC_DECKS: ThematicDeck[] = [
+  {
+    name: 'Еда',
+    description: 'Продукты, напитки и приём пищи',
+    characters: [
+      '吃', '喝', '水', '茶', '饭', '菜', '苹果', '牛奶', '咖啡', '米饭',
+      '面包', '鸡蛋', '肉', '鱼', '水果', '饿', '好吃', '餐厅', '菜单',
+      '面条', '啤酒', '果汁', '西瓜', '味道', '糖', '饮料', '点心', '盐',
+    ],
+  },
+  {
+    name: 'Путешествия',
+    description: 'Транспорт, поездки и отдых',
+    characters: [
+      '旅行', '飞机', '火车', '车', '票', '酒店', '地图', '机场', '车站',
+      '旅游', '自行车', '船', '行李', '护照', '宾馆', '路线', '出发',
+      '到达', '司机', '地铁', '航班', '游客', '天气', '旅馆',
+    ],
+  },
+  {
+    name: 'Работа',
+    description: 'Офис, профессии и деловые встречи',
+    characters: [
+      '工作', '公司', '老板', '同事', '会议', '办公室', '电脑', '邮件',
+      '电话', '项目', '经理', '员工', '简历', '工资', '行业', '职业',
+      '任务', '报告', '客户', '面试', '上班', '加班', '打工', '生意',
+    ],
+  },
+];
+
+/** Создаёт/находит тематическую колоду и линкует найденные слова. */
+async function ensureThematicDeck(deck: ThematicDeck): Promise<number> {
+  const words = await prisma.word.findMany({
+    where: { character: { in: deck.characters } },
+    select: { id: true, character: true },
+  });
+  const found = new Set(words.map((w) => w.character));
+  const missing = deck.characters.filter((c) => !found.has(c));
+  if (missing.length > 0) {
+    console.log(
+      `  "${deck.name}": ${missing.length} not in dictionary — ${missing.join(', ')}`,
+    );
+  }
+
+  const existing = await prisma.deck.findFirst({ where: { name: deck.name } });
+  let deckId: string;
+  if (existing) {
+    deckId = existing.id;
+    console.log(`  Deck "${deck.name}" already exists (${words.length} words)`);
+  } else {
+    const created = await prisma.deck.create({
+      data: { name: deck.name, description: deck.description, isSystemDeck: false },
+    });
+    deckId = created.id;
+    console.log(`  Created deck "${deck.name}" — ${deck.description}`);
+  }
+
+  const existingLinks = await prisma.deckWord.findMany({
+    where: { deckId, wordId: { in: words.map((w) => w.id) } },
+    select: { wordId: true },
+  });
+  const existingIds = new Set(existingLinks.map((e) => e.wordId));
+  const newEntries = words
+    .filter((w) => !existingIds.has(w.id))
+    .map((w) => ({ deckId, wordId: w.id }));
+
+  if (newEntries.length > 0) {
+    await prisma.deckWord.createMany({ data: newEntries });
+  }
+  console.log(
+    `  Linked ${newEntries.length} new words to "${deck.name}" (${existingIds.size} already linked)`,
+  );
+  return newEntries.length;
+}
+
 async function main(): Promise<void> {
   console.log('Starting HSK seed...\n');
 
@@ -146,11 +232,21 @@ async function main(): Promise<void> {
     console.log('');
   }
 
+  console.log('Seeding thematic decks (F28a)...');
+  let thematicDecks = 0;
+  let thematicLinks = 0;
+  for (const deck of THEMATIC_DECKS) {
+    thematicLinks += await ensureThematicDeck(deck);
+    thematicDecks++;
+    console.log('');
+  }
+
   const totalWords = await prisma.word.count();
   const totalDeckWords = await prisma.deckWord.count();
   console.log(`Seed complete.`);
   console.log(`  Total words:      ${totalWords}`);
   console.log(`  System decks:     ${totalDecks}`);
+  console.log(`  Thematic decks:   ${thematicDecks} (+${thematicLinks} links)`);
   console.log(`  Deck-word links:  ${totalLinks} (total: ${totalDeckWords})`);
 }
 
