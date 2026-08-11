@@ -162,6 +162,8 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
         update: vi.fn().mockResolvedValue({}),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      // F32: журнал изменений — тоже не должен выполняться после throw.
+      syncJournal: { create: vi.fn().mockResolvedValue({}) },
     };
     const { restore } = runWithMockTransaction(txMock);
 

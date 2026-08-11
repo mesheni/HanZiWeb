@@ -22,18 +22,15 @@ describe('startSession fresh words (PLAN_Features_v0.4 §33)', () => {
     });
     userId = user.id;
 
-    // Два самых старых слова HSK1 по createdAt: fresh-запрос берёт
-    // top-N в том же порядке, поэтому второе гарантированно попадёт
-    // в сессию, а первое — нет (у него прогресс).
-    const words = await prisma.word.findMany({
-      where: { hskLevel: 1 },
-      orderBy: [{ createdAt: 'asc' }],
-      take: 2,
-      select: { id: true },
-    });
-    progressedWordId = words[0]?.id ?? '';
-    freshWordId = words[1]?.id ?? '';
-    if (!progressedWordId || !freshWordId) throw new Error('need >=2 HSK1 words in seed');
+    // F33: слова создаём сами — тест не зависит от HSK-сидов dev-БД
+    // (интеграционные тесты идут в изолированную тестовую БД).
+    // createdAt растёт, поэтому первое созданное слово — «старейшее».
+    const mk = (char: string) =>
+      prisma.word.create({
+        data: { character: char, pinyin: 'x', translation: 'x', hskLevel: 1 },
+      });
+    progressedWordId = (await mk(`鲜${Date.now()}a`)).id;
+    freshWordId = (await mk(`鲜${Date.now()}b`)).id;
 
     // Одна запись прогресса — «уже учится» и не должна попасть в fresh.
     await prisma.userWordProgress.create({
@@ -47,6 +44,9 @@ describe('startSession fresh words (PLAN_Features_v0.4 §33)', () => {
       await prisma.session.deleteMany({ where: { userId } });
       await prisma.user.deleteMany({ where: { id: userId } });
     }
+    await prisma.word.deleteMany({
+      where: { id: { in: [progressedWordId, freshWordId] } },
+    });
   });
 
   it('excludes words that already have progress, still returns fresh ones', async () => {

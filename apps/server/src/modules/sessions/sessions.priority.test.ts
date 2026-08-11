@@ -22,17 +22,21 @@ describe('startSession priority words', () => {
     });
     userId = user.id;
 
-    const words = await prisma.word.findMany({
-      where: { hskLevel: 1 },
-      take: 2,
-      select: { id: true },
-    });
-    wordIds = words.map((w) => w.id);
+    // F33: слова создаём сами — тест не зависит от HSK-сидов (тестовая
+    // БД изолирована от dev).
+    const mk = (char: string) =>
+      prisma.word.create({
+        data: { character: char, pinyin: 'x', translation: 'x', hskLevel: 1 },
+      });
+    wordIds = [(await mk(`优${Date.now()}a`)).id, (await mk(`优${Date.now()}b`)).id];
   });
 
   afterAll(async () => {
     if (userId) {
       await prisma.user.deleteMany({ where: { id: userId } });
+    }
+    if (wordIds.length > 0) {
+      await prisma.word.deleteMany({ where: { id: { in: wordIds } } });
     }
   });
 
@@ -60,14 +64,12 @@ describe('startSession priority words', () => {
       expect(session.cards.length).toBeGreaterThan(0);
       expect(firstWordId(session as { cards: CardWithWord[] })).toBe(priorityWordId);
 
-      // Убираем priority-строку и прогресс ДО второго запуска сессии:
-      // normalSession (learn) не должен видеть приоритетное слово
-      // (иначе loadPriorityCards вернёт его снова).
+      // Убираем priority-строку ДО второго запуска сессии (но НЕ прогресс —
+      // его создал loadPriorityCards в первом startSession). normalSession
+      // (learn) исключает слова с прогрессом (PLAN_Features_v0.4 §33),
+      // поэтому приоритетное слово детерминированно не возвращается.
       await prisma.userWordPriority.deleteMany({
         where: { userId, wordId: priorityWordId },
-      });
-      await prisma.userWordProgress.deleteMany({
-        where: { userId, wordId: { in: wordIds } },
       });
       await prisma.session.deleteMany({ where: { userId } });
 
@@ -105,6 +107,12 @@ describe('startSession priority words', () => {
     try {
       await prisma.userWordPriority.create({
         data: { userId, wordId: priorityWordId },
+      });
+      // Прогресс вручную: fresh-запрос (§33) исключает слова с прогрессом,
+      // иначе приоритетное слово могло бы вернуться обычной карточкой
+      // (порядок fresh по createdAt — детерминированность теста).
+      await prisma.userWordProgress.create({
+        data: { userId, wordId: priorityWordId, state: 'new', dueDate: new Date() },
       });
 
       const session = await startSession(
