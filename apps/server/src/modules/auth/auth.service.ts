@@ -281,6 +281,16 @@ export async function logoutUser(userId: string) {
 }
 
 /**
+ * F28c: полное удаление аккаунта. Все связанные записи (сессии,
+ * прогресс, достижения, устройства, OAuth-аккаунты, тесты, чтение)
+ * сносятся каскадно — в schema.prisma у всех userId-связей
+ * `onDelete: Cascade`.
+ */
+export async function deleteAccount(userId: string) {
+  await prisma.user.delete({ where: { id: userId } });
+}
+
+/**
  * Смена пароля авторизованным пользователем (PLAN_Features_v0.3 §1).
  *
  * Проверяет `currentPassword` через `bcrypt.compare`, валидирует

@@ -115,6 +115,34 @@ export function SettingsScreen(): React.ReactElement {
     useAuthStore.getState().logout();
   };
 
+  // F28c: полное удаление аккаунта. Локальное состояние чистит
+  // onLogout-хук createAuthStore (clearLocalState).
+  const deleteAccount = () => {
+    Alert.alert(
+      'Удалить аккаунт?',
+      'Прогресс, сессии, достижения и устройства будут удалены безвозвратно.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              setSaving(true);
+              const result = await api.delete('/auth/account');
+              if (result.ok) {
+                useAuthStore.getState().logout();
+              } else {
+                Alert.alert('Ошибка', result.message);
+              }
+              setSaving(false);
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -174,6 +202,14 @@ export function SettingsScreen(): React.ReactElement {
             disabled={saving}
           >
             <Text style={styles.dangerBtnText}>Сбросить весь прогресс</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.deleteAccountBtn, saving && styles.disabled]}
+            onPress={deleteAccount}
+            disabled={saving}
+          >
+            <Text style={styles.dangerBtnText}>Удалить аккаунт</Text>
           </Pressable>
 
           <Pressable style={styles.logoutBtn} onPress={logout}>
@@ -276,6 +312,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E57373',
+  },
+  deleteAccountBtn: {
+    backgroundColor: 'rgba(229,115,115,0.12)',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E57373',
+    marginTop: 10,
   },
   dangerBtnText: {
     color: '#E57373',

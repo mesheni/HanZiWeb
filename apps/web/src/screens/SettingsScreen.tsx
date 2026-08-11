@@ -10,6 +10,7 @@ import {
   Target,
   Moon,
   Sun,
+  UserX,
 } from 'lucide-react';
 import { DAILY_GOAL_MAX, DAILY_GOAL_MIN } from '@hanzi/shared';
 import { Button } from '@/components/ui';
@@ -17,7 +18,7 @@ import ProgressExportImport from '@/components/ProgressExportImport';
 import LinkedAccountsCard from '@/components/LinkedAccountsCard';
 import ChangePasswordCard from '@/components/ChangePasswordCard';
 import { clearWordsCollection, resetLocalDatabase } from '@/db/database';
-import { apiGet, apiPost, apiPut } from '@/api/client';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/api/push';
 import { toast } from '@/stores/toastStore';
 import { useUpdateUserSettings, DAILY_GOAL_FALLBACK } from '@/queries/stats';
@@ -61,6 +62,9 @@ export default function SettingsScreen() {
   const [reindexLoading, setReindexLoading] = useState(false);
   // F16: сброс требует подтверждения — одно нажатие не стирает прогресс.
   const [confirmReset, setConfirmReset] = useState(false);
+  // F28c: удаление аккаунта — тоже двухшаговое подтверждение.
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const [pushSupported] = useState(() => 'serviceWorker' in navigator && 'PushManager' in window);
   const [subscribed, setSubscribed] = useState(false);
@@ -145,6 +149,30 @@ export default function SettingsScreen() {
     const t = setTimeout(() => setConfirmReset(false), 5000);
     return () => clearTimeout(t);
   }, [confirmReset]);
+
+  // F28c: то же для удаления аккаунта.
+  useEffect(() => {
+    if (!confirmDeleteAccount) return;
+    const t = setTimeout(() => setConfirmDeleteAccount(false), 5000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteAccount]);
+
+  const handleDeleteAccount = async () => {
+    if (!confirmDeleteAccount) {
+      setConfirmDeleteAccount(true);
+      return;
+    }
+    setConfirmDeleteAccount(false);
+    setDeleteAccountLoading(true);
+    try {
+      await apiDelete('/auth/account');
+      await resetLocalDatabase();
+      window.location.assign('/login');
+    } catch {
+      toast('Не удалось удалить аккаунт', 'error');
+      setDeleteAccountLoading(false);
+    }
+  };
 
   const handleResetLocalData = async () => {
     // F16: первое нажатие только взводит подтверждение.
@@ -421,6 +449,49 @@ export default function SettingsScreen() {
         <LinkedAccountsCard />
 
         <ChangePasswordCard />
+
+        <section className="settings-card">
+          <header className="settings-card-header">
+            <div className="settings-card-header-meta">
+              <div className="settings-card-icon bg-tone-4-bg text-tone-4">
+                <UserX size={18} />
+              </div>
+              <div className="settings-card-titles">
+                <div className="settings-card-title">Аккаунт</div>
+                <div className="settings-card-description">
+                  Полное удаление аккаунта вместе со всеми данными.
+                </div>
+              </div>
+            </div>
+            <div className="settings-card-action">
+              <Button size="sm" variant="ghost" onClick={() => navigate(-1)}>
+                Назад
+              </Button>
+            </div>
+          </header>
+
+          <div className="settings-card-body">
+            <div className="settings-card-body--right">
+              <Button variant="danger" loading={deleteAccountLoading} onClick={handleDeleteAccount}>
+                <UserX size={16} />
+                {confirmDeleteAccount ? 'Точно удалить аккаунт?' : 'Удалить аккаунт'}
+              </Button>
+              {confirmDeleteAccount && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteAccount(false)}>
+                    Отмена
+                  </Button>
+                  <p
+                    className="settings-card-description"
+                    style={{ color: 'var(--tone-4)', marginTop: 8 }}
+                  >
+                    Прогресс, сессии, достижения и устройства будут удалены безвозвратно.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
 
         <section className="settings-card">
           <header className="settings-card-header">

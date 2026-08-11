@@ -50,8 +50,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   /** Тело ответа с refreshToken'ом не должно кешироваться (никакой
    *  прокси/CDN не должен раздавать токены другим клиентам). */
-  const markTokenBodyNoStore = (reply: FastifyReply) =>
-    reply.header('Cache-Control', 'no-store');
+  const markTokenBodyNoStore = (reply: FastifyReply) => reply.header('Cache-Control', 'no-store');
 
   /** POST /auth/register — создание аккаунта */
   app.post('/register', async (request, reply) => {
@@ -157,6 +156,18 @@ export async function authRoutes(app: FastifyInstance) {
     }
     reply.clearCookie('refreshToken', { path: '/api/auth' });
     return reply.send({ success: true });
+  });
+
+  /**
+   * DELETE /auth/account — полное удаление аккаунта (F28c).
+   * Каскадный delete пользователя + очистка refresh-куки.
+   * Повторный вызов вернёт 401 USER_NOT_FOUND (authenticate
+   * проверяет наличие пользователя в БД).
+   */
+  app.delete('/account', { preHandler: [app.authenticate] }, async (request, reply) => {
+    await authService.deleteAccount(request.userId);
+    reply.clearCookie('refreshToken', { path: '/api/auth' });
+    return reply.send({ success: true, data: { deleted: true } });
   });
 
   /**
