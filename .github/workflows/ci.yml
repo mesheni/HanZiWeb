@@ -10,7 +10,35 @@ jobs:
   lint-and-typecheck:
     name: Lint, TypeCheck & Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +60,11 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      # F29: server:test теперь частью root pnpm test — интеграционным
+      # тестам нужны таблицы (Postgres) и Redis.
+      - name: Prepare test database
+        run: pnpm --filter @hanzi/server exec prisma db push
 
       - name: Test
         run: pnpm test

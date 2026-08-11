@@ -95,7 +95,7 @@
 | ✅ F28a | Product roadmap: тематические колоды (seed Еда/Путешествия/Работа) | Фича |
 | ✅ F28b | Product roadmap: handwriting — интерактивное письмо с распознаванием | Фича |
 | ✅ F28c | Product roadmap: удаление аккаунта (API + web + mobile) | Фича |
-| F29 | Server `package.json` — нет test-скрипта (только ad-hoc `pnpm exec vitest`) | Высокий |
+| ✅ F29 | Server `package.json` — нет test-скрипта (только ad-hoc `pnpm exec vitest`) | Высокий |
 | F30 | Web — нет `vitest.config.ts` (тесты только utility, без DOM/RxDB) | Средний |
 | F31 | Shared пакет — ноль тестовой инфраструктуры (схемы проверяются только typecheck'ом) | Средний |
 | F32 | Sync не имеет серверного персистентного курсора/журнала изменений — архитектурное ограничение для v0.6 | Критично |
