@@ -92,7 +92,9 @@
 | ✅ F25 | Мобильная production-сборка ложно-зелёная: root build пропускает mobile; `build:tsc` падает | Высокий |
 | ✅ F26 | API-спецификация разошлась с кодом (`{day,count}` vs `{date,count}`; отсутствуют /sync, /devices, /stats/reset-progress) | Средний |
 | ✅ F27 | Нет тестов для devices, reading, featureFlags, achievements, tests, sync, cron; нет structured observability | Средний |
-| F28 | Product roadmap: нет тематических колод; handwriting — только анимация; нет удаления аккаунта | Фича |
+| ✅ F28a | Product roadmap: тематические колоды (seed Еда/Путешествия/Работа) | Фича |
+| ✅ F28b | Product roadmap: handwriting — интерактивное письмо с распознаванием | Фича |
+| ✅ F28c | Product roadmap: удаление аккаунта (API + web + mobile) | Фича |
 | F29 | Server `package.json` — нет test-скрипта (только ad-hoc `pnpm exec vitest`) | Высокий |
 | F30 | Web — нет `vitest.config.ts` (тесты только utility, без DOM/RxDB) | Средний |
 | F31 | Shared пакет — ноль тестовой инфраструктуры (схемы проверяются только typecheck'ом) | Средний |

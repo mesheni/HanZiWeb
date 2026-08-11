@@ -18,14 +18,36 @@ declare module 'hanzi-writer' {
     onLoadCharDataError?: (error: unknown) => void;
   }
 
+  interface QuizOptions {
+    showCharacter?: boolean;
+    showHintAfterMisses?: number;
+    leniency?: number;
+    highlightOnComplete?: boolean;
+    highlightColor?: string;
+    onCorrectStroke?: (strokeData: unknown) => void;
+    onMistake?: (strokeData: unknown) => void;
+    onComplete?: (summary: {
+      character: string;
+      totalMistakes: number;
+      totalTime: number;
+      strokeCount: number;
+    }) => void;
+  }
+
   interface WriterInstance {
     animateCharacter(options?: { onComplete?: () => void }): void;
     loopCharacterAnimation(): void;
-    quiz(options?: { showCharacter?: boolean; showHintAfterMisses?: number }): void;
+    quiz(options?: Partial<QuizOptions>): void;
+    cancelQuiz(): void;
+    skipQuizStroke(): void;
     setCharacter(character: string): void;
   }
 
-  function create(container: HTMLElement, character: string, options?: HanziWriterOptions): WriterInstance;
+  function create(
+    container: HTMLElement,
+    character: string,
+    options?: HanziWriterOptions,
+  ): WriterInstance;
 
   const HanziWriter: {
     create: typeof create;
