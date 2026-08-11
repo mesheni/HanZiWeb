@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
 import { loadConfig, getAllowedOrigins } from './config.js';
 import authPlugin from './plugins/auth.js';
+import observabilityPlugin from './plugins/observability.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { wordsRoutes } from './modules/words/words.routes.js';
 import { sessionsRoutes } from './modules/sessions/sessions.routes.js';
@@ -59,6 +60,7 @@ async function main() {
   });
   await app.register(cookie);
   await app.register(helmet);
+  await app.register(observabilityPlugin);
   await app.register(authPlugin);
   // Initialize Redis (lazy-connect — used by rate limit, health check)
   const redis = getRedis();
@@ -159,7 +161,7 @@ async function main() {
   );
 
   // ── Global error handler ──────────────────────────────────────────
-  app.setErrorHandler(async (error, _request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     // Zod validation errors → 400
     if (error instanceof ZodError) {
       const message = error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
@@ -216,7 +218,7 @@ async function main() {
     }
 
     // Default: 500
-    app.log.error({ err: error }, 'Unhandled error');
+    app.log.error({ err: error, requestId: request.id }, 'Unhandled error');
     return reply.status(500).send({
       success: false,
       error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
@@ -245,7 +247,7 @@ async function main() {
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info(`Server running on http://localhost:${config.PORT}`);
 
-  initCronJobs();
+  initCronJobs(app.log);
 }
 
 main().catch((err) => {

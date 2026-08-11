@@ -3,41 +3,48 @@ import webpush from 'web-push';
 import { prisma } from './prisma.js';
 import { loadConfig } from '../config.js';
 
+/**
+ * Минимальный логгер для cron-джобов. Структурно совместим с
+ * `FastifyBaseLogger` (pino): `app.log` передаётся из `index.ts`
+ * (F27 — structured observability), в тестах — vi.fn()-объект.
+ */
+export interface CronLogger {
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+}
+
 let initialized = false;
 
-export function initCronJobs() {
+export function initCronJobs(logger: CronLogger) {
   const config = loadConfig();
 
   if (!config.VAPID_PUBLIC_KEY || !config.VAPID_PRIVATE_KEY) {
-    console.warn('VAPID keys not configured — push notifications disabled');
+    logger.warn({ component: 'cron' }, 'VAPID keys not configured — push notifications disabled');
     return;
   }
 
-  webpush.setVapidDetails(
-    config.VAPID_SUBJECT,
-    config.VAPID_PUBLIC_KEY,
-    config.VAPID_PRIVATE_KEY,
-  );
+  webpush.setVapidDetails(config.VAPID_SUBJECT, config.VAPID_PUBLIC_KEY, config.VAPID_PRIVATE_KEY);
 
   if (initialized) return;
   initialized = true;
 
   cron.schedule('0 * * * *', () => {
-    sendDueReminders().catch((err) => {
-      console.error('Cron: sendDueReminders failed:', err);
+    sendDueReminders(logger).catch((err) => {
+      logger.error({ component: 'cron', job: 'sendDueReminders', err }, 'Cron job failed');
     });
   });
 
   cron.schedule('30 * * * *', () => {
-    sendInactiveReminders().catch((err) => {
-      console.error('Cron: sendInactiveReminders failed:', err);
+    sendInactiveReminders(logger).catch((err) => {
+      logger.error({ component: 'cron', job: 'sendInactiveReminders', err }, 'Cron job failed');
     });
   });
 
-  console.log('Cron jobs initialized');
+  logger.info({ component: 'cron', jobs: 2 }, 'Cron jobs initialized');
 }
 
-async function sendDueReminders() {
+export async function sendDueReminders(logger: CronLogger) {
   const config = loadConfig();
   if (!config.VAPID_PUBLIC_KEY) return;
 
@@ -57,6 +64,7 @@ async function sendDueReminders() {
     include: { devices: true },
   });
 
+  let pushes = 0;
   for (const user of users) {
     const timePref = user.notificationTime;
     if (timePref === 'morning' && !isMorning) continue;
@@ -86,21 +94,38 @@ async function sendDueReminders() {
           { endpoint: device.fcmToken, keys: { p256dh: device.p256dh, auth: device.auth } },
           payload,
         );
+        pushes += 1;
       } catch (err: unknown) {
         const error = err as { statusCode?: number };
         if (error.statusCode === 404 || error.statusCode === 410) {
           await prisma.userDevice.deleteMany({ where: { id: device.id } });
+          logger.info(
+            {
+              component: 'cron',
+              job: 'sendDueReminders',
+              deviceId: device.id,
+              statusCode: error.statusCode,
+            },
+            'Push device removed (gone)',
+          );
         } else {
-          console.error(`Push failed for device ${device.id}:`, err);
+          logger.error(
+            { component: 'cron', job: 'sendDueReminders', deviceId: device.id, err },
+            'Push failed',
+          );
         }
       }
     });
 
     await Promise.allSettled(sendPromises);
   }
+  logger.info(
+    { component: 'cron', job: 'sendDueReminders', users: users.length, pushes },
+    'Due reminders sent',
+  );
 }
 
-async function sendInactiveReminders() {
+export async function sendInactiveReminders(logger: CronLogger) {
   const config = loadConfig();
   if (!config.VAPID_PUBLIC_KEY) return;
 
@@ -116,6 +141,7 @@ async function sendInactiveReminders() {
     include: { devices: true },
   });
 
+  let pushes = 0;
   for (const user of users) {
     const payload = JSON.stringify({
       title: 'HanZi — Не забывайте про слова!',
@@ -131,16 +157,33 @@ async function sendInactiveReminders() {
           { endpoint: device.fcmToken, keys: { p256dh: device.p256dh, auth: device.auth } },
           payload,
         );
+        pushes += 1;
       } catch (err: unknown) {
         const error = err as { statusCode?: number };
         if (error.statusCode === 404 || error.statusCode === 410) {
           await prisma.userDevice.deleteMany({ where: { id: device.id } });
+          logger.info(
+            {
+              component: 'cron',
+              job: 'sendInactiveReminders',
+              deviceId: device.id,
+              statusCode: error.statusCode,
+            },
+            'Push device removed (gone)',
+          );
         } else {
-          console.error(`Push failed for device ${device.id}:`, err);
+          logger.error(
+            { component: 'cron', job: 'sendInactiveReminders', deviceId: device.id, err },
+            'Push failed',
+          );
         }
       }
     });
 
     await Promise.allSettled(sendPromises);
   }
+  logger.info(
+    { component: 'cron', job: 'sendInactiveReminders', users: users.length, pushes },
+    'Inactive reminders sent',
+  );
 }
