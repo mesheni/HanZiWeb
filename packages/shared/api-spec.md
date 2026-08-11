@@ -434,6 +434,165 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 ---
 
+## Синхронизация (Sync)
+
+Офлайн-first очередь изменений (F04/F05): клиент шлёт батч локальных
+изменений, сервер применяет их и возвращает по одному терминальному
+ack на каждое (`results`) + дельту серверного прогресса с момента
+курсора (`serverChanges`).
+
+### POST /api/sync
+
+|             |                                                             |
+| ----------- | ----------------------------------------------------------- |
+| **Auth**    | Bearer JWT                                                  |
+| **Request** | `SyncRequestSchema` (`packages/shared/src/schemas/sync.ts`) |
+
+```json
+// Request
+{
+  "changes": [
+    {
+      "id": "local-uuid-1",
+      "type": "study_answer",
+      "payload": {
+        "wordId": "uuid",
+        "rating": 4,
+        "timestamp": "2026-07-03T12:00:00.000Z",
+        "sessionId": "uuid"
+      }
+    }
+  ],
+  "sinceTimestamp": "2026-07-03T11:00:00.000Z"
+}
+```
+
+`sinceTimestamp` — ISO-время последнего успешного sync; без него —
+полный снапшот `serverChanges`.
+
+|                  |                                               |
+| ---------------- | --------------------------------------------- |
+| **Response 200** | `{ success: true, data: SyncResponseSchema }` |
+
+```json
+// Response
+{
+  "success": true,
+  "data": {
+    "results": [
+      {
+        "changeId": "local-uuid-1",
+        "outcome": "applied",
+        "wordId": "uuid",
+        "newStability": 2.5,
+        "newDifficulty": 4.2,
+        "newState": "learning",
+        "newDueDate": "2026-07-04T12:00:00.000Z",
+        "intervalDays": 1,
+        "xpGain": 3
+      }
+    ],
+    "serverChanges": [
+      {
+        "wordId": "uuid",
+        "state": "learning",
+        "stability": 2.5,
+        "difficulty": 4.2,
+        "reps": 1,
+        "dueDate": "2026-07-04T12:00:00.000Z",
+        "lastReviewDate": "2026-07-03T12:00:00.000Z",
+        "timestamp": "2026-07-03T12:00:01.000Z"
+      }
+    ]
+  }
+}
+```
+
+`outcome` (ровно один на каждый `changes`-вход): `applied` — ответ
+применён; `duplicate` — уже записан (live-пост успел раньше);
+`stale` — изменение старше текущего прогресса, пропущено;
+`rejected` — сервер не может применить (нет записи прогресса).
+
+---
+
+## Устройства и пуши (Devices)
+
+Регистрация устройств для push-уведомлений (VAPID / FCM) и настройки
+уведомлений. Монтируется под `/api/devices`.
+
+### GET /api/devices/vapid-public-key
+
+Публичный VAPID-ключ для подписки на push (без авторизации).
+
+|                  |                                                  |
+| ---------------- | ------------------------------------------------ |
+| **Response 200** | `{ success: true, data: { publicKey: string } }` |
+
+### POST /api/devices
+
+Регистрация (или перепривязка) устройства пользователя по FCM-токену.
+
+|             |                                                                  |
+| ----------- | ---------------------------------------------------------------- |
+| **Auth**    | Bearer JWT                                                       |
+| **Request** | `RegisterDeviceSchema` (`packages/shared/src/schemas/device.ts`) |
+
+```json
+// Request
+{
+  "fcmToken": "…",
+  "p256dh": "",
+  "auth": "",
+  "platform": "web"
+}
+```
+
+|                  |                                                 |
+| ---------------- | ----------------------------------------------- |
+| **Response 201** | `{ success: true, data: { registered: true } }` |
+
+### DELETE /api/devices/:token
+
+Отписка устройства (удаление по FCM-токену).
+
+|                  |                                                   |
+| ---------------- | ------------------------------------------------- |
+| **Auth**         | Bearer JWT                                        |
+| **Response 200** | `{ success: true, data: { unregistered: true } }` |
+
+### GET /api/devices/notification-settings
+
+Текущие настройки уведомлений пользователя.
+
+|                  |                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                  |
+| **Response 200** | `{ success: true, data: { notificationEnabled, notificationTime, notificationFrequency } }` |
+
+### PUT /api/devices/notification-settings
+
+Обновление настроек уведомлений.
+
+|             |                                                                              |
+| ----------- | ---------------------------------------------------------------------------- |
+| **Auth**    | Bearer JWT                                                                   |
+| **Request** | `UpdateNotificationSettingsSchema` (`packages/shared/src/schemas/device.ts`) |
+
+```json
+// Request
+{
+  "notificationEnabled": true,
+  "notificationTime": "morning",
+  "notificationFrequency": 1
+}
+```
+
+|                  |                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| **Response 200** | `{ success: true, data: { notificationEnabled, notificationTime, notificationFrequency } }` |
+
+---
+
 ## Статистика (Stats)
 
 Все эндпоинты: `GET /api/stats/*`
@@ -464,22 +623,45 @@ CSRF и replay-атак: код живёт в Redis ровно 60 секунд �
 
 ### GET /api/stats/activity
 
-Календарь активности за месяц (для heatmap).
+Календарь активности (для heatmap) за год или за месяц: число ответов
+по локальным дням пользователя (в его IANA-таймзоне, `timezone` из
+настроек). Ключ дня — строка `YYYY-MM-DD` (F26: в спецификации было
+`{ day, count }`, реальный контракт — `{ date, count }`).
 
-|                  |                                                       |
-| ---------------- | ----------------------------------------------------- |
-| **Auth**         | Bearer JWT                                            |
-| **Query**        | `year` (int), `month` (int, 1-12)                     |
-| **Response 200** | `{ success: true, data: [{ day: int, count: int }] }` |
+|                  |                                                              |
+| ---------------- | ------------------------------------------------------------ |
+| **Auth**         | Bearer JWT                                                   |
+| **Query**        | `year` (int, default текущий), `month` (int, 1-12, optional) |
+| **Response 200** | `{ success: true, data: [{ date: string, count: int }] }`    |
+
+```json
+// Response (year=2026, month=7)
+{
+  "success": true,
+  "data": [
+    { "date": "2026-07-01", "count": 12 },
+    { "date": "2026-07-02", "count": 8 }
+  ]
+}
+```
+
+### POST /api/stats/reset-progress
+
+Полный сброс прогресса пользователя: удаляет ответы, сессии,
+`UserWordProgress`, `ClozeProgress`, достижения и обнуляет `xp`,
+`currentStreak`, `lastActiveDate` (F16). Локальные данные клиента
+сброс не затрагивает — клиент стирает их сам (см. Settings-экран).
+
+|                  |                                            |
+| ---------------- | ------------------------------------------ |
+| **Auth**         | Bearer JWT                                 |
+| **Response 200** | `{ success: true, data: { reset: true } }` |
 
 ```json
 // Response
 {
   "success": true,
-  "data": [
-    { "day": 1, "count": 12 },
-    { "day": 2, "count": 8 }
-  ]
+  "data": { "reset": true }
 }
 ```
 
@@ -1264,5 +1446,12 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 | 35  | POST     | /api/tests/start                         | JWT      | Tests         |
 | 36  | POST     | /api/tests/:id/submit                    | JWT      | Tests         |
 | 37  | GET      | /api/tests/history                       | JWT      | Tests         |
+| 42  | POST     | /api/sync                                | JWT      | Sync          |
+| 43  | GET      | /api/devices/vapid-public-key            | No       | Devices       |
+| 44  | POST     | /api/devices                             | JWT      | Devices       |
+| 45  | DELETE   | /api/devices/:token                      | JWT      | Devices       |
+| 46  | GET      | /api/devices/notification-settings       | JWT      | Devices       |
+| 47  | PUT      | /api/devices/notification-settings       | JWT      | Devices       |
+| 48  | POST     | /api/stats/reset-progress                | JWT      | Stats         |
 
-Всего: **43 эндпоинта** в 12 модулях.
+Всего: **51 эндпоинт** в **14 модулях** (F26: добавлены /sync, /devices/*, /stats/reset-progress).
