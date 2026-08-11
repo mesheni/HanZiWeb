@@ -10,10 +10,74 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  # F34: publish-джобы зависят от тестов. `needs` между разными
+  # workflow'ами невозможен, поэтому гейт продублирован здесь (на push
+  # в main/теги образы не публикуются, пока не прошли typecheck/lint/test).
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeCheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Prepare test database
+        run: pnpm --filter @hanzi/server exec prisma db push
+
+      - name: Test
+        run: pnpm test
+
   build-and-push-server:
     name: Build & Push Server
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [test]
     permissions:
       contents: read
       packages: write
@@ -54,6 +118,7 @@ jobs:
     name: Build & Push Web
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [test]
     permissions:
       contents: read
       packages: write
