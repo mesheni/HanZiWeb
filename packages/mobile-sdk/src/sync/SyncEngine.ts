@@ -5,8 +5,8 @@ import { SyncResponseSchema } from '@hanzi/shared';
 import type { QueueStorage } from './QueueStorage';
 import { getSecureStorage } from '../storage/SecureStorage';
 
-/** Префикс ключа курсора инкрементального sync (PLAN_Features_v0.4 §48). */
-const SYNC_CURSOR_PREFIX = 'hanzi:sync:last-sync-at';
+/** Префикс ключа курсора инкрементального sync (F32 — журнал). */
+const SYNC_CURSOR_PREFIX = 'hanzi:sync:last-cursor';
 
 /**
  * F07: ключ курсора в SecureStorage изолирован по аккаунту —
@@ -64,11 +64,11 @@ export class SyncEngine {
   private isDestroyed = false;
   private onServerChange?: (change: ServerChange) => void;
   /**
-   * Курсор инкрементального sync: ISO-время последнего успешного flush.
-   * Слается как `sinceTimestamp` — сервер отдаёт только прогресс,
-   * изменённый после него (PLAN_Features_v0.4 §48).
+   * F32: курсор инкрементального sync — монотонный id последней
+   * полученной записи серверного журнала. Слается как `sinceCursor`;
+   * сервер отдаёт записи журнала с id > курсора + `nextCursor`.
    */
-  private lastSyncAt: string | null;
+  private lastSyncAt: number | null;
   /** F07: текущий аккаунт — курсор хранится per-user. */
   private currentUserId: string | null = null;
 
@@ -207,9 +207,9 @@ export class SyncEngine {
 
         const response = await this.api.post<SyncResponse>('/sync', {
           changes: pending.map((c) => ({ id: c.id, type: c.type, payload: c.payload })),
-          // Инкрементальный sync: сервер отдаёт только изменения после
-          // курсора. Без курcора (первый sync) — полный снапшот.
-          sinceTimestamp: this.lastSyncAt ?? undefined,
+          // F32: инкрементальный sync из серверного журнала. Без курсора
+          // (первый sync) сервер отдаёт полный снапшот + nextCursor.
+          sinceCursor: this.lastSyncAt ?? undefined,
         });
 
         if (!response.ok) {
@@ -235,20 +235,11 @@ export class SyncEngine {
           this.onServerChange?.(serverChange);
         }
 
-        // Продвигаем курсор до максимального timestamp'а полученных
-        // serverChanges. Если изменений не было — курсор остаётся.
-        let maxTs = this.lastSyncAt ? Date.parse(this.lastSyncAt) : 0;
-        for (const serverChange of data.serverChanges) {
-          const ts = Date.parse(serverChange.timestamp);
-          if (Number.isFinite(ts) && ts > maxTs) maxTs = ts;
-        }
-        if (maxTs > 0) {
-          this.lastSyncAt = new Date(maxTs).toISOString();
-          // F07: персист курсора — только под привязанным аккаунтом
-          // (per-user ключ); без аккаунта курсор живёт в памяти.
-          if (this.currentUserId) {
-            writeSyncCursor(this.currentUserId, this.lastSyncAt);
-          }
+        // F32: продвигаем курсор до nextCursor сервера (монотонный id
+        // журнала) — журнал, а не timestamp, теперь источник правды.
+        this.lastSyncAt = data.nextCursor;
+        if (this.currentUserId) {
+          writeSyncCursor(this.currentUserId, this.lastSyncAt);
         }
 
         this.retryDelay = this.initialRetryDelay;
@@ -301,24 +292,28 @@ function generateId(): string {
 
 /**
  * Читает курсор инкрементального sync из SecureStorage по per-user ключу
- * (F07). Если хранилище не зарегистрировано (юнит-тесты) — null.
+ * (F07). Хранится числом (JSON) — монотонный id журнала (F32).
+ * Если хранилище не зарегистрировано (юнит-тесты) — null.
  */
-function readSyncCursor(userId: string): string | null {
+function readSyncCursor(userId: string): number | null {
   const key = syncCursorKey(userId);
   if (!key) return null;
   try {
-    return getSecureStorage().getItem(key);
+    const raw = getSecureStorage().getItem(key);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as unknown;
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
   } catch {
     return null;
   }
 }
 
 /** Персистит курсор; при недоступном хранилище — молча пропускает. */
-function writeSyncCursor(userId: string, value: string): void {
+function writeSyncCursor(userId: string, value: number): void {
   const key = syncCursorKey(userId);
   if (!key) return;
   try {
-    getSecureStorage().setItem(key, value);
+    getSecureStorage().setItem(key, JSON.stringify(value));
   } catch {
     // SecureStorage не зарегистрирован — курсор живёт в памяти.
   }

@@ -63,6 +63,7 @@ describe('SyncResponseSchema (F31)', () => {
   it('принимает валидный результат и serverChanges', () => {
     const res = SyncResponseSchema.parse({
       results: [result],
+      nextCursor: 5,
       serverChanges: [
         {
           wordId: 'w1',
@@ -78,12 +79,22 @@ describe('SyncResponseSchema (F31)', () => {
     });
     expect(res.results[0]!.outcome).toBe('applied');
     expect(res.serverChanges).toHaveLength(1);
+    expect(res.nextCursor).toBe(5);
+  });
+
+  it('отклоняет ответ без nextCursor (F32)', () => {
+    const bad = SyncResponseSchema.safeParse({
+      results: [result],
+      serverChanges: [],
+    });
+    expect(bad.success).toBe(false);
   });
 
   it('outcome — только терминальные исходы (F05)', () => {
     const bad = SyncResponseSchema.safeParse({
       results: [{ ...result, outcome: 'pending' }],
       serverChanges: [],
+      nextCursor: 0,
     });
     expect(bad.success).toBe(false);
     for (const outcome of ['applied', 'duplicate', 'stale', 'rejected'] as const) {
@@ -95,6 +106,7 @@ describe('SyncResponseSchema (F31)', () => {
     const bad = SyncResponseSchema.safeParse({
       results: [{ ...result, newState: 'mastered' }],
       serverChanges: [],
+      nextCursor: 0,
     });
     expect(bad.success).toBe(false);
   });

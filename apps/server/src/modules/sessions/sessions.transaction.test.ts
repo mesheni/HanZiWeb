@@ -49,6 +49,7 @@ type MockTx = {
   };
   sessionAnswer: { create: ReturnType<typeof vi.fn> };
   session: { update: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
+  syncJournal: { create: ReturnType<typeof vi.fn> };
 };
 
 /** Стаб строки прогресса, который читает recordAnswer внутри tx. */
@@ -109,6 +110,8 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
         update: vi.fn().mockResolvedValue({}),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      // F32: журнал изменений пишется в той же транзакции, что и ответ.
+      syncJournal: { create: vi.fn().mockResolvedValue({}) },
     };
     const { restore } = runWithMockTransaction(txMock);
 
@@ -130,6 +133,7 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
     expect(txMock.session.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.user.findUnique).toHaveBeenCalledTimes(1);
     expect(txMock.user.updateMany).toHaveBeenCalledTimes(1);
+    expect(txMock.syncJournal.create).toHaveBeenCalledTimes(1);
   });
 
   it('mid-transaction failure: only first two ops run in tx, no DB change, XP is not granted', async () => {

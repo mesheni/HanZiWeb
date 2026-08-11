@@ -212,6 +212,27 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
               // протухшим до «касания» дашбордом.
               await touchStreak(tx, userId, serverNow);
 
+              // F32: серверный журнал изменений — запись в той же
+              // транзакции, что и обновление прогресса. id (BIGSERIAL) —
+              // монотонный курсор для инкрементального sync.
+              await tx.syncJournal.create({
+                data: {
+                  userId,
+                  wordId,
+                  changeType: 'study_answer',
+                  payload: {
+                    wordId,
+                    state: newState,
+                    stability: newStability,
+                    difficulty: newDifficulty,
+                    reps: progress.reps + 1,
+                    dueDate: newDueDate.toISOString(),
+                    lastReviewDate: serverNow.toISOString(),
+                    timestamp: serverNow.toISOString(),
+                  },
+                },
+              });
+
               return {
                 kind: 'applied',
                 createdHere,
@@ -287,36 +308,45 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
     }
   }
 
-  // Инкрементальный sync (PLAN_Features_v0.4 §48): при наличии курсора
-  // отдаём только прогресс, изменённый после него — lastReviewDate
-  // обновляется при каждом ответе, а новые карточки (lastReviewDate
-  // null) сигнализируют о себе через dueDate = момент создания.
-  // Без курсора (первый sync) — полный снапшот.
-  const since = input.sinceTimestamp ? new Date(input.sinceTimestamp) : undefined;
-  const allProgress = await prisma.userWordProgress.findMany({
-    where: {
-      userId,
-      ...(since
-        ? {
-            OR: [
-              { lastReviewDate: { gt: since } },
-              { lastReviewDate: null, dueDate: { gt: since } },
-            ],
-          }
-        : {}),
-    },
-  });
+  // F32: инкрементальный sync из серверного журнала. `sinceCursor` —
+  // монотонный id последней полученной записи; изменения, не сдвигающие
+  // lastReviewDate/dueDate, больше не теряются (эвристика v0.5 убрана).
+  // Без курсора (первый sync) — полный снапшот прогресса + nextCursor
+  // на текущий максимум журнала, чтобы дальше шли только новые записи.
+  const PAGE_SIZE = 500;
 
-  const serverChanges = allProgress.map((p) => ({
-    wordId: p.wordId,
-    state: p.state,
-    stability: p.stability,
-    difficulty: p.difficulty,
-    reps: p.reps,
-    dueDate: p.dueDate.toISOString(),
-    lastReviewDate: p.lastReviewDate?.toISOString() ?? null,
-    timestamp: p.lastReviewDate?.toISOString() ?? p.dueDate.toISOString(),
-  }));
+  let serverChanges: SyncResponse['serverChanges'];
+  let nextCursor: number;
 
-  return { results, serverChanges };
+  if (input.sinceCursor !== undefined) {
+    const page = await prisma.syncJournal.findMany({
+      where: { userId, id: { gt: BigInt(input.sinceCursor) } },
+      orderBy: { id: 'asc' },
+      take: PAGE_SIZE,
+      select: { id: true, payload: true },
+    });
+    serverChanges = page.map(
+      (entry) => entry.payload as unknown as SyncResponse['serverChanges'][number],
+    );
+    nextCursor = page.length > 0 ? Number(page[page.length - 1]!.id) : input.sinceCursor;
+  } else {
+    const allProgress = await prisma.userWordProgress.findMany({ where: { userId } });
+    serverChanges = allProgress.map((p) => ({
+      wordId: p.wordId,
+      state: p.state,
+      stability: p.stability,
+      difficulty: p.difficulty,
+      reps: p.reps,
+      dueDate: p.dueDate.toISOString(),
+      lastReviewDate: p.lastReviewDate?.toISOString() ?? null,
+      timestamp: p.lastReviewDate?.toISOString() ?? p.dueDate.toISOString(),
+    }));
+    const maxId = await prisma.syncJournal.aggregate({
+      where: { userId },
+      _max: { id: true },
+    });
+    nextCursor = maxId._max.id ? Number(maxId._max.id) : 0;
+  }
+
+  return { results, serverChanges, nextCursor };
 }

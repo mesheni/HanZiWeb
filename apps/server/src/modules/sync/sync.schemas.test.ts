@@ -55,22 +55,25 @@ describe('ServerChangeSchema (PLAN_Features_v0.4 §40)', () => {
   });
 });
 
-describe('SyncRequestSchema sinceTimestamp (incremental sync cursor, PLAN_Features_v0.4 §48)', () => {
+describe('SyncRequestSchema sinceCursor (journal cursor, F32)', () => {
   it('accepts a request without a cursor (first sync = full snapshot)', () => {
     expect(SyncRequestSchema.safeParse({ changes: [] }).success).toBe(true);
   });
 
-  it('accepts a valid ISO sinceTimestamp', () => {
+  it('accepts a valid numeric sinceCursor', () => {
+    expect(SyncRequestSchema.safeParse({ changes: [], sinceCursor: 7 }).success).toBe(true);
+  });
+
+  it('rejects a malformed sinceCursor', () => {
+    expect(SyncRequestSchema.safeParse({ changes: [], sinceCursor: -1 }).success).toBe(false);
+    expect(SyncRequestSchema.safeParse({ changes: [], sinceCursor: 1.5 }).success).toBe(false);
+  });
+
+  it('accepts a legacy ISO sinceTimestamp (deprecated but tolerated)', () => {
     expect(
       SyncRequestSchema.safeParse({ changes: [], sinceTimestamp: new Date().toISOString() })
         .success,
     ).toBe(true);
-  });
-
-  it('rejects a malformed sinceTimestamp', () => {
-    expect(SyncRequestSchema.safeParse({ changes: [], sinceTimestamp: 'not-a-date' }).success).toBe(
-      false,
-    );
   });
 });
 
@@ -96,9 +99,7 @@ describe('SyncChangeSchema — discriminated union по type (PLANCorrection #21
   });
 
   it('rejects an unknown change type (контракт вместо кастома)', () => {
-    expect(
-      SyncChangeSchema.safeParse({ ...validChange, type: 'bogus_type' }).success,
-    ).toBe(false);
+    expect(SyncChangeSchema.safeParse({ ...validChange, type: 'bogus_type' }).success).toBe(false);
   });
 
   it('rejects payload missing required wordId', () => {
@@ -207,8 +208,17 @@ describe('SyncResponseSchema (PLAN_Features_v0.4 §40)', () => {
         },
       ],
       serverChanges: [mkServerChange()],
+      nextCursor: 42,
     };
     expect(SyncResponseSchema.safeParse(response).success).toBe(true);
+  });
+
+  it('rejects a well-formed response without nextCursor (F32)', () => {
+    const response = {
+      results: [],
+      serverChanges: [],
+    };
+    expect(SyncResponseSchema.safeParse(response).success).toBe(false);
   });
 
   it('rejects a malformed serverChanges entry', () => {

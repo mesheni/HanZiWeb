@@ -63,6 +63,7 @@ describe('SyncEngine', () => {
           },
         ],
         serverChanges: [],
+        nextCursor: 0,
       },
     }));
 
@@ -97,6 +98,7 @@ describe('SyncEngine', () => {
             xpGain: 0,
           })),
           serverChanges: [],
+          nextCursor: 0,
         },
       };
     });
@@ -117,7 +119,7 @@ describe('SyncEngine', () => {
     const api = makeApiMock(async () => ({
       ok: true,
       status: 200,
-      data: { results: [], serverChanges: [] },
+      data: { results: [], serverChanges: [], nextCursor: 0 },
     }));
 
     const engine = new SyncEngine({ api, storage, idFactory });
@@ -148,6 +150,7 @@ describe('SyncEngine', () => {
             xpGain: 0,
           })),
           serverChanges: [],
+          nextCursor: 0,
         },
       };
     });
@@ -223,6 +226,7 @@ describe('SyncEngine', () => {
             xpGain: 0,
           })),
           serverChanges: [serverChange],
+          nextCursor: 0,
         },
       };
     });
@@ -270,6 +274,7 @@ describe('SyncEngine', () => {
               timestamp: new Date().toISOString(),
             },
           ],
+          nextCursor: 0,
         },
       };
     });
@@ -330,7 +335,11 @@ describe('SyncEngine', () => {
     // Resolve the first api.post with no acks so the runFlushLoop
     // loops and calls api.post again. The second api.post call is
     // what we're testing for below.
-    pendingResolves[0]!({ ok: true, status: 200, data: { results: [], serverChanges: [] } });
+    pendingResolves[0]!({
+      ok: true,
+      status: 200,
+      data: { results: [], serverChanges: [], nextCursor: 0 },
+    });
     // Give the loop time to iterate.
     for (let i = 0; i < 5; i += 1) {
       await new Promise((r) => setTimeout(r, 0));
@@ -357,13 +366,14 @@ describe('SyncEngine', () => {
           },
         ],
         serverChanges: [],
+        nextCursor: 0,
       },
     });
     await first;
     await second;
   });
 
-  it('sends sinceTimestamp on the second sync after a successful first flush (PLAN_Features_v0.4 §48)', async () => {
+  it('sends sinceCursor on the second sync after a successful first flush (F32)', async () => {
     const serverChange: ServerChange = {
       wordId: 'w1',
       state: 'review',
@@ -395,6 +405,7 @@ describe('SyncEngine', () => {
             xpGain: 0,
           })),
           serverChanges: isFirst ? [serverChange] : [],
+          nextCursor: isFirst ? 1 : 0,
         },
       };
     });
@@ -404,13 +415,13 @@ describe('SyncEngine', () => {
     await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
     await engine.flush();
     // Первый sync — без курсора (полный снапшот).
-    expect(api.post.mock.calls[0]?.[1]).toMatchObject({ sinceTimestamp: undefined });
+    expect(api.post.mock.calls[0]?.[1]).toMatchObject({ sinceCursor: undefined });
 
-    // Второй sync — курсор продвинут до max(timestamp) serverChanges.
+    // Второй sync — курсор продвинут до nextCursor журнала (F32).
     await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
     await engine.flush();
     expect(api.post.mock.calls[1]?.[1]).toMatchObject({
-      sinceTimestamp: '2026-07-01T00:00:00.000Z',
+      sinceCursor: 1,
     });
     engine.destroy();
   });
@@ -422,7 +433,7 @@ describe('SyncEngine', () => {
     const api = makeApiMock(async () => ({
       ok: true,
       status: 200,
-      data: { results: [], serverChanges: [] },
+      data: { results: [], serverChanges: [], nextCursor: 0 },
     }));
 
     const engine = new SyncEngine({
@@ -460,7 +471,7 @@ describe('SyncEngine', () => {
     const api = makeApiMock(async () => ({
       ok: true,
       status: 200,
-      data: { results: [], serverChanges: [] },
+      data: { results: [], serverChanges: [], nextCursor: 0 },
     }));
     const engine = new SyncEngine({ api, storage, idFactory });
     engine.start();
@@ -507,9 +518,9 @@ describe('SyncEngine', () => {
   it('F07: курсор хранится per-user — смена аккаунта не видит чужой курсор', async () => {
     const sec = makeMemorySecureStorage();
     setSecureStorage(sec);
-    const sentSince: string[] = [];
+    const sentSince: (number | undefined)[] = [];
     const api = makeApiMock(async (body) => {
-      sentSince.push(body.sinceTimestamp as string | undefined);
+      sentSince.push(body.sinceCursor as number | undefined);
       const first = body.changes[0] as { id: string } | undefined;
       return {
         ok: true,
@@ -529,6 +540,7 @@ describe('SyncEngine', () => {
             },
           ],
           serverChanges: [serverChangeWith('2026-01-01T00:00:00.000Z')],
+          nextCursor: 7,
         } as SyncResponse,
       };
     });
@@ -541,20 +553,20 @@ describe('SyncEngine', () => {
     await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
     await engine.flush();
     expect(sentSince.at(-1)).toBeUndefined();
-    expect(sec.data.get('hanzi:sync:last-sync-at:user-a')).toBe('2026-01-01T00:00:00.000Z');
+    expect(sec.data.get('hanzi:sync:last-cursor:user-a')).toBe('7');
 
     // Смена аккаунта на B: чужой курсор (A) не читается → снова снапшот.
     engine.setCurrentUserId('user-b');
     await engine.enqueueChange('study_answer', { wordId: 'w2', rating: 4 });
     await engine.flush();
     expect(sentSince.at(-1)).toBeUndefined();
-    expect(sec.data.has('hanzi:sync:last-sync-at:user-b')).toBe(true);
+    expect(sec.data.has('hanzi:sync:last-cursor:user-b')).toBe(true);
 
     // Возврат на A: курсор A снова подхватывается.
     engine.setCurrentUserId('user-a');
     await engine.enqueueChange('study_answer', { wordId: 'w3', rating: 4 });
     await engine.flush();
-    expect(sentSince.at(-1)).toBe('2026-01-01T00:00:00.000Z');
+    expect(sentSince.at(-1)).toBe(7);
 
     engine.destroy();
   });
@@ -574,12 +586,12 @@ describe('SyncEngine', () => {
     engine.start();
     await engine.enqueueChange('study_answer', { wordId: 'w1', rating: 4 });
     expect(await storage.count()).toBe(1);
-    sec.data.set('hanzi:sync:last-sync-at:user-a', '2026-01-01T00:00:00.000Z');
+    sec.data.set('hanzi:sync:last-cursor:user-a', '7');
 
     await engine.clearLocalState();
 
     expect(await storage.count()).toBe(0);
-    expect(sec.data.has('hanzi:sync:last-sync-at:user-a')).toBe(false);
+    expect(sec.data.has('hanzi:sync:last-cursor:user-a')).toBe(false);
     engine.destroy();
   });
 });

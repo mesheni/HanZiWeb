@@ -523,6 +523,28 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
         // ответы его не обновляли (асимметрия live/offline стрика).
         await touchStreak(tx, userId, serverNow);
 
+        // F32: журнал изменений — live-ответы тоже попадают в
+        // serverChanges следующего инкрементального sync (иначе
+        // клиент, пропустивший live-ответ (другое устройство),
+        // не узнал бы об изменении).
+        await tx.syncJournal.create({
+          data: {
+            userId,
+            wordId: input.wordId,
+            changeType: 'study_answer',
+            payload: {
+              wordId: input.wordId,
+              state: newState,
+              stability: newStability,
+              difficulty: newDifficulty,
+              reps: progress.reps + 1,
+              dueDate: newDueDate.toISOString(),
+              lastReviewDate: serverNow.toISOString(),
+              timestamp: serverNow.toISOString(),
+            },
+          },
+        });
+
         return { newStability, newDifficulty, newState, newDueDate, intervalDays };
       });
 

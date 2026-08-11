@@ -47,12 +47,17 @@ export type SyncChange = z.infer<typeof SyncChangeSchema>;
 export const SyncRequestSchema = z.object({
   changes: z.array(SyncChangeSchema),
   /**
-   * Курсор инкрементального sync (PLAN_Features_v0.4 §48): ISO-время
-   * последнего успешного sync клиента. Сервер отдаёт в `serverChanges`
-   * только прогресс, изменённый ПОСЛЕ этого момента (lastReviewDate >
-   * since, либо новые карточки с dueDate > since), — бандл линейный по
-   * изменённому, а не O(все записи). Первый sync — без курсора → полный
-   * снапшот.
+   * Курсор инкрементального sync (F32): монотонный id последней
+   * полученной записи серверного журнала `SyncJournal`. Сервер отдаёт
+   * в `serverChanges` записи с `id > sinceCursor` — источник правды —
+   * журнал, а не эвристика по полям прогресса. Первый sync — без
+   * курсора → полный снапшот + `nextCursor`.
+   */
+  sinceCursor: z.number().int().nonnegative().optional(),
+  /**
+   * Устаревший ISO-курсор (v0.5 и ранее). Если задан `sinceCursor` —
+   * игнорируется.
+   * @deprecated Используйте sinceCursor (F32).
    */
   sinceTimestamp: z.string().datetime().optional(),
 });
@@ -107,5 +112,10 @@ export type ServerChange = z.infer<typeof ServerChangeSchema>;
 export const SyncResponseSchema = z.object({
   results: z.array(SyncResultSchema),
   serverChanges: z.array(ServerChangeSchema),
+  /**
+   * F32: курсор для следующего sync-запроса — максимальный id журнала
+   * из выданной пачки (или текущий курсор, если изменений не было).
+   */
+  nextCursor: z.number().int().nonnegative(),
 });
 export type SyncResponse = z.infer<typeof SyncResponseSchema>;
