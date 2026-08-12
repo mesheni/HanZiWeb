@@ -47,6 +47,7 @@ type MockTx = {
     findUnique: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
+  userWordPriority: { deleteMany: ReturnType<typeof vi.fn> };
   sessionAnswer: { create: ReturnType<typeof vi.fn> };
   session: { update: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
   syncJournal: { create: ReturnType<typeof vi.fn> };
@@ -105,6 +106,7 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
         findUnique: vi.fn().mockResolvedValue(progressStub()),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      userWordPriority: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       sessionAnswer: { create: vi.fn().mockResolvedValue({}) },
       session: {
         update: vi.fn().mockResolvedValue({}),
@@ -155,6 +157,7 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
         findUnique: vi.fn().mockResolvedValue(progressStub()),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
+      userWordPriority: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
       sessionAnswer: {
         create: vi.fn().mockRejectedValue(new Error('forced mid-tx failure')),
       },
@@ -245,5 +248,68 @@ describe('recordAnswer — atomicity (PLAN_Features_v0.4 §26)', () => {
     }
     const after = await prisma.session.findUnique({ where: { id: tempSessionId } });
     expect(after?.cardsCompleted).toBe(0);
+  });
+
+  it('study answer consumes the priority row inside the tx', async () => {
+    // Реальный SRS-ответ (flip-card) должен удалять UserWordPriority
+    // атомарно с ответом. До фикса recordAnswer не трогал priority —
+    // deleteMany не вызывается, тест красный.
+    const txMock: MockTx = {
+      user: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ currentStreak: 0, lastActiveDate: null, timezone: 'UTC' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      userWordProgress: {
+        findUnique: vi.fn().mockResolvedValue(progressStub()),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      userWordPriority: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      sessionAnswer: { create: vi.fn().mockResolvedValue({}) },
+      session: {
+        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      syncJournal: { create: vi.fn().mockResolvedValue({}) },
+    };
+    const { restore } = runWithMockTransaction(txMock);
+
+    const achMod = await import('../achievements/achievements.service.js');
+    const achSpy = vi.spyOn(achMod, 'checkAllAchievements').mockResolvedValue([] as never);
+
+    try {
+      await recordAnswer(userId, { sessionId, wordId, rating: 3 });
+    } finally {
+      achSpy.mockRestore();
+      restore();
+    }
+
+    expect(txMock.userWordPriority.deleteMany).toHaveBeenCalledWith({
+      where: { userId, wordId },
+    });
+  });
+
+  it('training answer does not consume the priority row', async () => {
+    // Тренировочный режим (multiple-choice) — оборонительный no-op:
+    // приоритет не расходуется, UserWordPriority остаётся на месте.
+    const trainingSession = await prisma.session.create({
+      data: { userId, cardsTotal: 1, mode: 'mixed', practiceType: 'multiple-choice' },
+    });
+    await prisma.userWordPriority.create({
+      data: { userId, wordId },
+    });
+
+    try {
+      await recordAnswer(userId, { sessionId: trainingSession.id, wordId, rating: 3 });
+
+      const priority = await prisma.userWordPriority.findUnique({
+        where: { userId_wordId: { userId, wordId } },
+      });
+      expect(priority).not.toBeNull();
+    } finally {
+      await prisma.userWordPriority.deleteMany({ where: { userId, wordId } });
+      await prisma.session.deleteMany({ where: { id: trainingSession.id } });
+    }
   });
 });

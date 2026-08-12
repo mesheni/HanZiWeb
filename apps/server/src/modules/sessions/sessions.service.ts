@@ -88,17 +88,37 @@ async function getUnlockedHskLevel(userId: string): Promise<number | null> {
 }
 
 async function loadPriorityCards(userId: string, cardLimit: number): Promise<ProgressWithWord[]> {
+  const now = new Date();
+
   const priorities = await prisma.userWordPriority.findMany({
     where: { userId },
     orderBy: { addedAt: 'asc' },
-    take: cardLimit,
-    include: { word: true },
+    select: { wordId: true },
   });
   if (priorities.length === 0) return [];
 
-  const now = new Date();
+  const existing = new Map(
+    (
+      await prisma.userWordProgress.findMany({
+        where: { userId, wordId: { in: priorities.map((p) => p.wordId) } },
+        select: { wordId: true, state: true, dueDate: true },
+      })
+    ).map((p) => [p.wordId, p]),
+  );
+
+  const selected = priorities
+    .filter((p) => {
+      const progress = existing.get(p.wordId);
+      return (
+        !progress ||
+        (progress.state !== 'graduated' && progress.dueDate.getTime() <= now.getTime())
+      );
+    })
+    .slice(0, cardLimit);
+  if (selected.length === 0) return [];
+
   await prisma.userWordProgress.createMany({
-    data: priorities.map((p) => ({
+    data: selected.map((p) => ({
       userId,
       wordId: p.wordId,
       state: 'new' as const,
@@ -108,14 +128,14 @@ async function loadPriorityCards(userId: string, cardLimit: number): Promise<Pro
   });
 
   const progressRecords = await prisma.userWordProgress.findMany({
-    where: { userId, wordId: { in: priorities.map((p) => p.wordId) } },
+    where: { userId, wordId: { in: selected.map((p) => p.wordId) } },
     include: {
       word: { include: { examples: true, tags: { include: { tag: true } } } },
     },
   });
 
   const byWordId = new Map(progressRecords.map((p) => [p.wordId, p]));
-  return priorities
+  return selected
     .map((p) => byWordId.get(p.wordId))
     .filter((p): p is ProgressWithWord => p !== undefined);
 }
@@ -506,6 +526,13 @@ export async function recordAnswer(userId: string, input: RecordAnswer) {
             rating: input.rating,
             answeredAt: serverNow,
           },
+        });
+
+        // Приоритетная строка расходуется атомарно с ответом: слово
+        // отвечено, и вкладка «Чтение» больше не должна показывать его
+        // приоритетной карточкой (fix v0.4 §29 follow-up).
+        await tx.userWordPriority.deleteMany({
+          where: { userId, wordId: input.wordId },
         });
 
         await tx.session.update({

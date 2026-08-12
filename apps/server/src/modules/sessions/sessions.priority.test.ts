@@ -28,7 +28,13 @@ describe('startSession priority words', () => {
       prisma.word.create({
         data: { character: char, pinyin: 'x', translation: 'x', hskLevel: 1 },
       });
-    wordIds = [(await mk(`优${Date.now()}a`)).id, (await mk(`优${Date.now()}b`)).id];
+    wordIds = [
+      (await mk(`优${Date.now()}a`)).id,
+      (await mk(`优${Date.now()}b`)).id,
+      (await mk(`优${Date.now()}c`)).id,
+      (await mk(`优${Date.now()}d`)).id,
+      (await mk(`优${Date.now()}e`)).id,
+    ];
   });
 
   afterAll(async () => {
@@ -134,6 +140,129 @@ describe('startSession priority words', () => {
       });
       await prisma.userWordProgress.deleteMany({
         where: { userId, wordId: { in: wordIds } },
+      });
+      await prisma.session.deleteMany({ where: { userId } });
+    }
+  });
+
+  it('excludes graduated priority words (state = graduated)', async () => {
+    const graduatedWordId = wordIds[2];
+    if (!graduatedWordId) throw new Error('wordIds[2] missing');
+
+    try {
+      await prisma.userWordPriority.create({
+        data: { userId, wordId: graduatedWordId },
+      });
+      // Уже усвоенное слово с будущим dueDate не должно приходить ни
+      // priority-карточкой, ни обычной due-карточкой (review-режим
+      // берёт только state != new и dueDate <= now).
+      await prisma.userWordProgress.create({
+        data: {
+          userId,
+          wordId: graduatedWordId,
+          state: 'graduated',
+          dueDate: new Date(Date.now() + 86_400_000),
+        },
+      });
+
+      const session = await startSession(
+        userId,
+        StartSessionSchema.parse({
+          cardLimit: 5,
+          includeNew: false,
+          mode: 'review',
+          practiceType: 'flip-card',
+        }),
+      );
+
+      const seen = new Set((session.cards as CardWithWord[]).map((c) => c.word.id));
+      expect(seen.has(graduatedWordId)).toBe(false);
+    } finally {
+      await prisma.userWordPriority.deleteMany({
+        where: { userId, wordId: graduatedWordId },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { userId, wordId: graduatedWordId },
+      });
+      await prisma.session.deleteMany({ where: { userId } });
+    }
+  });
+
+  it('excludes future-due priority words (dueDate > now)', async () => {
+    const futureWordId = wordIds[3];
+    if (!futureWordId) throw new Error('wordIds[3] missing');
+
+    try {
+      await prisma.userWordPriority.create({
+        data: { userId, wordId: futureWordId },
+      });
+      await prisma.userWordProgress.create({
+        data: {
+          userId,
+          wordId: futureWordId,
+          state: 'review',
+          dueDate: new Date(Date.now() + 86_400_000),
+        },
+      });
+
+      const session = await startSession(
+        userId,
+        StartSessionSchema.parse({
+          cardLimit: 5,
+          includeNew: false,
+          mode: 'review',
+          practiceType: 'flip-card',
+        }),
+      );
+
+      const seen = new Set((session.cards as CardWithWord[]).map((c) => c.word.id));
+      expect(seen.has(futureWordId)).toBe(false);
+    } finally {
+      await prisma.userWordPriority.deleteMany({
+        where: { userId, wordId: futureWordId },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { userId, wordId: futureWordId },
+      });
+      await prisma.session.deleteMany({ where: { userId } });
+    }
+  });
+
+  it('includes due review priority words at the front of the session', async () => {
+    const dueWordId = wordIds[4];
+    if (!dueWordId) throw new Error('wordIds[4] missing');
+
+    try {
+      await prisma.userWordPriority.create({
+        data: { userId, wordId: dueWordId },
+      });
+      await prisma.userWordProgress.create({
+        data: {
+          userId,
+          wordId: dueWordId,
+          state: 'review',
+          dueDate: new Date(Date.now() - 86_400_000),
+        },
+      });
+
+      const session = await startSession(
+        userId,
+        StartSessionSchema.parse({
+          cardLimit: 5,
+          includeNew: false,
+          mode: 'review',
+          practiceType: 'flip-card',
+        }),
+      );
+
+      expect(session.cards.length).toBeGreaterThan(0);
+      expect(firstWordId(session as { cards: CardWithWord[] })).toBe(dueWordId);
+    } finally {
+      await prisma.userWordPriority.deleteMany({
+        where: { userId, wordId: dueWordId },
+      });
+      await prisma.userWordProgress.deleteMany({
+        where: { userId, wordId: dueWordId },
       });
       await prisma.session.deleteMany({ where: { userId } });
     }
