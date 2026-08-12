@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { cloneElement, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -14,6 +14,8 @@ import {
   Sparkles,
   Trophy,
 } from 'lucide-react';
+import { ActivityCalendar } from 'react-activity-calendar';
+import 'react-activity-calendar/tooltips.css';
 import {
   useActivity,
   useLeaderboard,
@@ -25,7 +27,14 @@ import {
 import { useAchievements } from '../queries/achievements';
 import StudyMapCard from '../components/StudyMapCard';
 import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
-import { cn } from '../utils/cn';
+import { useTheme } from '@/ui/useTheme';
+import {
+  buildActivityCalendar,
+  formatActivityCount,
+  formatCalendarDateKey,
+  formatCalendarDateLabel,
+  type ActivityDayInput,
+} from '../utils/activityCalendar';
 
 const ACHIEVEMENT_ICONS: Record<AchievementType, typeof Flame> = {
   streak_7: Flame,
@@ -35,18 +44,9 @@ const ACHIEVEMENT_ICONS: Record<AchievementType, typeof Flame> = {
   perfect_session: Sparkles,
 };
 
-const DOW = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-const MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
-
-function getIntensity(count: number): number {
-  if (count === 0) return 0;
-  if (count <= 5) return 1;
-  if (count <= 15) return 2;
-  if (count <= 30) return 3;
-  return 4;
-}
-
-const INTENSITY_COLORS = [
+const CAL_MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+const CAL_WEEKDAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+const CAL_COLORS: string[] = [
   'var(--cal-empty)',
   'var(--cal-level-1)',
   'var(--cal-level-2)',
@@ -54,211 +54,66 @@ const INTENSITY_COLORS = [
   'var(--cal-level-4)',
 ];
 
-interface TooltipData {
-  date: string;
-  count: number;
-  x: number;
-  y: number;
+function levelRangeLabel(level: number): string {
+  if (level <= 0) return '0';
+  if (level <= 1) return '1-5';
+  if (level <= 2) return '6-15';
+  if (level <= 3) return '16-30';
+  return '31+';
 }
 
-function ActivityCalendar({
-  activityMap,
+function StatsActivityCalendar({
+  activityData,
   year,
 }: {
-  activityMap: Map<string, number>;
+  activityData: ActivityDayInput[];
   year: number;
 }) {
-  const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const { theme } = useTheme();
+  const data = useMemo(() => buildActivityCalendar(activityData, year), [activityData, year]);
+  const todayKey = useMemo(() => formatCalendarDateKey(new Date()), []);
 
-  return useMemo(() => {
-    // Определяем первый день года (0=Пн, 6=Вс)
-    const firstDay = new Date(year, 0, 1);
-    const startDow = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Пн=0
-    const daysInYear = (new Date(year, 11, 31).getTime() - firstDay.getTime()) / 86400000 + 1;
-
-    const weeks: (number | null)[][] = [];
-    let currentWeek: (number | null)[] = [];
-
-    // Пустые ячейки до первого дня года
-    for (let d = 0; d < startDow; d++) {
-      currentWeek.push(null);
-    }
-
-    for (let dayOfYear = 0; dayOfYear < daysInYear; dayOfYear++) {
-      const date = new Date(year, 0, 1 + dayOfYear);
-      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
-      currentWeek.push(dayOfYear + 1);
-      if (dow === 6) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-    }
-    if (currentWeek.length > 0) weeks.push(currentWeek);
-
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
-
-    const monthStartMap = new Map<number, number>();
-    for (let month = 0; month < 12; month++) {
-      const date = new Date(year, month, 1);
-      const dayOfYear = Math.floor((date.getTime() - firstDay.getTime()) / 86400000);
-      const weekIdx = Math.floor((dayOfYear + startDow) / 7);
-      monthStartMap.set(weekIdx, month);
-    }
-
-    const getWeekMonth = (week: (number | null)[]): number => {
-      for (const dayNum of week) {
-        if (dayNum !== null) {
-          return new Date(year, 0, dayNum).getMonth();
+  return (
+    <div className="stats-activity-calendar">
+      <ActivityCalendar
+        data={data}
+        weekStart={1}
+        colorScheme={theme}
+        showMonthLabels
+        showWeekdayLabels
+        showColorLegend
+        showTotalCount={false}
+        blockSize={12}
+        blockMargin={4}
+        blockRadius={3}
+        fontSize={12}
+        labels={{
+          months: CAL_MONTHS,
+          weekdays: CAL_WEEKDAYS,
+          legend: { less: 'Меньше', more: 'Больше' },
+        }}
+        theme={{ light: CAL_COLORS, dark: CAL_COLORS }}
+        tooltips={{
+          activity: {
+            text: (activity) =>
+              `${formatCalendarDateLabel(activity.date)} · ${formatActivityCount(activity.count)}`,
+          },
+          colorLegend: {
+            text: (level) => `${levelRangeLabel(level)} повторений`,
+          },
+        }}
+        renderBlock={(block, activity) =>
+          cloneElement(block, {
+            'aria-label': `${formatCalendarDateLabel(activity.date)}: ${formatActivityCount(activity.count)}`,
+            style:
+              activity.date === todayKey
+                ? { ...block.props.style, stroke: 'var(--accent)', strokeWidth: 2 }
+                : block.props.style,
+          })
         }
-      }
-      return 0;
-    };
-
-    return (
-      <div className="activity-calendar">
-        <div className="activity-calendar-scroll">
-          <div className="activity-calendar-layout">
-            {/* Month labels */}
-            <div className="activity-calendar-month-header">
-              <div className="activity-calendar-month-header-spacer" />
-              <div className="activity-calendar-month-cols">
-                {weeks.map((_, wi) => {
-                  const month = monthStartMap.get(wi);
-                  const isMonthStart = month !== undefined;
-                  return (
-                    <div
-                      key={wi}
-                      className={cn(
-                        'activity-calendar-month-col',
-                        isMonthStart && wi > 0 ? 'activity-calendar-month-col-start' : undefined,
-                      )}
-                    >
-                      {isMonthStart && (
-                        <span className="activity-calendar-month-label">{MONTHS[month]}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="activity-calendar-grid">
-              {/* DOW labels */}
-              <div className="activity-calendar-dow-col">
-                {DOW.map((d) => (
-                  <span key={d} className="activity-calendar-dow-label">
-                    {d}
-                  </span>
-                ))}
-              </div>
-              {/* Week columns */}
-              <div className="activity-calendar-week-cols">
-                {weeks.map((week, wi) => {
-                  const weekMonth = getWeekMonth(week);
-                  const isMonthStart = monthStartMap.has(wi);
-                  return (
-                    <div
-                      key={wi}
-                      className={cn(
-                        'activity-calendar-week-col',
-                        weekMonth % 2 === 1 ? 'activity-calendar-week-col-odd' : undefined,
-                        isMonthStart && wi > 0
-                          ? 'activity-calendar-week-col-month-start'
-                          : undefined,
-                      )}
-                    >
-                      {week.map((dayNum, di) => {
-                        if (dayNum === null) {
-                          return (
-                            <div
-                              key={di}
-                              className="activity-calendar-cell"
-                              style={{ background: INTENSITY_COLORS[0] }}
-                            />
-                          );
-                        }
-                        const dateObj = new Date(year, 0, dayNum);
-                        const dateStr = dateObj.toISOString().slice(0, 10);
-                        const count = activityMap.get(dateStr) ?? 0;
-                        const intensity = getIntensity(count);
-                        const isToday = dateStr === todayStr;
-                        return (
-                          <div
-                            key={di}
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`${dateStr}: ${count} повторений`}
-                            className={cn(
-                              'activity-calendar-cell',
-                              isToday ? 'activity-calendar-cell-today' : undefined,
-                            )}
-                            style={{ background: INTENSITY_COLORS[intensity] }}
-                            onMouseEnter={(e) => {
-                              const rect = (e.target as HTMLElement).getBoundingClientRect();
-                              setTooltip({
-                                date: dateStr,
-                                count,
-                                x: rect.left + rect.width / 2,
-                                y: rect.top - 8,
-                              });
-                            }}
-                            onMouseLeave={() => setTooltip(null)}
-                            onClick={(e) => {
-                              const rect = (e.target as HTMLElement).getBoundingClientRect();
-                              setTooltip((prev) =>
-                                prev?.date === dateStr
-                                  ? null
-                                  : {
-                                      date: dateStr,
-                                      count,
-                                      x: rect.left + rect.width / 2,
-                                      y: rect.top - 8,
-                                    },
-                              );
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                const rect = (e.target as HTMLElement).getBoundingClientRect();
-                                setTooltip((prev) =>
-                                  prev?.date === dateStr
-                                    ? null
-                                    : {
-                                        date: dateStr,
-                                        count,
-                                        x: rect.left + rect.width / 2,
-                                        y: rect.top - 8,
-                                      },
-                                );
-                              }
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-        {/* Tooltip */}
-        {tooltip && (
-          <div className="activity-calendar-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
-            {tooltip.date}: {tooltip.count} повторений
-          </div>
-        )}
-        {/* Legend */}
-        <div className="activity-calendar-legend">
-          <span className="activity-calendar-legend-label">Меньше</span>
-          {INTENSITY_COLORS.map((color, i) => (
-            <div key={i} className="activity-calendar-legend-cell" style={{ background: color }} />
-          ))}
-          <span className="activity-calendar-legend-label">Больше</span>
-        </div>
-      </div>
-    );
-  }, [activityMap, year, tooltip]);
+      />
+    </div>
+  );
 }
 
 function LeaderboardRow({ entry, isMe }: { entry: LeaderboardEntry; isMe: boolean }) {
@@ -406,16 +261,6 @@ export default function StatsScreen() {
   const { data: leaderboard, isLoading: lbLoading, isError: lbError } = useLeaderboard(period);
   const { data: studyMap, isLoading: smLoading, isError: smError } = useStudyMap();
 
-  const activityMap = useMemo(() => {
-    const map = new Map<string, number>();
-    if (activityData) {
-      for (const d of activityData) {
-        map.set(d.date, d.count);
-      }
-    }
-    return map;
-  }, [activityData]);
-
   const totalReviews = activityData?.reduce((sum, d) => sum + d.count, 0) ?? 0;
   const streak = overview?.currentStreak ?? 0;
   const graduated = overview?.byState?.graduated ?? 0;
@@ -470,7 +315,7 @@ export default function StatsScreen() {
             </button>
           </div>
         </div>
-        <ActivityCalendar activityMap={activityMap} year={year} />
+        <StatsActivityCalendar activityData={activityData ?? []} year={year} />
       </div>
 
       {/* Study Map (PLAN_Features_v0.3 §5) */}

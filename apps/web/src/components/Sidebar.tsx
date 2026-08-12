@@ -33,14 +33,14 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div
+      <button
+        type="button"
         onClick={() => navigate('/')}
         className="sidebar-logo cursor-pointer select-none"
-        role="button"
-        tabIndex={0}
+        aria-label="На главную"
       >
         汉
-      </div>
+      </button>
 
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item) => (
@@ -93,6 +93,7 @@ export default function Sidebar() {
 
       <div
         title={isOnline ? 'Онлайн' : 'Офлайн'}
+        aria-label={isOnline ? 'Подключено к интернету' : 'Нет подключения к интернету'}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -107,7 +108,7 @@ export default function Sidebar() {
           background: isOnline ? 'rgba(34,197,94,0.1)' : 'var(--accent-bg)',
         }}
       >
-        {isOnline ? <Wifi size={17} /> : <WifiOff size={17} />}
+        {isOnline ? <Wifi size={17} aria-hidden="true" /> : <WifiOff size={17} aria-hidden="true" />}
       </div>
     </aside>
   );

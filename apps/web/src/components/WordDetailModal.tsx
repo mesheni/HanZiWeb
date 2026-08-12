@@ -198,17 +198,19 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
             <div className="word-detail-add">
               <textarea
                 className="word-detail-add-input"
-                placeholder="中文 предложение"
+                placeholder="中文 предложение…"
                 value={newZh}
                 onChange={(e) => setNewZh(e.target.value)}
                 rows={2}
+                aria-label="Китайское предложение"
               />
               <textarea
                 className="word-detail-add-input"
-                placeholder="Русский перевод"
+                placeholder="Русский перевод…"
                 value={newRu}
                 onChange={(e) => setNewRu(e.target.value)}
                 rows={2}
+                aria-label="Русский перевод"
               />
               <button
                 type="button"

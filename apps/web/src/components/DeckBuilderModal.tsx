@@ -228,13 +228,14 @@ export default function DeckBuilderModal({
             </div>
 
             <div className="deck-builder-search">
-              <Search size={14} className="deck-builder-search-icon" />
+              <Search size={14} className="deck-builder-search-icon" aria-hidden="true" />
               <input
                 type="text"
                 className="deck-builder-search-input"
-                placeholder="Поиск слова по иероглифу / пиньиню / переводу"
+                placeholder="Поиск слова по иероглифу / пиньиню / переводу…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                aria-label="Поиск слов"
               />
             </div>
 
@@ -308,6 +309,7 @@ export default function DeckBuilderModal({
                   type="button"
                   className="deck-builder-share-copy"
                   onClick={() => void handleCopy()}
+                  aria-label={copied ? 'Скопировано' : 'Скопировать код'}
                   title="Скопировать код"
                 >
                   {copied ? <Check size={14} /> : <Copy size={14} />}

@@ -23,11 +23,12 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           type={inputType}
           className={cn(
-            'w-full px-4 py-2.5 text-sm rounded-lg bg-bg-primary border transition-colors duration-150 outline-none',
+            'w-full px-4 py-2.5 text-sm rounded-lg bg-bg-primary border transition-colors duration-150',
             'text-text-primary placeholder:text-text-muted',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-card',
             error
-              ? 'border-tone-4 focus:border-tone-4'
-              : 'border-border-default focus:border-accent',
+              ? 'border-tone-4 focus-visible:ring-tone-4'
+              : 'border-border-default focus-visible:border-accent',
             disabled && 'opacity-50 cursor-not-allowed',
             className,
           )}

@@ -57,6 +57,12 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-modal: 0 8px 48px rgba(0, 0, 0, 0.5);
   --tone-overlay: rgba(0, 0, 0, 0.6);
+  
+  /* Enhanced shadows for depth */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-hover: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 :root[data-theme='light'] {
@@ -110,6 +116,12 @@
   --shadow-card: 0 1px 2px rgba(15, 17, 24, 0.06);
   --shadow-modal: 0 8px 32px rgba(15, 17, 24, 0.12);
   --tone-overlay: rgba(15, 17, 24, 0.4);
+  
+  /* Enhanced shadows for depth */
+  --shadow-sm: 0 1px 3px rgba(15, 17, 24, 0.08);
+  --shadow-md: 0 4px 12px rgba(15, 17, 24, 0.12);
+  --shadow-lg: 0 8px 24px rgba(15, 17, 24, 0.16);
+  --shadow-hover: 0 8px 28px rgba(15, 17, 24, 0.2);
 }
 
 :root {
@@ -4400,150 +4412,44 @@ input {
   }
 }
 
-/* ===== Activity calendar (PLAN_Features_v0.4 §3) =====
-   GitHub-style heatmap на вкладке «Итоги». Месяцы разделены
-   вертикальной линией `--border-subtle` на первой неделе каждого
-   месяца; метки месяцев — uppercase 12px над первой колонкой. */
+/* ===== Activity calendar (Stats «Активность») =====
+   Heatmap на react-activity-calendar: недели с понедельника
+   (weekStart=1), русские подписи, цвета ячеек — токены --cal-*.
+   Тултип портируется в <body>, поэтому его токены переопределены
+   глобально (селектор с :root выше по специфичности, чем у пакета). */
 
-.activity-calendar {
-  position: relative;
-}
-
-.activity-calendar-scroll {
-  overflow-x: auto;
-}
-
-.activity-calendar-layout {
+.stats-activity-calendar {
   display: flex;
-  flex-direction: column;
-  min-width: max-content;
+  justify-content: center;
+  padding: 4px 0;
 }
 
-.activity-calendar-month-header {
-  display: flex;
-  gap: 3px;
-  margin-bottom: 4px;
-}
-
-.activity-calendar-month-header-spacer {
-  width: 24px;
-  flex-shrink: 0;
-}
-
-.activity-calendar-month-cols {
-  display: flex;
-  gap: 3px;
-}
-
-.activity-calendar-month-col {
-  width: 12px;
-  position: relative;
-  height: 16px;
-}
-
-.activity-calendar-month-col-start {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.activity-calendar-month-label {
-  position: absolute;
-  left: 2px;
-  top: 0;
-  font-size: 12px;
-  font-weight: 600;
+.stats-activity-calendar .react-activity-calendar {
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-  line-height: 16px;
 }
 
-.activity-calendar-grid {
-  display: flex;
-  gap: 3px;
+.stats-activity-calendar .react-activity-calendar__scroll-container {
+  padding-top: 2px;
 }
 
-.activity-calendar-dow-col {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.activity-calendar-dow-label {
-  font-size: 8px;
-  color: var(--text-dim);
-  height: 12px;
-  line-height: 12px;
-  text-align: right;
-  padding-right: 4px;
-  width: 20px;
-}
-
-.activity-calendar-week-cols {
-  display: flex;
-  gap: 3px;
-  flex: 1;
-  overflow-x: visible;
-}
-
-.activity-calendar-week-col {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.activity-calendar-week-col-odd {
-  background: var(--bg-hover);
-  border-radius: 3px;
-}
-
-.activity-calendar-week-col-month-start {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.activity-calendar-cell {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  transition: all 0.1s;
-  border: 1px solid transparent;
-}
-
-.activity-calendar-cell-today {
-  border-color: var(--accent);
-}
-
-.activity-calendar-tooltip {
-  position: fixed;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  padding: 6px 10px;
+.stats-activity-calendar .react-activity-calendar__calendar text {
   font-size: 11px;
+  font-weight: 500;
+}
+
+.stats-activity-calendar .react-activity-calendar__footer {
+  font-size: 11px;
+}
+
+:root .react-activity-calendar__tooltip,
+:root .react-activity-calendar__tooltip[data-color-scheme='dark'] {
+  background-color: var(--bg-card);
   color: var(--text-primary);
-  pointer-events: none;
-  z-index: 100;
-  white-space: nowrap;
-  transform: translate(-50%, -100%);
-}
-
-.activity-calendar-legend {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin-top: 10px;
-  justify-content: flex-end;
-}
-
-.activity-calendar-legend-label {
-  font-size: 10px;
-  color: var(--text-dim);
-}
-
-.activity-calendar-legend-cell {
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  padding: 8px 12px;
 }
 
 /* ===== Test screen (PLAN_Features_v0.3 §6) ===== */
@@ -5834,4 +5740,157 @@ input {
   .reading-paragraph {
     font-size: 20px;
   }
+}
+
+/* ===== Enhanced UI Utilities ===== */
+
+/* Interactive card hover effects */
+.card-interactive {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-hover);
+}
+
+.card-interactive:active {
+  transform: translateY(0);
+}
+
+/* Button press effect */
+.btn-press {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.btn-press:active {
+  transform: scale(0.97);
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-hover) 0%,
+    var(--bg-card) 50%,
+    var(--bg-hover) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-line {
+  height: 14px;
+  margin-bottom: 8px;
+}
+
+.skeleton-line:last-child {
+  margin-bottom: 0;
+}
+
+.skeleton-circle {
+  border-radius: 50%;
+}
+
+/* Typography improvements */
+.text-balance {
+  text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Smooth page transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  .card-interactive:hover {
+    transform: none;
+  }
+  
+  .btn-press:active {
+    transform: none;
+  }
+}
+
+/* HomeScreen CTA hover effect */
+button[style*="background: var(--accent)"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(220, 38, 38, 0.3);
+}
+
+button[style*="background: var(--accent)"]:active {
+  transform: translateY(0);
+}
+
+/* HomeScreen mode cards hover */
+.mode-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-hover);
+}
+
+.mode-card-hover:active {
+  transform: translateY(0);
+}
+
+/* Sidebar button hover effects */
+.sidebar-btn {
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.sidebar-btn:hover {
+  background-color: var(--bg-hover);
+}
+
+.sidebar-btn:active {
+  transform: scale(0.97);
+}
+
+.sidebar-btn.active {
+  background-color: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* Bottom nav button effects */
+.bottom-nav-btn {
+  transition: color 0.15s ease, transform 0.1s ease;
+}
+
+.bottom-nav-btn:active {
+  transform: scale(0.95);
 }

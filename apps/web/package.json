@@ -24,6 +24,7 @@
     "hanzi-writer-data": "2.0.1",
     "lucide-react": "^1.22.0",
     "react": "^18.3.0",
+    "react-activity-calendar": "3.2.1",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.28.0",
     "rxdb": "15.0.0",

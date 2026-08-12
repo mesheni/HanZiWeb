@@ -11,6 +11,7 @@ import { getDb } from '../db/database';
 import { useToastStore } from '../stores/toastStore';
 import Badge from '../components/ui/Badge';
 import { PinyinDisplay } from '../utils/toneColors';
+import { SkeletonCard } from '../components/ui/Skeleton';
 
 function CircularProgress({ value, max = 100, size = 100, strokeWidth = 6 }: { value: number; max?: number; size?: number; strokeWidth?: number }) {
   const radius = (size - strokeWidth) / 2;
@@ -134,41 +135,27 @@ export default function HomeScreen() {
       </div>
 
       {/* CTA */}
-      <div
+      <button
+        type="button"
         style={styles.ctaCard}
         onClick={() => navigate('/study')}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            navigate('/study');
-          }
-        }}
-        role="button"
-        tabIndex={0}
       >
         <div style={styles.ctaContent}>
           <div style={styles.ctaLabel}>Начать тренировку</div>
           <div style={styles.ctaSub}>{wordsDueToday > 0 ? `${wordsDueToday} слов на сегодня` : 'Изучать новые слова'}</div>
         </div>
         <div style={styles.ctaArrow}>→</div>
-      </div>
+      </button>
 
       {/* Быстрый запуск нестандартной практики */}
-      <div
+      <button
+        type="button"
         style={{ ...styles.modeCard, marginBottom: 12, borderColor: 'var(--border-accent)' }}
         onClick={() => navigate('/study?practice=multiple-choice')}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            navigate('/study?practice=multiple-choice');
-          }
-        }}
-        role="button"
-        tabIndex={0}
       >
         <div style={styles.modeTitle}>Микс-режимы →</div>
         <div style={styles.modeText}>Выбор перевода · ввод пиньиня · тоны · слоги</div>
-      </div>
+      </button>
 
       <div style={styles.modeGrid}>
         <button style={styles.modeCard} onClick={() => navigate('/study?mode=review')}>
@@ -274,8 +261,10 @@ export default function HomeScreen() {
       )}
 
       {isLoading && (
-        <div style={styles.loading}>
-          <span className="spinner" />
+        <div style={styles.loadingSkeleton}>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
       )}
     </div>
@@ -333,7 +322,10 @@ const styles: Record<string, CSSProperties> = {
     padding: '16px 18px',
     cursor: 'pointer',
     marginBottom: 18,
-    transition: 'transform 0.15s, box-shadow 0.15s',
+    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+    border: 'none',
+    width: '100%',
+    textAlign: 'left',
   },
   ctaContent: {},
   ctaLabel: {
@@ -363,6 +355,7 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 12,
     padding: '12px 14px',
     cursor: 'pointer',
+    transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
   },
   modeTitle: {
     fontSize: 14,
@@ -390,6 +383,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 24,
     fontWeight: 600,
     lineHeight: 1,
+    fontVariantNumeric: 'tabular-nums',
   },
   statLabel: {
     fontSize: 10,
@@ -415,6 +409,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 28,
     fontWeight: 600,
     lineHeight: 1,
+    fontVariantNumeric: 'tabular-nums',
   },
   progressInfoLabel: {
     fontSize: 11,
@@ -477,5 +472,11 @@ const styles: Record<string, CSSProperties> = {
     display: 'flex',
     justifyContent: 'center',
     padding: 20,
+  },
+  loadingSkeleton: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    padding: '10px 0',
   },
 };

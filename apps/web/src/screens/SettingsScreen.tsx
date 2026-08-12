@@ -342,6 +342,7 @@ export default function SettingsScreen() {
                     value={settings.notificationFrequency}
                     onChange={(e) => handleFrequencyChange(Number(e.target.value))}
                     className="w-full accent-accent"
+                    aria-label="Частота уведомлений"
                   />
                   <div className="flex justify-between text-xs text-text-muted mt-1">
                     <span>1</span>
@@ -433,6 +434,7 @@ export default function SettingsScreen() {
               onChange={(e) => handleDailyGoalChange(Number(e.target.value))}
               disabled={!dailyGoalLoaded || updateUserSettings.isPending}
               className="w-full accent-accent"
+              aria-label="Ежедневная цель"
             />
             <div className="flex justify-between text-xs text-text-muted">
               <span>{DAILY_GOAL_MIN}</span>

@@ -14,7 +14,7 @@ export default function Layout({ children }: LayoutProps) {
         <Sidebar />
       </div>
 
-      <main className="app-main relative overflow-hidden pb-14 md:pb-0">
+      <main className="app-main relative overflow-hidden pb-14 md:pb-0 animate-fade-in">
         {children ?? <Outlet />}
       </main>
 
