@@ -245,7 +245,7 @@ export default function HandwritingPractice({
                 onSymbolComplete={handleSymbolComplete}
                 onMistake={handleMistake}
               />
-              <div className="handwriting-controls">
+              <div className="handwriting-controls handwriting-action-buttons">
                 <button
                   type="button"
                   className="hw-btn hw-btn-outline"
