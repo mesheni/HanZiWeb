@@ -147,16 +147,6 @@ export default function HomeScreen() {
         <div style={styles.ctaArrow}>→</div>
       </button>
 
-      {/* Быстрый запуск нестандартной практики */}
-      <button
-        type="button"
-        style={{ ...styles.modeCard, marginBottom: 12, borderColor: 'var(--border-accent)' }}
-        onClick={() => navigate('/study?practice=multiple-choice')}
-      >
-        <div style={styles.modeTitle}>Микс-режимы →</div>
-        <div style={styles.modeText}>Выбор перевода · ввод пиньиня · тоны · слоги</div>
-      </button>
-
       <div style={styles.modeGrid}>
         <button style={styles.modeCard} onClick={() => navigate('/study?mode=review')}>
           <div style={styles.modeTitle}>Повторить сегодня</div>
@@ -344,7 +334,7 @@ const styles: Record<string, CSSProperties> = {
   },
   modeGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(1, minmax(0, 1fr))',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
     gap: 8,
     marginBottom: 18,
   },
