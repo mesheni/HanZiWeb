@@ -1,32 +1,49 @@
 import { prisma } from '../../lib/prisma.js';
 import type { AchievementType, UserAchievement } from '@hanzi/shared';
 
-/** Пороги для достижений (вынесены в константы для тестов и UI). */
 export const STREAK_7_TARGET = 7;
+export const STREAK_30_TARGET = 30;
+export const STREAK_100_TARGET = 100;
 export const WORDS_100_TARGET = 100;
+export const WORDS_500_TARGET = 500;
+export const WORDS_1000_TARGET = 1000;
+export const REVIEWS_1K_TARGET = 1_000;
 export const REVIEWS_10K_TARGET = 10_000;
+export const REVIEWS_50K_TARGET = 50_000;
+export const SPEED_DEMON_MIN = 50;
+export const PERFECT_5_TARGET = 5;
+export const XP_1000_TARGET = 1_000;
+export const XP_5000_TARGET = 5_000;
+export const XP_10000_TARGET = 10_000;
 
-/** Все известные типы достижений (для UI и валидации). */
 const ALL_TYPES: readonly AchievementType[] = [
+  'first_review',
   'streak_7',
+  'streak_30',
+  'streak_100',
   'words_100',
+  'words_500',
+  'words_1000',
   'hsk1_complete',
+  'hsk2_complete',
+  'hsk3_complete',
+  'reviews_1k',
   'reviews_10k',
+  'reviews_50k',
+  'speed_demon',
+  'early_bird',
+  'night_owl',
   'perfect_session',
+  'perfect_5',
+  'xp_1000',
+  'xp_5000',
+  'xp_10000',
 ];
 
-/**
- * Чистый хелпер: разбивает список `unlocked` на «уже разблокированные
- * типы» и возвращает набор для быстрого membership-check.
- */
 export function unlockedSet(unlocked: { type: string }[]): Set<string> {
   return new Set(unlocked.map((a) => a.type));
 }
 
-/**
- * Возвращает все достижения пользователя, отсортированные по дате
- * разблокировки (DESC — свежие сверху).
- */
 export async function getUserAchievements(userId: string): Promise<UserAchievement[]> {
   const rows = await prisma.userAchievement.findMany({
     where: { userId },
@@ -39,60 +56,106 @@ export async function getUserAchievements(userId: string): Promise<UserAchieveme
   }));
 }
 
-/**
- * Проверяет и разблокирует достижения, основанные на пользовательских
- * метриках (XP/стрик/количество выученных/HSK1/все ревью).
- *
- * Чистая функция «что проверить» принимает на вход userId + текущие
- * значения и возвращает типы, которые должны быть разблокированы.
- * Это позволяет покрыть логику юнит-тестами без БД.
- */
 export interface CheckableStats {
   currentStreak: number;
   learnedWords: number;
   totalReviews: number;
   hsk1Mastered: number;
   hsk1Total: number;
+  hsk2Mastered: number;
+  hsk2Total: number;
+  hsk3Mastered: number;
+  hsk3Total: number;
+  perfectSessionCount: number;
+  maxSessionAnswers: number;
+  hasEarlySession: boolean;
+  hasNightSession: boolean;
+  xp: number;
 }
 
-/**
- * Чистая функция: какие из «глобальных» достижений должны быть
- * разблокированы, исходя из текущих показателей. Не трогает
- * `perfect_session` — это per-session событие.
- */
 export function pickGlobalUnlocks(stats: CheckableStats): AchievementType[] {
   const out: AchievementType[] = [];
+
+  if (stats.totalReviews >= 1) out.push('first_review');
+
   if (stats.currentStreak >= STREAK_7_TARGET) out.push('streak_7');
+  if (stats.currentStreak >= STREAK_30_TARGET) out.push('streak_30');
+  if (stats.currentStreak >= STREAK_100_TARGET) out.push('streak_100');
+
   if (stats.learnedWords >= WORDS_100_TARGET) out.push('words_100');
+  if (stats.learnedWords >= WORDS_500_TARGET) out.push('words_500');
+  if (stats.learnedWords >= WORDS_1000_TARGET) out.push('words_1000');
+
+  if (stats.totalReviews >= REVIEWS_1K_TARGET) out.push('reviews_1k');
   if (stats.totalReviews >= REVIEWS_10K_TARGET) out.push('reviews_10k');
-  if (stats.hsk1Total > 0 && stats.hsk1Mastered >= stats.hsk1Total) {
-    out.push('hsk1_complete');
-  }
+  if (stats.totalReviews >= REVIEWS_50K_TARGET) out.push('reviews_50k');
+
+  if (stats.hsk1Total > 0 && stats.hsk1Mastered >= stats.hsk1Total) out.push('hsk1_complete');
+  if (stats.hsk2Total > 0 && stats.hsk2Mastered >= stats.hsk2Total) out.push('hsk2_complete');
+  if (stats.hsk3Total > 0 && stats.hsk3Mastered >= stats.hsk3Total) out.push('hsk3_complete');
+
+  if (stats.maxSessionAnswers >= SPEED_DEMON_MIN) out.push('speed_demon');
+
+  if (stats.hasEarlySession) out.push('early_bird');
+  if (stats.hasNightSession) out.push('night_owl');
+
+  if (stats.perfectSessionCount >= PERFECT_5_TARGET) out.push('perfect_5');
+
+  if (stats.xp >= XP_1000_TARGET) out.push('xp_1000');
+  if (stats.xp >= XP_5000_TARGET) out.push('xp_5000');
+  if (stats.xp >= XP_10000_TARGET) out.push('xp_10000');
+
   return out;
 }
 
-/**
- * Собирает текущие показатели пользователя одним SQL-запросом (агрегаты)
- * и возвращает их в виде `CheckableStats`. Чистая функция — без побочных
- * эффектов.
- */
 export async function gatherStats(userId: string): Promise<CheckableStats> {
-  const [user, progressCounts, totalReviews, hsk1Total, hsk1Mastered] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { currentStreak: true },
-    }),
-    prisma.userWordProgress.groupBy({
-      by: ['state'],
-      where: { userId },
-      _count: true,
-    }),
-    prisma.sessionAnswer.count({
-      where: { session: { userId } },
-    }),
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const today8am = new Date(todayStart);
+  today8am.setHours(8, 0, 0, 0);
+  const tomorrow5am = new Date(todayStart);
+  tomorrow5am.setDate(tomorrow5am.getDate() + 1);
+  tomorrow5am.setHours(5, 0, 0, 0);
+
+  const [
+    user,
+    progressCounts,
+    totalReviews,
+    hsk1Total,
+    hsk1Mastered,
+    hsk2Total,
+    hsk2Mastered,
+    hsk3Total,
+    hsk3Mastered,
+    perfectSessionCount,
+    maxSessionRow,
+    hasEarlySession,
+    hasNightSession,
+  ] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { currentStreak: true, xp: true } }),
+    prisma.userWordProgress.groupBy({ by: ['state'], where: { userId }, _count: true }),
+    prisma.sessionAnswer.count({ where: { session: { userId } } }),
     prisma.word.count({ where: { hskLevel: 1 } }),
-    prisma.userWordProgress.count({
-      where: { userId, state: 'graduated', word: { is: { hskLevel: 1 } } },
+    prisma.userWordProgress.count({ where: { userId, state: 'graduated', word: { hskLevel: 1 } } }),
+    prisma.word.count({ where: { hskLevel: 2 } }),
+    prisma.userWordProgress.count({ where: { userId, state: 'graduated', word: { hskLevel: 2 } } }),
+    prisma.word.count({ where: { hskLevel: 3 } }),
+    prisma.userWordProgress.count({ where: { userId, state: 'graduated', word: { hskLevel: 3 } } }),
+    prisma.userAchievement.count({ where: { userId, type: 'perfect_session' } }),
+    prisma.sessionAnswer.groupBy({
+      by: ['sessionId'],
+      where: { session: { userId } },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: 1,
+    }),
+    prisma.session.findFirst({
+      where: { userId, startedAt: { gte: todayStart, lt: today8am } },
+      select: { id: true },
+    }),
+    prisma.session.findFirst({
+      where: { userId, startedAt: { gte: todayStart, lt: tomorrow5am } },
+      select: { id: true },
     }),
   ]);
 
@@ -100,27 +163,26 @@ export async function gatherStats(userId: string): Promise<CheckableStats> {
   for (const row of progressCounts) {
     stateMap[row.state] = row._count;
   }
-  const learnedWords = (stateMap.graduated ?? 0) + (stateMap.review ?? 0);
 
   return {
     currentStreak: user?.currentStreak ?? 0,
-    learnedWords,
+    learnedWords: (stateMap.graduated ?? 0) + (stateMap.review ?? 0),
     totalReviews,
     hsk1Mastered,
     hsk1Total,
+    hsk2Mastered,
+    hsk2Total,
+    hsk3Mastered,
+    hsk3Total,
+    perfectSessionCount,
+    maxSessionAnswers: maxSessionRow[0]?._count?.id ?? 0,
+    hasEarlySession: hasEarlySession !== null,
+    hasNightSession: hasNightSession !== null,
+    xp: user?.xp ?? 0,
   };
 }
 
-/**
- * Проверяет все «глобальные» достижения и разблокирует новые
- * (идемпотентно — `@@unique([userId, type])`).
- *
- * Возвращает список только что разблокированных достижений
- * (с `unlockedAt = now()`), не считая тех, что уже были.
- */
-export async function checkGlobalAchievements(
-  userId: string,
-): Promise<UserAchievement[]> {
+export async function checkGlobalAchievements(userId: string): Promise<UserAchievement[]> {
   const [stats, existing] = await Promise.all([
     gatherStats(userId),
     prisma.userAchievement.findMany({ where: { userId } }),
@@ -136,7 +198,7 @@ export async function checkGlobalAchievements(
       prisma.userAchievement.upsert({
         where: { userId_type: { userId, type } },
         create: { userId, type },
-        update: {}, // уже было — ничего не делаем
+        update: {},
       }),
     ),
   );
@@ -148,14 +210,6 @@ export async function checkGlobalAchievements(
   }));
 }
 
-/**
- * Проверяет, была ли сессия «идеальной» — все ответы = Easy (4).
- *
- * Сессия считается «идеальной», только если она ПОЛНОСТЬЮ завершена
- * (cardsCompleted >= cardsTotal, cardsTotal > 0) и все ответы Easy.
- * До фикса F03 одного ответа Easy в незавершённой сессии хватало
- * для разблокировки.
- */
 export async function checkPerfectSession(
   userId: string,
   sessionId: string,
@@ -170,7 +224,7 @@ export async function checkPerfectSession(
     }),
     prisma.session.findFirst({
       where: { id: sessionId, userId },
-      select: { cardsTotal: true, cardsCompleted: true },
+      select: { cardsTotal: true, cardsCompleted: true, startedAt: true },
     }),
   ]);
 
@@ -187,6 +241,15 @@ export async function checkPerfectSession(
     update: {},
   });
 
+  // Also check early_bird / night_owl based on session start time
+  const hour = session.startedAt.getHours();
+  if (hour < 8) {
+    await tryUnlock(userId, 'early_bird');
+  }
+  if (hour < 5) {
+    await tryUnlock(userId, 'night_owl');
+  }
+
   return {
     id: created.id,
     type: 'perfect_session',
@@ -194,16 +257,6 @@ export async function checkPerfectSession(
   };
 }
 
-/**
- * Удобный wrapper: проверяет все достижения для пользователя после
- * очередного ответа. Используется в `sessions.service.recordAnswer`.
- *
- * - Глобальные: стрик / 100 слов / 10k ревью / HSK 1.
- * - Per-session: идеальная сессия.
- *
- * Возвращает массив только что разблокированных достижений (может
- * быть пустым).
- */
 export async function checkAllAchievements(
   userId: string,
   sessionId: string,
@@ -217,5 +270,17 @@ export async function checkAllAchievements(
   return merged;
 }
 
-/** Экспортируется для тестов и потенциального UI-сброса. */
+async function tryUnlock(userId: string, type: string): Promise<UserAchievement | null> {
+  const existing = await prisma.userAchievement.findUnique({
+    where: { userId_type: { userId, type } },
+  });
+  if (existing) return null;
+  const created = await prisma.userAchievement.upsert({
+    where: { userId_type: { userId, type } },
+    create: { userId, type },
+    update: {},
+  });
+  return { id: created.id, type: type as AchievementType, unlockedAt: created.unlockedAt.toISOString() };
+}
+
 export const ALL_ACHIEVEMENT_TYPES = ALL_TYPES;

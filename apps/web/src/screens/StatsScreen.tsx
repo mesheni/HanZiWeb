@@ -13,6 +13,18 @@ import {
   Map as MapIcon,
   Sparkles,
   Trophy,
+  Rocket,
+  Star,
+  Target,
+  Zap,
+  Sun,
+  Moon,
+  Heart,
+  Sword,
+  Shield,
+  Medal,
+  Gem,
+  Diamond,
 } from 'lucide-react';
 import { ActivityCalendar } from 'react-activity-calendar';
 import 'react-activity-calendar/tooltips.css';
@@ -37,11 +49,27 @@ import {
 } from '../utils/activityCalendar';
 
 const ACHIEVEMENT_ICONS: Record<AchievementType, typeof Flame> = {
+  first_review: Star,
   streak_7: Flame,
+  streak_30: Sword,
+  streak_100: Shield,
   words_100: BookCheck,
+  words_500: Target,
+  words_1000: Rocket,
   hsk1_complete: GraduationCap,
+  hsk2_complete: Medal,
+  hsk3_complete: Trophy,
+  reviews_1k: Zap,
   reviews_10k: Trophy,
+  reviews_50k: Crown,
+  speed_demon: Zap,
+  early_bird: Sun,
+  night_owl: Moon,
   perfect_session: Sparkles,
+  perfect_5: Heart,
+  xp_1000: Gem,
+  xp_5000: Diamond,
+  xp_10000: Crown,
 };
 
 const CAL_MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
