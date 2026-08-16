@@ -5505,12 +5505,26 @@ input {
 }
 
 .reading-word {
-  display: inline;
   cursor: pointer;
   border-bottom: 2px dotted transparent;
   transition: all 0.12s;
   padding: 0 1px;
   margin: 0 1px;
+}
+
+/* PLAN_Features_v0.5 §26: пиньинь-аннотация центрируется над словом.
+   `display: ruby` нельзя перебивать на `inline` — иначе <rt> съезжает
+   вбок и отрывается от базы при переносе строки. */
+ruby.reading-word {
+  display: ruby;
+  ruby-align: center;
+}
+
+.reading-word rt {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 0 2px;
 }
 
 .reading-word:hover {

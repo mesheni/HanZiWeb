@@ -597,6 +597,29 @@ sessions.service.ts` — `POST /sessions/start`), либо клиентский 
 **Ожидаемый результат**: Пиньинь центрирован над каждым иероглифом во
 всех предложениях.
 
+**Статус**: ✅ Исправлено
+
+**Что сделано**:
+- Место бага — экран «Чтение» → текст → тумблер «Пиньинь»
+  (`apps/web/src/components/reading/ReadingWord.tsx`, `<ruby>/<rt>` +
+  `PinyinDisplay`). Корневая причина: `.reading-word { display: inline }`
+  в `apps/web/src/styles/global.css` перебивал браузерный
+  `display: ruby` у `<ruby>` — из-за этого `<rt>` терял ruby-раскладку:
+  аннотация смещалась вбок на 39–136 px и отрывалась от слова при
+  переносе строки (воспроизведено и измерено в headless Chromium).
+- `apps/web/src/styles/global.css:5507-5528`:
+  - убран `display: inline` из `.reading-word` (для `<span>`-варианта
+    без пиньиня `inline` и так дефолт UA);
+  - добавлен `ruby.reading-word { display: ruby; ruby-align: center }` —
+    аннотация центрируется над базой;
+  - добавлен `.reading-word rt { text-align: center; font-size: 12px;
+    line-height: 1.2; padding: 0 2px }`.
+- Верификация: headless-браузер, точная копия DOM экрана чтения с
+  реальным `global.css` — у всех слов смещение центра аннотации от
+  центра базы 0 px, аннотация над глифами, при переносе строки
+  («朋友») аннотация переносится вместе со словом. `pnpm --filter
+  @hanzi/web typecheck` — чисто.
+
 ---
 
 ## 27. Лишний перевод всего текста во вкладке «Предложения»
