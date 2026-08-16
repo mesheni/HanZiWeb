@@ -896,6 +896,35 @@ input {
   gap: 12px;
 }
 
+.settings-number-input {
+  width: 120px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.settings-number-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.settings-number-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-number-input::-webkit-inner-spin-button,
+.settings-number-input::-webkit-outer-spin-button {
+  opacity: 1;
+}
+
 .settings-card-body--right {
   display: flex;
   justify-content: flex-end;

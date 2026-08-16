@@ -426,23 +426,25 @@ export default function SettingsScreen() {
 
           <div className="settings-card-body">
             <input
-              type="range"
+              type="number"
               min={DAILY_GOAL_MIN}
               max={DAILY_GOAL_MAX}
               step={1}
               value={dailyGoal}
-              onChange={(e) => handleDailyGoalChange(Number(e.target.value))}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v)) setDailyGoal(Math.round(v));
+              }}
+              onBlur={() => handleDailyGoalChange(dailyGoal)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
               disabled={!dailyGoalLoaded || updateUserSettings.isPending}
-              className="w-full accent-accent"
+              className="settings-number-input"
               aria-label="Ежедневная цель"
             />
-            <div className="flex justify-between text-xs text-text-muted">
-              <span>{DAILY_GOAL_MIN}</span>
-              <span>{Math.round((DAILY_GOAL_MIN + DAILY_GOAL_MAX) / 4)}</span>
-              <span>{Math.round((DAILY_GOAL_MIN + DAILY_GOAL_MAX) / 2)}</span>
-              <span>{Math.round(((DAILY_GOAL_MIN + DAILY_GOAL_MAX) * 3) / 4)}</span>
-              <span>{DAILY_GOAL_MAX}</span>
-            </div>
           </div>
         </section>
 
