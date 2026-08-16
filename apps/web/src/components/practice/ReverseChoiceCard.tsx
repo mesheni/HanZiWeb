@@ -3,6 +3,7 @@ import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { buildReverseChoiceOptions } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
+import { useOptionHotkeys } from '../../hooks/useOptionHotkeys';
 
 interface ReverseChoiceCardProps {
   word: Word;
@@ -49,6 +50,8 @@ export default function ReverseChoiceCard({
     });
     onAnswer(isCorrect);
   };
+
+  useOptionHotkeys(options.length, (index) => choose(options[index]!), selectedId === null);
 
   return (
     <div className="practice-card">

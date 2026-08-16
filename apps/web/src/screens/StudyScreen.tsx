@@ -1,15 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, X, RefreshCw, Volume2, VolumeX, GraduationCap, Dumbbell } from 'lucide-react';
+import {
+  Check,
+  X,
+  RefreshCw,
+  Volume2,
+  VolumeX,
+  GraduationCap,
+  Dumbbell,
+  HelpCircle,
+} from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useStudySession } from '../hooks/useStudySession';
 import { useAudio } from '../hooks/useAudio';
 import { useDistractorPool, getCharacterDistractors } from '../hooks/useDistractorPool';
 import { useStudyStore } from '../stores/studyStore';
+import { recalcFsrsLocally } from '../db/fsrs';
+import { getDb } from '../db/database';
+import { formatInterval } from '../utils/formatInterval';
 import { useUiStore } from '../stores/uiStore';
 import Flashcard from '../components/Flashcard';
 import SessionComplete from '../components/SessionComplete';
+import ShortcutsOverlay from '../components/ShortcutsOverlay';
 import SessionFiltersPanel, {
   type SessionFiltersValue,
   toSessionFilters,
@@ -23,12 +36,10 @@ import ToneRecognitionCard from '../components/practice/ToneRecognitionCard';
 import SyllableConstructorCard from '../components/practice/SyllableConstructorCard';
 import CharacterAssemblyCard from '../components/practice/CharacterAssemblyCard';
 import ClozeCard from '../components/practice/ClozeCard';
+import ListeningCard from '../components/practice/ListeningCard';
 import { useWordExamples } from '../queries/examples';
-import {
-  STUDY_MODE_LABELS,
-  getPracticeTypeInfo,
-  isTrainingPractice,
-} from '../utils/practiceTypes';
+import { useMnemonic } from '../queries/mnemonics';
+import { STUDY_MODE_LABELS, getPracticeTypeInfo, isTrainingPractice } from '../utils/practiceTypes';
 import type { SrsRating, StudyMode, PracticeType, Word, SessionFilters } from '@hanzi/shared';
 
 function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
@@ -46,15 +57,14 @@ function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>)
 interface RatingOption {
   rating: SrsRating;
   label: string;
-  hint: string;
   className: string;
 }
 
 const RATING_OPTIONS: RatingOption[] = [
-  { rating: 1, label: 'Не помню', hint: 'через 1 мин', className: 'rate-again' },
-  { rating: 2, label: 'Трудно', hint: 'через 10 мин', className: 'rate-hard' },
-  { rating: 3, label: 'Помню', hint: 'через 1 день', className: 'rate-good' },
-  { rating: 4, label: 'Легко', hint: 'через 4 дня', className: 'rate-easy' },
+  { rating: 1, label: 'Не помню', className: 'rate-again' },
+  { rating: 2, label: 'Трудно', className: 'rate-hard' },
+  { rating: 3, label: 'Помню', className: 'rate-good' },
+  { rating: 4, label: 'Легко', className: 'rate-easy' },
 ];
 
 const STATE_LABELS: Record<string, { label: string; color: string }> = {
@@ -74,9 +84,7 @@ function CategoryBadge({ practiceType }: { practiceType: PracticeType }) {
     <span
       className={cn(
         'practice-category-badge',
-        isTraining
-          ? 'practice-category-badge-training'
-          : 'practice-category-badge-study',
+        isTraining ? 'practice-category-badge-training' : 'practice-category-badge-study',
       )}
       title={
         isTraining
@@ -100,6 +108,7 @@ function parsePracticeParam(value: string | null): PracticeType {
     'syllable-constructor',
     'cloze',
     'character_assembly',
+    'listening',
   ];
   if (value && (valid as string[]).includes(value)) {
     return value as PracticeType;
@@ -152,11 +161,11 @@ export default function StudyScreen() {
     submitAnswer,
     continueSession,
   } = useStudySession({
-      mode,
-      practiceType: activePracticeType,
-      filters: activeFilters,
-      enabled: hasStarted,
-    });
+    mode,
+    practiceType: activePracticeType,
+    filters: activeFilters,
+    enabled: hasStarted,
+  });
 
   const cards = useStudyStore((s) => s.cards);
   const currentIndex = useStudyStore((s) => s.currentIndex);
@@ -172,6 +181,8 @@ export default function StudyScreen() {
 
   const autoPlayAudio = useUiStore((s) => s.autoPlayAudio);
   const setAutoPlayAudio = useUiStore((s) => s.setAutoPlayAudio);
+  const shortcutsOverlayOpen = useUiStore((s) => s.shortcutsOverlayOpen);
+  const setShortcutsOverlayOpen = useUiStore((s) => s.setShortcutsOverlayOpen);
 
   const modeCfg = STUDY_MODE_LABELS[mode];
   const practiceCfg = getPracticeTypeInfo(storePracticeType);
@@ -183,7 +194,8 @@ export default function StudyScreen() {
     storePracticeType === 'multiple-choice' ||
     storePracticeType === 'reverse-choice' ||
     storePracticeType === 'syllable-constructor' ||
-    storePracticeType === 'character_assembly';
+    storePracticeType === 'character_assembly' ||
+    storePracticeType === 'listening';
   const { data: distractorPool = [] } = useDistractorPool({
     count: 24,
     enabled: hasStarted && needsDistractors,
@@ -203,16 +215,56 @@ export default function StudyScreen() {
     return getCharacterDistractors(currentCard.word, combinedPool, 6);
   }, [currentCard, combinedPool]);
 
+  // Реальный интервал на кнопках оценки: прогноз для каждого рейтинга
+  // считается локальным FSRS по параметрам карточки (stability/difficulty/
+  // state приходят в SessionCard с v0.4 §50). elapsedDays — время с
+  // последнего повторения из локального зеркала прогресса; пока не
+  // загружено, recalcFsrsLocally использует дефолт (= stability).
+  const [elapsedDays, setElapsedDays] = useState<number | null>(null);
+  useEffect(() => {
+    const wordIdForEffect = currentCard?.word.id;
+    setElapsedDays(null);
+    if (!wordIdForEffect) return;
+    const db = getDb();
+    if (!db) return;
+    let cancelled = false;
+    db.progress
+      .findOne({ selector: { wordId: wordIdForEffect } })
+      .exec()
+      .then((doc) => {
+        if (cancelled || !doc?.lastReviewDate) return;
+        const ms = Date.parse(doc.lastReviewDate);
+        if (ms > 0) setElapsedDays((Date.now() - ms) / 86_400_000);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentCard?.word.id]);
+
+  const ratingHints = useMemo(() => {
+    const hints: Record<SrsRating, string> = { 1: '', 2: '', 3: '', 4: '' };
+    if (!currentCard) return hints;
+    for (const opt of RATING_OPTIONS) {
+      const fsrs = recalcFsrsLocally(
+        opt.rating,
+        currentCard.stability,
+        currentCard.difficulty,
+        currentCard.state,
+        elapsedDays ?? undefined,
+      );
+      hints[opt.rating] = formatInterval(fsrs.intervalDays);
+    }
+    return hints;
+  }, [currentCard, elapsedDays]);
+
   // Мемоизированный poolPinyin для `syllable-constructor`. Без useMemo
   // `combinedPool.map(...)` создаёт новый массив на каждом re-render
   // StudyScreen (в т.ч. при обновлении состояния `useAudio` после
   // нажатия кнопки озвучки), что приводит к пересборке пула слогов
   // в SyllableConstructorCard и их перемешиванию — баг «Собери пиньинь»
   // (PLAN_Features_v0.3 §14).
-  const syllablePoolPinyin = useMemo(
-    () => combinedPool.map((w) => w.pinyin),
-    [combinedPool],
-  );
+  const syllablePoolPinyin = useMemo(() => combinedPool.map((w) => w.pinyin), [combinedPool]);
 
   // Примеры для текущего слова — нужны cloze-карточке.
   // Берём встроенные примеры из слова, а если их нет — подгружаем
@@ -220,6 +272,16 @@ export default function StudyScreen() {
   const clozeExamples = currentCard?.word.examples ?? [];
   const { data: extraExamples } = useWordExamples(
     storePracticeType === 'cloze' ? currentCard?.word.id : null,
+  );
+
+  // Личная мнемоника текущего слова — для feedback-панели choice-режимов.
+  const isChoicePractice =
+    storePracticeType === 'multiple-choice' ||
+    storePracticeType === 'reverse-choice' ||
+    storePracticeType === 'tone-recognition' ||
+    storePracticeType === 'listening';
+  const { data: feedbackMnemonic } = useMnemonic(
+    isChoicePractice ? (currentCard?.word.id ?? null) : null,
   );
   const allExamples = useMemo(() => {
     if (!extraExamples) return clozeExamples;
@@ -293,10 +355,18 @@ export default function StudyScreen() {
       if (!currentCard) return;
       // Пока идёт анимация переворота — игнорируем ввод (PLAN_Features_v0.3 #12).
       if (isFlipping) return;
+      if (shortcutsOverlayOpen) return;
 
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         flipCard();
+        return;
+      }
+
+      // Повтор аудио — по физической клавише R (независимо от раскладки).
+      if (e.code === 'KeyR') {
+        e.preventDefault();
+        audio.play();
         return;
       }
 
@@ -312,7 +382,63 @@ export default function StudyScreen() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isSessionComplete, currentCard, isFlipped, isFlipping, flipCard, rateCard, storePracticeType]);
+  }, [
+    isSessionComplete,
+    currentCard,
+    isFlipped,
+    isFlipping,
+    flipCard,
+    rateCard,
+    storePracticeType,
+    shortcutsOverlayOpen,
+    audio,
+  ]);
+
+  // Горячие клавиши feedback-панели choice-режимов: Enter — «Продолжить»,
+  // Space / R — повторить аудио.
+  useEffect(() => {
+    if (!showFeedback || shortcutsOverlayOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.isComposing) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        continueSession();
+      } else if (e.key === ' ' || e.code === 'Space' || e.code === 'KeyR') {
+        e.preventDefault();
+        audio.play();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showFeedback, continueSession, shortcutsOverlayOpen, audio]);
+
+  // «?» открывает/закрывает шпаргалку по горячим клавишам (Shift+/ —
+  // поддерживаем и русскую раскладку через физический code клавиши).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key !== '?' && !(e.shiftKey && e.code === 'Slash')) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setShortcutsOverlayOpen(!shortcutsOverlayOpen);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [shortcutsOverlayOpen, setShortcutsOverlayOpen]);
 
   // Экран выбора типа практики — показываем до старта сессии.
   if (!hasStarted) {
@@ -594,7 +720,8 @@ export default function StudyScreen() {
   const isChoiceMode =
     storePracticeType === 'multiple-choice' ||
     storePracticeType === 'reverse-choice' ||
-    storePracticeType === 'tone-recognition';
+    storePracticeType === 'tone-recognition' ||
+    storePracticeType === 'listening';
 
   // Для choice-based режимов ответ сохраняется в feedback и не
   // вызывает rateCard до нажатия "Продолжить".
@@ -656,6 +783,23 @@ export default function StudyScreen() {
           <CategoryBadge practiceType={storePracticeType} />
         </span>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setShortcutsOverlayOpen(true)}
+            aria-label="Горячие клавиши"
+            title="Горячие клавиши (?)"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              lineHeight: 1,
+              padding: 0,
+              display: 'inline-flex',
+            }}
+          >
+            <HelpCircle size={16} />
+          </button>
           <button
             type="button"
             onClick={() => setAutoPlayAudio(!autoPlayAudio)}
@@ -759,6 +903,16 @@ export default function StudyScreen() {
           <ToneRecognitionCard word={currentCard.word} onAnswer={handleChoiceAnswer} />
         )}
 
+        {storePracticeType === 'listening' && (
+          <ListeningCard
+            word={currentCard.word}
+            pool={combinedPool}
+            onAnswer={handleChoiceAnswer}
+            onPlayAudio={() => audio.play()}
+            audioAvailable={audio.isAvailable}
+          />
+        )}
+
         {storePracticeType === 'syllable-constructor' && (
           <SyllableConstructorCard
             word={currentCard.word}
@@ -801,6 +955,9 @@ export default function StudyScreen() {
               <div className="feedback-character">{currentCard.word.character}</div>
               <div className="feedback-pinyin">{currentCard.word.pinyin}</div>
               <div className="feedback-translation">{currentCard.word.translation}</div>
+              {feedbackMnemonic && (
+                <div className="feedback-mnemonic">💡 {feedbackMnemonic.text}</div>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <button
@@ -813,11 +970,7 @@ export default function StudyScreen() {
                 <Volume2 size={15} />
               </button>
             </div>
-            <button
-              type="button"
-              className="feedback-continue"
-              onClick={continueSession}
-            >
+            <button type="button" className="feedback-continue" onClick={continueSession}>
               Продолжить
             </button>
           </div>
@@ -859,13 +1012,19 @@ export default function StudyScreen() {
                   disabled={isFlipping}
                 >
                   {opt.label}
-                  <small>{opt.hint}</small>
+                  <small>{ratingHints[opt.rating]}</small>
                 </button>
               ))}
             </div>
           )}
         </div>
       )}
+
+      <ShortcutsOverlay
+        open={shortcutsOverlayOpen}
+        onClose={() => setShortcutsOverlayOpen(false)}
+        practiceType={storePracticeType}
+      />
     </div>
   );
 }

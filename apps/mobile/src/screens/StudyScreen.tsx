@@ -543,6 +543,7 @@ const PRACTICE_LABELS: Record<PracticeType, string> = {
   'syllable-constructor': 'Собери пиньинь',
   cloze: 'Подстановка',
   character_assembly: 'Собери слово',
+  listening: 'Аудирование',
 };
 
 function practiceLabel(type: PracticeType): string {

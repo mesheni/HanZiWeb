@@ -22,4 +22,33 @@ describe('parsePinyin', () => {
   it('нейтральный тон для слогов без диакритики', () => {
     expect(parsePinyin('ma')).toEqual([{ syllable: 'ma', tone: 0 }]);
   });
+
+  it('разделяет склеенный пиньинь по позициям тон-маркеров', () => {
+    expect(parsePinyin('báitiān')).toEqual([
+      { syllable: 'bái', tone: 2 },
+      { syllable: 'tiān', tone: 1 },
+    ]);
+  });
+
+  it('разделяет трёхсложный склеенный пиньинь', () => {
+    expect(parsePinyin('bìyèshēng')).toEqual([
+      { syllable: 'bì', tone: 4 },
+      { syllable: 'yè', tone: 4 },
+      { syllable: 'shēng', tone: 1 },
+    ]);
+  });
+
+  it('трактует // как явный слоговый разделитель', () => {
+    expect(parsePinyin('ài//guó')).toEqual([
+      { syllable: 'ài', tone: 4 },
+      { syllable: 'guó', tone: 2 },
+    ]);
+  });
+
+  it('трактует одиночный / как явный слоговый разделитель', () => {
+    expect(parsePinyin('ài/guó')).toEqual([
+      { syllable: 'ài', tone: 4 },
+      { syllable: 'guó', tone: 2 },
+    ]);
+  });
 });

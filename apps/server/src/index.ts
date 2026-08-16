@@ -19,6 +19,7 @@ import { examplesRoutes } from './modules/examples/examples.routes.js';
 import { etymologyRoutes } from './modules/etymology/etymology.routes.js';
 import { achievementsRoutes } from './modules/achievements/achievements.routes.js';
 import { usersRoutes } from './modules/users/users.routes.js';
+import { mnemonicsRoutes } from './modules/mnemonics/mnemonics.routes.js';
 import { tagsRoutes } from './modules/tags/tags.routes.js';
 import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { featureFlagsRoutes } from './modules/featureFlags/featureFlags.routes.js';
@@ -146,6 +147,8 @@ async function main() {
       await child.register(etymologyRoutes);
       await child.register(achievementsRoutes, { prefix: '/achievements' });
       await child.register(usersRoutes, { prefix: '/users' });
+      // Личные мнемоники: /api/users/me/mnemonics/* (полный путь в модуле).
+      await child.register(mnemonicsRoutes);
       await child.register(tagsRoutes, { prefix: '/tags' });
       // Analytics proxy: /api/ingest (см. PLAN_Features_v0.2 §14).
       // Без префикса, чтобы путь был ровно /ingest.

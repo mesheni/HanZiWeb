@@ -2,7 +2,7 @@ import { apiPost } from '../api/client';
 import { getDb } from './database';
 import { readSyncCursor, writeSyncCursor } from './syncCursor';
 import { useAuthStore } from '../stores/authStore';
-import type { SyncResponse } from '@hanzi/shared';
+import type { PendingChangeType, SyncChange, SyncResponse } from '@hanzi/shared';
 
 let engineInstance: SyncEngine | null = null;
 
@@ -31,7 +31,7 @@ export class SyncEngine {
     }
   }
 
-  async enqueueChange(type: 'study_answer', payload: Record<string, unknown>) {
+  async enqueueChange(type: PendingChangeType, payload: Record<string, unknown>) {
     const db = getDb();
     if (!db) throw new Error('Database not initialized');
 
@@ -80,11 +80,14 @@ export class SyncEngine {
         return;
       }
 
-      const payload = changes.map((c) => ({
-        id: c.id,
-        type: c.type as 'study_answer',
-        payload: c.payload as Record<string, unknown>,
-      }));
+      const payload = changes.map(
+        (c): SyncChange =>
+          ({
+            id: c.id,
+            type: c.type as PendingChangeType,
+            payload: c.payload as Record<string, unknown>,
+          }) as SyncChange,
+      );
 
       const cursor = readSyncCursor(userId);
       const response = await apiPost<SyncResponse>('/sync', {

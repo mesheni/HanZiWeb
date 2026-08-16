@@ -7,11 +7,6 @@ interface ReadingTextCardProps {
 }
 
 export default function ReadingTextCard({ item, onClick }: ReadingTextCardProps) {
-  const knownPercent =
-    item.wordCount > 0
-      ? Math.round((item.knownWordsCount / item.wordCount) * 100)
-      : 0;
-
   return (
     <div
       className="reading-card"
@@ -43,12 +38,9 @@ export default function ReadingTextCard({ item, onClick }: ReadingTextCardProps)
       </div>
       <div className="reading-card-progress">
         <div className="reading-progress-bar-bg">
-          <div
-            className="reading-progress-bar"
-            style={{ width: `${knownPercent}%` }}
-          />
+          <div className="reading-progress-bar" style={{ width: `${item.familiarPercent}%` }} />
         </div>
-        <span className="reading-progress-label">{knownPercent}% знакомых</span>
+        <span className="reading-progress-label">{item.familiarPercent}% знакомых</span>
       </div>
     </div>
   );

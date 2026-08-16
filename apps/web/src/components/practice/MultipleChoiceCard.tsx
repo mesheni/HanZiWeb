@@ -3,6 +3,7 @@ import { Check, X, Volume2 } from 'lucide-react';
 import type { Word } from '@hanzi/shared';
 import { buildMultipleChoiceOptions } from '@hanzi/shared';
 import { cn } from '../../utils/cn';
+import { useOptionHotkeys } from '../../hooks/useOptionHotkeys';
 
 interface MultipleChoiceCardProps {
   word: Word;
@@ -56,6 +57,8 @@ export default function MultipleChoiceCard({
     // дождётся нажатия "Продолжить" прежде чем rateCard.
     onAnswer(isCorrect);
   };
+
+  useOptionHotkeys(options.length, (index) => choose(options[index]!), selectedId === null);
 
   return (
     <div className="practice-card">

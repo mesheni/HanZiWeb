@@ -3,6 +3,7 @@ import { Check, X, Volume2 } from 'lucide-react';
 import { parsePinyin } from '@hanzi/shared';
 import type { Word } from '@hanzi/shared';
 import { useAudio } from '../../hooks/useAudio';
+import { useOptionHotkeys } from '../../hooks/useOptionHotkeys';
 import { TONE_COLORS } from '../../utils/toneColors';
 import { cn } from '../../utils/cn';
 
@@ -55,6 +56,8 @@ export default function ToneRecognitionCard({ word, onAnswer }: ToneRecognitionC
     const isCorrect = tone === targetTone;
     onAnswer(isCorrect);
   };
+
+  useOptionHotkeys(TONE_OPTIONS.length, (index) => choose(TONE_OPTIONS[index]!), selected === null);
 
   return (
     <div className="practice-card">

@@ -513,6 +513,14 @@ ack на каждое (`results`) + дельту серверного прогр
 `stale` — изменение старше текущего прогресса, пропущено;
 `rejected` — сервер не может применить (нет записи прогресса).
 
+С v0.7 в `changes` также принимаются изменения личных мнемоник
+(см. «Личные мнемоники»): `mnemonic_upsert`
+(`{ wordId, text, updatedAt }`) и `mnemonic_delete`
+(`{ wordId, updatedAt }`). Для них действует last-write-wins по
+клиентскому `updatedAt`, а ack в `results` содержит только
+`{ changeId, outcome, wordId }` — поля FSRS-прогресса не применимы
+(union в `SyncResultSchema`).
+
 ---
 
 ## Устройства и пуши (Devices)
@@ -601,10 +609,10 @@ ack на каждое (`results`) + дельту серверного прогр
 
 Общая статистика пользователя: XP, streak, количество слов по состояниям, точность.
 
-|                  |                                                                                               |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| **Auth**         | Bearer JWT                                                                                    |
-| **Response 200** | `{ success: true, data: { xp, currentStreak, totalWords, learnedWords, accuracy, byState } }` |
+|                  |                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **Auth**         | Bearer JWT                                                                                                       |
+| **Response 200** | `{ success: true, data: { xp, currentStreak, streakFreezeCount, totalWords, learnedWords, accuracy, byState } }` |
 
 ```json
 // Response
@@ -613,6 +621,7 @@ ack на каждое (`results`) + дельту серверного прогр
   "data": {
     "xp": 250,
     "currentStreak": 5,
+    "streakFreezeCount": 2,
     "totalWords": 42,
     "learnedWords": 15,
     "accuracy": 75,
@@ -620,6 +629,10 @@ ack на каждое (`results`) + дельту серверного прогр
   }
 }
 ```
+
+`streakFreezeCount` (v0.7) — оставшиеся страховки стрика: при
+пропуске ровно одного дня страховка автоматически списывается и
+сохраняет серию. Начисляется 1 за календарный месяц, максимум 2.
 
 ### GET /api/stats/activity
 
@@ -787,6 +800,39 @@ SRS, согласовано с `getOverview.learnedWords`). Колоды отс�
 // Response
 { "success": true, "data": { "dailyGoal": 30 } }
 ```
+
+---
+
+## Личные мнемоники (v0.7)
+
+Персональные ассоциации для запоминания слов. Отдельны от seed-поля
+`Word.mnemonic` (общего для всех): хранятся на пользователя.
+Офлайн-правки идут через sync-очередь (`mnemonic_upsert` /
+`mnemonic_delete`, last-write-wins по `updatedAt`); sync-дельты вниз
+в v1 нет — клиенты обновляют кэш per-word запросом.
+
+### GET /api/users/me/mnemonics
+
+|                  |                                                      |
+| ---------------- | ---------------------------------------------------- |
+| **Auth**         | JWT                                                  |
+| **Query**        | `?wordIds=a,b,c` (CSV, до 50 id)                     |
+| **Response 200** | `{ success: true, data: { items: UserMnemonic[] } }` |
+
+### PUT /api/users/me/mnemonics/:wordId
+
+|                  |                                         |
+| ---------------- | --------------------------------------- |
+| **Auth**         | JWT                                     |
+| **Body**         | `{ "text": "…" }` (1–500 символов)      |
+| **Response 200** | `{ success: true, data: UserMnemonic }` |
+
+### DELETE /api/users/me/mnemonics/:wordId
+
+|                  |     |
+| ---------------- | --- |
+| **Auth**         | JWT |
+| **Response 204** | —   |
 
 ---
 
@@ -1305,17 +1351,21 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 
 ### GET /api/reading/texts
 
-Список текстов для чтения. Поддерживает фильтр по уровню HSK.
+Список текстов для чтения. Поддерживает фильтр по уровню HSK и
+сортировку по знакомости (v0.7).
 
-|                  |                                                  |
-| ---------------- | ------------------------------------------------ |
-| **Auth**         | JWT                                              |
-| **Query**        | `?hskLevel=1..6` (опционально)                   |
-| **Response 200** | `{ success: true, data: ReadingTextListItem[] }` |
+|                  |                                                              |
+| ---------------- | ------------------------------------------------------------ |
+| **Auth**         | JWT                                                          |
+| **Query**        | `?hskLevel=1..6` (опционально), `?sort=default\|familiarity` |
+| **Response 200** | `{ success: true, data: ReadingTextListItem[] }`             |
 
-`ReadingTextListItem` содержит базовые мета-данные текста, процент
-знакомых слов (`knownWordsCount / wordCount`) и флаг `readAt`, если
-пользователь уже отметил текст как прочитанный.
+`ReadingTextListItem` содержит базовые мета-данные текста,
+`knownWordsCount` и `familiarPercent` — долю известных
+пользователю токенов текста (0..100, считается по сопоставленным
+токенам, а не по общему `wordCount`) — и флаг `readAt`, если
+пользователь уже отметил текст как прочитанным.
+`sort=familiarity` сортирует от самого знакомого текста к новому.
 
 ### GET /api/reading/texts/:id
 
@@ -1453,5 +1503,8 @@ Project API key и cookie. Вместо этого клиент шлёт соб�
 | 46  | GET      | /api/devices/notification-settings       | JWT      | Devices       |
 | 47  | PUT      | /api/devices/notification-settings       | JWT      | Devices       |
 | 48  | POST     | /api/stats/reset-progress                | JWT      | Stats         |
+| 49  | GET      | /api/users/me/mnemonics                  | JWT      | Mnemonics     |
+| 50  | PUT      | /api/users/me/mnemonics/:wordId          | JWT      | Mnemonics     |
+| 51  | DELETE   | /api/users/me/mnemonics/:wordId          | JWT      | Mnemonics     |
 
-Всего: **51 эндпоинт** в **14 модулях** (F26: добавлены /sync, /devices/*, /stats/reset-progress).
+Всего: **54 эндпоинта** в **15 модулях** (v0.7: +3 мнемоники; F26: добавлены /sync, /devices/*, /stats/reset-progress).

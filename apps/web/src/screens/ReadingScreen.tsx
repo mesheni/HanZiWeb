@@ -10,20 +10,17 @@ export default function ReadingScreen() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [hskLevel, setHskLevel] = useState<number | null>(null);
+  const [sort, setSort] = useState<'default' | 'familiarity'>('default');
 
-  const { data: texts = [], isLoading } = useReadingTexts(hskLevel ?? undefined);
+  const { data: texts = [], isLoading } = useReadingTexts(hskLevel ?? undefined, sort);
 
-  const filtered = texts.filter((t) =>
-    t.title.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = texts.filter((t) => t.title.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="reading-screen">
       <div className="reading-header">
         <h1 className="reading-title">Чтение</h1>
-        <p className="reading-subtitle">
-          Интерактивные тексты по уровням HSK
-        </p>
+        <p className="reading-subtitle">Интерактивные тексты по уровням HSK</p>
       </div>
 
       <div className="reading-search">
@@ -51,6 +48,24 @@ export default function ReadingScreen() {
             </button>
           );
         })}
+      </div>
+
+      <div className="reading-chips">
+        <button
+          type="button"
+          className={`reading-chip${sort === 'default' ? ' reading-chip-active' : ''}`}
+          onClick={() => setSort('default')}
+        >
+          По порядку
+        </button>
+        <button
+          type="button"
+          className={`reading-chip${sort === 'familiarity' ? ' reading-chip-active' : ''}`}
+          onClick={() => setSort('familiarity')}
+          title="От самых знакомых к новым — что можно читать без словаря"
+        >
+          По знакомости
+        </button>
       </div>
 
       {isLoading ? (

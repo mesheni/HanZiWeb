@@ -4,7 +4,14 @@ import { computeElapsedDays, sanitizeClientTimestamp } from '../sessions/timePol
 import { markSessionCompleted } from '../sessions/sessions.service.js';
 import { touchStreak } from '../stats/stats.service.js';
 import * as achievementsService from '../achievements/achievements.service.js';
-import type { SyncRequest, SyncResponse, SyncResult, SyncOutcome } from '@hanzi/shared';
+import { applyMnemonicChange } from '../mnemonics/mnemonics.service.js';
+import type {
+  StudyAnswerSyncResult,
+  SyncRequest,
+  SyncResponse,
+  SyncResult,
+  SyncOutcome,
+} from '@hanzi/shared';
 
 /**
  * F05: терминальный ack для НЕ применённого изменения. Клиенты (web и
@@ -25,14 +32,14 @@ function skipResult(
     state: string;
     dueDate: Date;
   } | null,
-): SyncResult {
+): StudyAnswerSyncResult {
   return {
     changeId,
     wordId,
     outcome,
     newStability: progress?.stability ?? 0,
     newDifficulty: progress?.difficulty ?? 5,
-    newState: (progress?.state ?? 'new') as SyncResult['newState'],
+    newState: (progress?.state ?? 'new') as StudyAnswerSyncResult['newState'],
     newDueDate: (progress?.dueDate ?? new Date()).toISOString(),
     intervalDays: 0,
     xpGain: 0,
@@ -293,6 +300,16 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
         finalResult = skipResult(change.id, wordId, 'duplicate', lastProgress);
       }
       results.push(finalResult);
+    } else if (change.type === 'mnemonic_upsert' || change.type === 'mnemonic_delete') {
+      // Личные мнемоники: last-write-wins по клиентскому updatedAt,
+      // FSRS-прогресс не затрагивают. Сбой применения — терминальный
+      // rejected, чтобы клиент не ушёл в вечный retry (F05).
+      try {
+        const outcome = await applyMnemonicChange(userId, change);
+        results.push({ changeId: change.id, outcome, wordId: change.payload.wordId });
+      } catch {
+        results.push({ changeId: change.id, outcome: 'rejected', wordId: change.payload.wordId });
+      }
     }
   }
 

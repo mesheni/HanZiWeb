@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
+import CommandPalette from './CommandPalette';
 
 interface LayoutProps {
   children?: ReactNode;
@@ -19,6 +20,7 @@ export default function Layout({ children }: LayoutProps) {
       </main>
 
       <BottomNav />
+      <CommandPalette />
     </div>
   );
 }

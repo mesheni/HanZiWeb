@@ -5,6 +5,7 @@ import * as readingService from './reading.service.js';
 
 const ListQuerySchema = z.object({
   hskLevel: z.coerce.number().int().min(1).max(6).optional(),
+  sort: z.enum(['default', 'familiarity']).optional(),
 });
 
 const TextIdParamSchema = z.object({
@@ -14,20 +15,24 @@ const TextIdParamSchema = z.object({
 export async function readingRoutes(app: FastifyInstance) {
   app.get('/texts', { preHandler: [app.authenticate] }, async (request, reply) => {
     const query = ListQuerySchema.parse(request.query);
-    const data = await readingService.listTexts(request.userId, query.hskLevel);
+    const data = await readingService.listTexts(request.userId, query.hskLevel, query.sort);
     return reply.send({ success: true, data });
   });
 
-  app.get<{ Params: { id: string } }>('/texts/:id', { preHandler: [app.authenticate] }, async (request, reply) => {
-    TextIdParamSchema.parse(request.params);
-    const data = await readingService.getText(request.userId, request.params.id);
-    if (!data) {
-      return reply
-        .status(404)
-        .send({ success: false, error: { code: 'NOT_FOUND', message: 'Text not found' } });
-    }
-    return reply.send({ success: true, data });
-  });
+  app.get<{ Params: { id: string } }>(
+    '/texts/:id',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      TextIdParamSchema.parse(request.params);
+      const data = await readingService.getText(request.userId, request.params.id);
+      if (!data) {
+        return reply
+          .status(404)
+          .send({ success: false, error: { code: 'NOT_FOUND', message: 'Text not found' } });
+      }
+      return reply.send({ success: true, data });
+    },
+  );
 
   app.post<{ Params: { id: string } }>(
     '/texts/:id/priority-words',
@@ -35,7 +40,11 @@ export async function readingRoutes(app: FastifyInstance) {
     async (request, reply) => {
       TextIdParamSchema.parse(request.params);
       const body = AddPriorityWordsSchema.parse(request.body);
-      const added = await readingService.addPriorityWords(request.userId, request.params.id, body.wordIds);
+      const added = await readingService.addPriorityWords(
+        request.userId,
+        request.params.id,
+        body.wordIds,
+      );
       return reply.send({ success: true, data: { added } });
     },
   );

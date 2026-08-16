@@ -11,6 +11,7 @@ import {
   useDeleteExample,
   useFetchTatoebaExamples,
 } from '../queries/examples';
+import { useMnemonic, useSaveMnemonic, useDeleteMnemonic } from '../queries/mnemonics';
 import { buildClozeQuestion } from '@hanzi/shared';
 import { cn } from '../utils/cn';
 import type { Word, Example } from '@hanzi/shared';
@@ -140,6 +141,13 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
 
         <div className="word-detail-section">
           <div className="word-detail-section-head">
+            <span className="word-detail-section-title">Моя мнемоника</span>
+          </div>
+          <PersonalMnemonicEditor word={word} />
+        </div>
+
+        <div className="word-detail-section">
+          <div className="word-detail-section-head">
             <span className="word-detail-section-title">Примеры предложений</span>
             {onStartCloze && hasCloze && (
               <button
@@ -225,6 +233,78 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
         </div>
       </div>
     </Modal>
+  );
+}
+
+function PersonalMnemonicEditor({ word }: { word: Word }) {
+  const { data: mnemonic } = useMnemonic(word.id);
+  const saveMut = useSaveMnemonic();
+  const deleteMut = useDeleteMnemonic();
+  const addToast = useToastStore((s) => s.addToast);
+  // null = пользователь ещё не правил — показываем серверное значение.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(null);
+  }, [word.id]);
+
+  const current = draft ?? mnemonic?.text ?? '';
+  const trimmed = current.trim();
+  const dirty = trimmed.length > 0 && trimmed !== (mnemonic?.text ?? '');
+
+  const save = async () => {
+    if (!trimmed) return;
+    try {
+      await saveMut.mutateAsync({ wordId: word.id, text: trimmed });
+      setDraft(null);
+      addToast('Мнемоника сохранена', 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Не удалось сохранить мнемонику', 'error');
+    }
+  };
+
+  const remove = async () => {
+    try {
+      await deleteMut.mutateAsync(word.id);
+      setDraft(null);
+      addToast('Мнемоника удалена', 'success');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : 'Не удалось удалить мнемонику', 'error');
+    }
+  };
+
+  return (
+    <>
+      <textarea
+        className="word-detail-add-input"
+        placeholder="Своя ассоциация для запоминания: 女 (девушка) + 子 (ребёнок) → нравится…"
+        value={current}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={2}
+        maxLength={500}
+        aria-label="Моя мнемоника"
+      />
+      <div className="word-detail-actions">
+        <button
+          type="button"
+          className="word-detail-action"
+          onClick={() => void save()}
+          disabled={!dirty || saveMut.isPending}
+        >
+          {saveMut.isPending ? 'Сохранение…' : 'Сохранить'}
+        </button>
+        {mnemonic && (
+          <button
+            type="button"
+            className="word-detail-action"
+            onClick={() => void remove()}
+            disabled={deleteMut.isPending}
+          >
+            {deleteMut.isPending ? 'Удаление…' : 'Удалить'}
+          </button>
+        )}
+      </div>
+    </>
   );
 }
 

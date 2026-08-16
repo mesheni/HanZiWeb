@@ -36,7 +36,7 @@ describe('featureFlags', () => {
   });
 
   describe('FEATURE_FLAGS registry', () => {
-    it('registers all 8 practice mode flags by default', () => {
+    it('registers all 9 practice mode flags by default', () => {
       const keys = getKnownFlagKeys();
       expect(keys).toEqual(
         expect.arrayContaining([
@@ -48,9 +48,10 @@ describe('featureFlags', () => {
           practiceFlagKey('syllable-constructor'),
           practiceFlagKey('cloze'),
           practiceFlagKey('character_assembly'),
+          practiceFlagKey('listening'),
         ]),
       );
-      expect(keys).toHaveLength(8);
+      expect(keys).toHaveLength(9);
     });
 
     it('all defaults are enabled with 100% rollout', () => {

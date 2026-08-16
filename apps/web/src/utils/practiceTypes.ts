@@ -8,7 +8,15 @@ export interface PracticeTypeInfo {
   /** Описание режима (1 строка). */
   description: string;
   /** Иконка Lucide. */
-  icon: 'Layers' | 'ArrowLeftRight' | 'Keyboard' | 'Music2' | 'Puzzle' | 'CreditCard' | 'WholeWord';
+  icon:
+    | 'Layers'
+    | 'ArrowLeftRight'
+    | 'Keyboard'
+    | 'Music2'
+    | 'Puzzle'
+    | 'CreditCard'
+    | 'WholeWord'
+    | 'Headphones';
   /** Цвет (для бейджа / подсветки). */
   color: string;
   /** Полупрозрачный фон для бейджа. */
@@ -55,6 +63,14 @@ export const PRACTICE_TYPES: PracticeTypeInfo[] = [
     icon: 'Music2',
     color: '#E57373',
     bg: 'rgba(229,115,115,0.15)',
+  },
+  {
+    id: 'listening',
+    label: 'Аудирование',
+    description: 'Послушай слово и выбери правильный перевод',
+    icon: 'Headphones',
+    color: '#4DD0E1',
+    bg: 'rgba(77,208,225,0.15)',
   },
   {
     id: 'syllable-constructor',
@@ -104,6 +120,7 @@ export const TRAINING_PRACTICE_TYPES = [
   'syllable-constructor',
   'cloze',
   'character_assembly',
+  'listening',
 ] as const satisfies readonly PracticeType[];
 
 export function isTrainingPractice(type: PracticeType): boolean {

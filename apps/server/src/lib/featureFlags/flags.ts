@@ -52,6 +52,7 @@ export const FEATURE_FLAGS: Readonly<Record<string, FeatureFlagConfig>> = Object
   [practiceFlagKey('syllable-constructor')]: { enabled: true, rolloutPercent: 100, whitelist: [] },
   [practiceFlagKey('cloze')]: { enabled: true, rolloutPercent: 100, whitelist: [] },
   [practiceFlagKey('character_assembly')]: { enabled: true, rolloutPercent: 100, whitelist: [] },
+  [practiceFlagKey('listening')]: { enabled: true, rolloutPercent: 100, whitelist: [] },
 });
 
 /**

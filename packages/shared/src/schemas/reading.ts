@@ -7,6 +7,8 @@ export const ReadingTextListItemSchema = z.object({
   hskLevel: z.number().int().min(1).max(6),
   wordCount: z.number().int().nonnegative(),
   knownWordsCount: z.number().int().nonnegative(),
+  /** Доля известных пользователю токенов текста, 0..100. */
+  familiarPercent: z.number().int().min(0).max(100),
   author: z.string().nullable(),
   source: z.string().nullable(),
   readAt: z.string().datetime().nullable(),

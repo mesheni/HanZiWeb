@@ -6,6 +6,7 @@ import {
   Puzzle,
   CreditCard,
   WholeWord,
+  Headphones,
   GraduationCap,
   Dumbbell,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ const ICONS = {
   Puzzle,
   CreditCard,
   WholeWord,
+  Headphones,
 } as const;
 
 interface PracticeTypeSelectorProps {

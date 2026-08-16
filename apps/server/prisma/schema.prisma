@@ -29,6 +29,10 @@ model User {
   /// См. PLAN_Features_v0.3 §2.
   passwordVersion       Int       @default(0)
   lastActiveDate        DateTime?
+  /// Страховки стрика: автосписание при пропуске ровно одного дня
+  /// сохраняет серию. Начисляется 1 в календарный месяц, максимум 2.
+  streakFreezeCount     Int       @default(1)
+  lastFreezeGrantAt     DateTime?
   notificationEnabled   Boolean   @default(false)
   notificationTime      String    @default("morning")
   notificationFrequency Int       @default(1)
@@ -60,6 +64,7 @@ updatedAt             DateTime  @updatedAt
   testResults   TestResult[]
   wordPriorities   UserWordPriority[]
   readingProgress  UserReadingProgress[]
+  mnemonics        UserWordMnemonic[]
 
   /// Индекс для быстрого leaderboard (топ по XP за всё время).
   @@index([xp(sort: Desc)])
@@ -159,6 +164,7 @@ model Word {
   tags           WordTag[]
   textTokens     ReadingTextWord[]
   userPriorities UserWordPriority[]
+  mnemonics      UserWordMnemonic[]
 }
 
 /// Тег для слова (для фильтрации сессий: «только забываемые», «с мнемоникой», …).
@@ -359,6 +365,23 @@ model UserWordPriority {
   word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
   priority  Int      @default(1)
   addedAt   DateTime @default(now())
+
+  @@unique([userId, wordId])
+  @@index([userId])
+}
+
+/// Личная мнемоника пользователя к слову. Отдельна от Word.mnemonic
+/// (seed-мнемоника едина для всех): личная ассоциация важнее для
+/// запоминания. updatedAt управляется кодом (не @updatedAt) — на нём
+/// построен last-write-wins при офлайн-синхронизации.
+model UserWordMnemonic {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wordId    String
+  word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  text      String
+  updatedAt DateTime
 
   @@unique([userId, wordId])
   @@index([userId])

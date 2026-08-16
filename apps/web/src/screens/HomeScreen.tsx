@@ -13,7 +13,17 @@ import Badge from '../components/ui/Badge';
 import { PinyinDisplay } from '../utils/toneColors';
 import { SkeletonCard } from '../components/ui/Skeleton';
 
-function CircularProgress({ value, max = 100, size = 100, strokeWidth = 6 }: { value: number; max?: number; size?: number; strokeWidth?: number }) {
+function CircularProgress({
+  value,
+  max = 100,
+  size = 100,
+  strokeWidth = 6,
+}: {
+  value: number;
+  max?: number;
+  size?: number;
+  strokeWidth?: number;
+}) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = Math.min(value / max, 1);
@@ -21,7 +31,14 @@ function CircularProgress({ value, max = 100, size = 100, strokeWidth = 6 }: { v
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--border-default)" strokeWidth={strokeWidth} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="var(--border-default)"
+        strokeWidth={strokeWidth}
+      />
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -35,7 +52,15 @@ function CircularProgress({ value, max = 100, size = 100, strokeWidth = 6 }: { v
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
         style={{ transition: 'stroke-dashoffset 0.6s ease' }}
       />
-      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="var(--text-primary)" fontSize={size * 0.22} fontWeight={600}>
+      <text
+        x="50%"
+        y="50%"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="var(--text-primary)"
+        fontSize={size * 0.22}
+        fontWeight={600}
+      >
         {Math.round(progress * 100)}%
       </text>
     </svg>
@@ -120,29 +145,45 @@ export default function HomeScreen() {
   const today = new Date();
   const dateStr = today.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
   const hour = today.getHours();
-  const greeting = hour < 6 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  const greeting =
+    hour < 6
+      ? 'Доброй ночи'
+      : hour < 12
+        ? 'Доброе утро'
+        : hour < 18
+          ? 'Добрый день'
+          : 'Добрый вечер';
 
   return (
     <div style={styles.screen}>
       <div style={styles.greeting}>{greeting}</div>
-      <div style={styles.sub}>{dateStr} · {wordsDueToday > 0 ? `${wordsDueToday} слов ждут повторения` : 'На сегодня всё готово'}</div>
+      <div style={styles.sub}>
+        {dateStr} ·{' '}
+        {wordsDueToday > 0 ? `${wordsDueToday} слов ждут повторения` : 'На сегодня всё готово'}
+      </div>
 
       {/* Streak */}
       <div style={styles.streak}>
         <span style={styles.flame}>🔥</span>
         <span style={styles.streakCount}>{streak}</span>
         <span style={styles.streakLabel}>дней подряд</span>
+        {(dashboard?.streakFreezeCount ?? 0) > 0 && (
+          <span
+            style={styles.streakFreeze}
+            title={`Страховка стрика: пропуск одного дня не сломает серию (осталось: ${dashboard?.streakFreezeCount})`}
+          >
+            ❄ {dashboard?.streakFreezeCount}
+          </span>
+        )}
       </div>
 
       {/* CTA */}
-      <button
-        type="button"
-        style={styles.ctaCard}
-        onClick={() => navigate('/study')}
-      >
+      <button type="button" style={styles.ctaCard} onClick={() => navigate('/study')}>
         <div style={styles.ctaContent}>
           <div style={styles.ctaLabel}>Начать тренировку</div>
-          <div style={styles.ctaSub}>{wordsDueToday > 0 ? `${wordsDueToday} слов на сегодня` : 'Изучать новые слова'}</div>
+          <div style={styles.ctaSub}>
+            {wordsDueToday > 0 ? `${wordsDueToday} слов на сегодня` : 'Изучать новые слова'}
+          </div>
         </div>
         <div style={styles.ctaArrow}>→</div>
       </button>
@@ -302,6 +343,16 @@ const styles: Record<string, CSSProperties> = {
   },
   streakLabel: {
     opacity: 0.7,
+  },
+  streakFreeze: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 3,
+    marginLeft: 4,
+    paddingLeft: 8,
+    borderLeft: '1px solid color-mix(in srgb, var(--tone-3) 25%, transparent)',
+    opacity: 0.75,
+    cursor: 'help',
   },
   ctaCard: {
     display: 'flex',

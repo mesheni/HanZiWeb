@@ -17,6 +17,7 @@ export type StudyMode = z.infer<typeof StudyModeSchema>;
  * - `syllable-constructor`   — drag-and-drop слогов пиньиня в правильном порядке.
  * - `cloze`                  — подставить пропущенное слово в предложении-примере.
  * - `character_assembly`     — собрать слово из иероглифов в правильном порядке.
+ * - `listening`              — аудирование: звучит слово, выбрать перевод (иероглиф скрыт до ответа).
  */
 export const PracticeTypeSchema = z.enum([
   'flip-card',
@@ -27,6 +28,7 @@ export const PracticeTypeSchema = z.enum([
   'syllable-constructor',
   'cloze',
   'character_assembly',
+  'listening',
 ]);
 export type PracticeType = z.infer<typeof PracticeTypeSchema>;
 

@@ -20,7 +20,12 @@ function normalizeCharacter(raw: string): string {
 }
 
 /** Берёт первый вариант пиньиня до ; или |. "ā; á" → "ā" */
-function normalizePinyin(raw: string): string {
+function normalizePinyin(raw: unknown, entryRef: string): string {
+  if (typeof raw !== 'string') {
+    throw new Error(
+      `normalizePinyin: expected string pinyin, got ${typeof raw} for ${entryRef}`,
+    );
+  }
   const semi = raw.indexOf(';');
   const pipe = raw.indexOf('|');
   const idx = semi === -1 ? pipe : pipe === -1 ? semi : Math.min(semi, pipe);
@@ -45,9 +50,11 @@ async function seedLevel(level: number, fileName: string): Promise<void> {
   let created = 0;
   let skipped = 0;
 
-  for (const entry of words) {
+  for (let i = 0; i < words.length; i++) {
+    const entry = words[i];
+    const entryRef = `entry #${entry?.id ?? i} (${JSON.stringify(entry?.word)})`;
     const character = normalizeCharacter(entry.word);
-    const pinyin = normalizePinyin(entry.pinyin);
+    const pinyin = normalizePinyin(entry.pinyin, entryRef);
 
     const existing = await prisma.word.findFirst({
       where: { character, hskLevel: level },

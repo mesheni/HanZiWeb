@@ -38,6 +38,7 @@ import {
 } from '../queries/stats';
 import { useAchievements } from '../queries/achievements';
 import StudyMapCard from '../components/StudyMapCard';
+import FsrsInsightsCard from '../components/FsrsInsightsCard';
 import { ACHIEVEMENT_CATALOG, type AchievementType } from '@hanzi/shared';
 import { useTheme } from '@/ui/useTheme';
 import {
@@ -72,7 +73,20 @@ const ACHIEVEMENT_ICONS: Record<AchievementType, typeof Flame> = {
   xp_10000: Crown,
 };
 
-const CAL_MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+const CAL_MONTHS = [
+  'Янв',
+  'Фев',
+  'Мар',
+  'Апр',
+  'Май',
+  'Июн',
+  'Июл',
+  'Авг',
+  'Сен',
+  'Окт',
+  'Ноя',
+  'Дек',
+];
 const CAL_WEEKDAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const CAL_COLORS: string[] = [
   'var(--cal-empty)',
@@ -305,6 +319,11 @@ export default function StatsScreen() {
         <div style={styles.statCard}>
           <div style={{ ...styles.statNumber, color: 'var(--tone-3)' }}>{streak}</div>
           <div style={styles.statLabel}>🔥 текущий стрик</div>
+          {(overview?.streakFreezeCount ?? 0) > 0 && (
+            <div style={styles.freezeBadge} title="Пропуск одного дня не сломает серию">
+              ❄ страховок: {overview?.streakFreezeCount}
+            </div>
+          )}
         </div>
         <div style={styles.statCard}>
           <div style={{ ...styles.statNumber, color: 'var(--accent)' }}>{totalReviews}</div>
@@ -344,6 +363,14 @@ export default function StatsScreen() {
           </div>
         </div>
         <StatsActivityCalendar activityData={activityData ?? []} year={year} />
+      </div>
+
+      {/* FSRS insights: прогноз повторений + распределения (v0.7) */}
+      <div className="stats-section">
+        <div className="stats-section-header">
+          <span className="section-label">Прогноз повторений</span>
+        </div>
+        <FsrsInsightsCard />
       </div>
 
       {/* Study Map (PLAN_Features_v0.3 §5) */}
@@ -430,6 +457,12 @@ const styles: Record<string, CSSProperties> = {
   },
   statNumber: { fontSize: 22, fontWeight: 600, lineHeight: 1 },
   statLabel: { fontSize: 9, color: 'var(--text-muted)', marginTop: 4 },
+  freezeBadge: {
+    fontSize: 10,
+    color: '#4FC3F7',
+    marginTop: 6,
+    cursor: 'help',
+  },
   yearSwitcher: {
     display: 'flex',
     alignItems: 'center',

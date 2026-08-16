@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TransitionEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Volume2, PenLine } from 'lucide-react';
+import { Volume2, PenLine, Lightbulb } from 'lucide-react';
 import { PinyinDisplay } from '../utils/toneColors';
 import { cn } from '../utils/cn';
 import { useStudyStore } from '../stores/studyStore';
+import { useMnemonic } from '../queries/mnemonics';
 import type { Word } from '@hanzi/shared';
 
 type Direction = 'enter-right' | 'exit-left' | 'idle';
@@ -55,6 +56,9 @@ export default function Flashcard({
   const flipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFlipping = useStudyStore((s) => s.isFlipping);
   const setIsFlipping = useStudyStore((s) => s.setIsFlipping);
+  // Личная мнемоника — по displayedWord: во время flip-анимации тыльная
+  // сторона заморожена на предыдущем слове, подсказка должна совпадать.
+  const { data: personalMnemonic } = useMnemonic(displayedWord.id);
 
   // Микро-анимация при смене карточки
   useEffect(() => {
@@ -146,6 +150,13 @@ export default function Flashcard({
             <div className="flashcard-example">
               <div className="flashcard-ex-zh">{displayedWord.examples[0]!.chinese}</div>
               <div className="flashcard-ex-ru">{displayedWord.examples[0]!.russian}</div>
+            </div>
+          )}
+
+          {personalMnemonic && (
+            <div className="flashcard-mnemonic" title="Моя мнемоника">
+              <Lightbulb size={12} aria-hidden />
+              <span>{personalMnemonic.text}</span>
             </div>
           )}
 

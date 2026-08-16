@@ -26,3 +26,4 @@ export * from './schemas/featureFlag.js';
 export * from './schemas/stats.js';
 export * from './schemas/test.js';
 export * from './schemas/reading.js';
+export * from './schemas/mnemonic.js';

@@ -45,6 +45,30 @@ describe('SyncRequestSchema (F31)', () => {
     });
     expect(res.success).toBe(false);
   });
+
+  it('принимает mnemonic_upsert и mnemonic_delete (v0.7 мнемоники)', () => {
+    const upsert = SyncChangeSchema.safeParse({
+      id: 'm1',
+      type: 'mnemonic_upsert',
+      payload: { wordId: 'w1', text: '女 + 子 → нравится', updatedAt: '2026-08-16T10:00:00.000Z' },
+    });
+    expect(upsert.success).toBe(true);
+
+    const del = SyncChangeSchema.safeParse({
+      id: 'm2',
+      type: 'mnemonic_delete',
+      payload: { wordId: 'w1', updatedAt: '2026-08-16T10:00:00.000Z' },
+    });
+    expect(del.success).toBe(true);
+
+    // Пустой текст мнемоники невалиден — удалять надо mnemonic_delete.
+    const empty = SyncChangeSchema.safeParse({
+      id: 'm3',
+      type: 'mnemonic_upsert',
+      payload: { wordId: 'w1', text: '', updatedAt: '2026-08-16T10:00:00.000Z' },
+    });
+    expect(empty.success).toBe(false);
+  });
 });
 
 describe('SyncResponseSchema (F31)', () => {
@@ -109,6 +133,18 @@ describe('SyncResponseSchema (F31)', () => {
       nextCursor: 0,
     });
     expect(bad.success).toBe(false);
+  });
+
+  it('результат-мнемоника — без FSRS-полей (union)', () => {
+    const ok = SyncResultSchema.safeParse({
+      changeId: 'm1',
+      outcome: 'applied',
+      wordId: 'w1',
+    });
+    expect(ok.success).toBe(true);
+    expect(
+      SyncResultSchema.safeParse({ changeId: 'm1', outcome: 'pending', wordId: 'w1' }).success,
+    ).toBe(false);
   });
 });
 

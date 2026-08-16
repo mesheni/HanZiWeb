@@ -172,4 +172,93 @@ describe('streak — чтение read-only, персист только по р
       expect(after.lastActiveDate?.toISOString()).toBe(before.lastActiveDate?.toISOString());
     });
   });
+
+  describe('страховка стрика (v0.7)', () => {
+    it('computeStreak: пропуск одного дня со страховкой сохраняет серию', () => {
+      const res = computeStreak(
+        5,
+        new Date('2026-07-14T00:00:00.000Z'),
+        new Date('2026-07-16T12:00:00.000Z'),
+        'UTC',
+        1,
+      );
+      expect(res.currentStreak).toBe(6);
+      expect(res.freezeConsumed).toBe(true);
+    });
+
+    it('computeStreak: без страховки пропуск одного дня сбрасывает стрик', () => {
+      const res = computeStreak(
+        5,
+        new Date('2026-07-14T00:00:00.000Z'),
+        new Date('2026-07-16T12:00:00.000Z'),
+        'UTC',
+        0,
+      );
+      expect(res.currentStreak).toBe(1);
+      expect(res.freezeConsumed).toBe(false);
+    });
+
+    it('computeStreak: страховка не покрывает пропуск 2+ дней', () => {
+      const res = computeStreak(
+        5,
+        new Date('2026-07-13T00:00:00.000Z'),
+        new Date('2026-07-16T12:00:00.000Z'),
+        'UTC',
+        2,
+      );
+      expect(res.currentStreak).toBe(1);
+      expect(res.freezeConsumed).toBe(false);
+    });
+
+    it('touchStreak: dayDiff=2 со страховкой — серия сохранена, страховка списана', async () => {
+      await seedStreak(utcUserId, 7, new Date('2026-07-14T00:00:00.000Z'));
+      await prisma.user.update({
+        where: { id: utcUserId },
+        data: { streakFreezeCount: 1, lastFreezeGrantAt: new Date('2026-07-14T00:00:00.000Z') },
+      });
+      const res = await touchStreak(prisma, utcUserId, new Date('2026-07-16T12:00:00.000Z'));
+      expect(res.currentStreak).toBe(8);
+      expect(res.freezeConsumed).toBe(true);
+      const u = await prisma.user.findUnique({ where: { id: utcUserId } });
+      expect(u?.currentStreak).toBe(8);
+      expect(u?.streakFreezeCount).toBe(0);
+    });
+
+    it('touchStreak: dayDiff=2 без страховки — сброс', async () => {
+      await seedStreak(utcUserId, 7, new Date('2026-07-14T00:00:00.000Z'));
+      await prisma.user.update({
+        where: { id: utcUserId },
+        data: { streakFreezeCount: 0, lastFreezeGrantAt: new Date('2026-07-14T00:00:00.000Z') },
+      });
+      const res = await touchStreak(prisma, utcUserId, new Date('2026-07-16T12:00:00.000Z'));
+      expect(res.currentStreak).toBe(1);
+      expect(res.freezeConsumed).toBe(false);
+      const u = await prisma.user.findUnique({ where: { id: utcUserId } });
+      expect(u?.streakFreezeCount).toBe(0);
+    });
+
+    it('touchStreak: начисляет 1 страховку за новый календарный месяц (макс. 2)', async () => {
+      await seedStreak(utcUserId, 1, new Date('2026-06-10T00:00:00.000Z'));
+      await prisma.user.update({
+        where: { id: utcUserId },
+        data: { streakFreezeCount: 0, lastFreezeGrantAt: new Date('2026-06-10T00:00:00.000Z') },
+      });
+      // Июль — новый месяц относительно июня: начислит 1.
+      const res = await touchStreak(prisma, utcUserId, new Date('2026-07-11T12:00:00.000Z'));
+      expect(res.streakFreezeCount).toBe(1);
+      // Тот же месяц повторно — не начисляет.
+      const again = await touchStreak(prisma, utcUserId, new Date('2026-07-12T12:00:00.000Z'));
+      expect(again.streakFreezeCount).toBe(1);
+    });
+
+    it('touchStreak: при максимуме 2 новая не начисляется', async () => {
+      await seedStreak(utcUserId, 1, new Date('2026-06-10T00:00:00.000Z'));
+      await prisma.user.update({
+        where: { id: utcUserId },
+        data: { streakFreezeCount: 2, lastFreezeGrantAt: new Date('2026-06-10T00:00:00.000Z') },
+      });
+      const res = await touchStreak(prisma, utcUserId, new Date('2026-07-11T12:00:00.000Z'));
+      expect(res.streakFreezeCount).toBe(2);
+    });
+  });
 });

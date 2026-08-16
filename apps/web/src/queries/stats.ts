@@ -11,6 +11,7 @@ import { apiGet, apiGetBlob, apiPost, apiPut, downloadBlob } from '../api/client
 export interface Overview {
   xp: number;
   currentStreak: number;
+  streakFreezeCount: number;
   totalWords: number;
   learnedWords: number;
   accuracy: number;
@@ -29,6 +30,7 @@ export interface ActivityDay {
 
 export interface Dashboard {
   streak: number;
+  streakFreezeCount: number;
   wordsDueToday: number;
   wordsLearned: number;
   totalReviews: number;
@@ -93,7 +95,8 @@ export function useActivity(year: number) {
 export function useStreak() {
   return useQuery({
     queryKey: ['stats', 'streak'],
-    queryFn: () => apiGet<{ currentStreak: number; lastActiveDate: string | null }>('/stats/streak'),
+    queryFn: () =>
+      apiGet<{ currentStreak: number; lastActiveDate: string | null }>('/stats/streak'),
   });
 }
 
@@ -123,8 +126,7 @@ export function useUserSettings() {
 export function useUpdateUserSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<UserSettings>) =>
-      apiPut<UserSettings>('/users/settings', patch),
+    mutationFn: (patch: Partial<UserSettings>) => apiPut<UserSettings>('/users/settings', patch),
     onSuccess: (data) => {
       qc.setQueryData<UserSettings>(['users', 'settings'], data);
       qc.invalidateQueries({ queryKey: ['stats', 'dashboard'] });

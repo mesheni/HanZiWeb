@@ -40,9 +40,8 @@ export function PinyinDisplay({ pinyin, className }: { pinyin: string; className
   return (
     <span className={cn('pinyin-display', className)}>
       {syllables.map((s, i) => (
-        <span key={i}>
-          {i > 0 && ' '}
-          <span className={TONE_CLASS[s.tone]}>{s.syllable}</span>
+        <span key={i} className={TONE_CLASS[s.tone]}>
+          {s.syllable}
         </span>
       ))}
     </span>

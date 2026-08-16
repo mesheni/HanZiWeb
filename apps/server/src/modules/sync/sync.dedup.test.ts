@@ -151,7 +151,7 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
       const first = await processSync(uid, req);
       expect(first.results).toHaveLength(1);
       expect(first.results[0]?.outcome).toBe('applied');
-      expect(first.results[0]?.xpGain).toBe(3);
+      expect('xpGain' in first.results[0]! ? first.results[0]!.xpGain : undefined).toBe(3);
 
       const progress = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId: uid, wordId: wid } },
@@ -210,7 +210,9 @@ describe('sync dedup — live-post + offline flush applies once (fix v0.4 §45 f
       });
       expect(progress?.reps).toBe(1);
 
-      const answers = await prisma.sessionAnswer.findMany({ where: { sessionId: sid, wordId: wid } });
+      const answers = await prisma.sessionAnswer.findMany({
+        where: { sessionId: sid, wordId: wid },
+      });
       expect(answers).toHaveLength(1);
     } finally {
       await prisma.user.deleteMany({ where: { id: uid } });

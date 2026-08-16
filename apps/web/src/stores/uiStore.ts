@@ -1,20 +1,22 @@
 import { create } from 'zustand';
-import {
-  type Theme,
-  applyTheme,
-  persistTheme,
-} from '@/ui/theme';
+import { type Theme, applyTheme, persistTheme } from '@/ui/theme';
 
 interface UiState {
   theme: Theme;
   sidebarOpen: boolean;
   /** Автоматически проигрывать TTS при появлении новой карточки в StudyScreen. */
   autoPlayAudio: boolean;
+  /** Открыта ли шпаргалка по горячим клавишам (не персистится). */
+  shortcutsOverlayOpen: boolean;
+  /** Открыта ли command palette (Ctrl+K, не персистится). */
+  commandPaletteOpen: boolean;
 
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   setSidebarOpen: (open: boolean) => void;
   setAutoPlayAudio: (on: boolean) => void;
+  setShortcutsOverlayOpen: (open: boolean) => void;
+  setCommandPaletteOpen: (open: boolean) => void;
 }
 
 const STORAGE_KEY = 'hanzi:ui';
@@ -61,6 +63,8 @@ export const useUiStore = create<UiState>((set) => ({
   theme: initial.theme,
   sidebarOpen: initial.sidebarOpen,
   autoPlayAudio: initial.autoPlayAudio,
+  shortcutsOverlayOpen: false,
+  commandPaletteOpen: false,
 
   toggleTheme: () =>
     set((state) => {
@@ -91,4 +95,8 @@ export const useUiStore = create<UiState>((set) => ({
       persist({ theme: state.theme, sidebarOpen: state.sidebarOpen, autoPlayAudio: on });
       return { autoPlayAudio: on };
     }),
+
+  setShortcutsOverlayOpen: (open) => set({ shortcutsOverlayOpen: open }),
+
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
 }));

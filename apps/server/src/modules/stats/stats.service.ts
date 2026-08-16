@@ -208,7 +208,10 @@ export async function getLeaderboard(
 
 export async function getOverview(userId: string) {
   const [user, progressCounts, accuracy] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { xp: true } }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { xp: true, streakFreezeCount: true },
+    }),
     prisma.userWordProgress.groupBy({
       by: ['state'],
       where: { userId },
@@ -236,6 +239,7 @@ export async function getOverview(userId: string) {
   return {
     xp: user?.xp ?? 0,
     currentStreak,
+    streakFreezeCount: user?.streakFreezeCount ?? 0,
     totalWords,
     learnedWords,
     accuracy: accuracyPercent,
@@ -486,10 +490,11 @@ export async function getDashboard(userId: string) {
     countTodayReviews(userId, now),
   ]);
 
-  const { currentStreak } = await getUserStreak(userId);
+  const { currentStreak, streakFreezeCount } = await getUserStreak(userId);
 
   return {
     streak: currentStreak,
+    streakFreezeCount,
     wordsDueToday,
     wordsLearned,
     totalReviews,
@@ -698,13 +703,14 @@ export function computeStreak(
   lastActiveDate: Date | null,
   now: Date,
   timezone: string,
-): { currentStreak: number; lastActiveDate: Date } {
+  freezeCount: number = 0,
+): { currentStreak: number; lastActiveDate: Date; freezeConsumed: boolean } {
   const todayKey = getLocalDayKey(now, timezone);
   if (lastActiveDate) {
     const lastKey = getLocalDayKey(lastActiveDate, timezone);
     if (lastKey === todayKey) {
       // Уже засчитан сегодня — без изменений.
-      return { currentStreak, lastActiveDate };
+      return { currentStreak, lastActiveDate, freezeConsumed: false };
     }
     // Разница в локальных днях (а не UTC-днях). Парсим ключи и считаем
     // календарные дни — корректно даже если между двумя днями есть
@@ -712,14 +718,25 @@ export function computeStreak(
     const dayDiff = daysBetweenKeys(lastKey, todayKey);
     // Отрицательная разница = lastActiveDate в будущем (гонка/аномалия):
     // не откатываем якорь назад (максимум-семантика, PLANCorrection #16).
-    if (dayDiff < 0) return { currentStreak, lastActiveDate };
-    return {
-      currentStreak: dayDiff === 1 ? currentStreak + 1 : 1,
-      lastActiveDate: localMidnightUtc(now, timezone),
-    };
+    if (dayDiff < 0) return { currentStreak, lastActiveDate, freezeConsumed: false };
+    const anchor = localMidnightUtc(now, timezone);
+    if (dayDiff === 1) {
+      return { currentStreak: currentStreak + 1, lastActiveDate: anchor, freezeConsumed: false };
+    }
+    // Страховка стрика (v0.7): пропуск ровно одного дня (dayDiff === 2)
+    // при наличии страховки сохраняет серию; списание выполняет
+    // touchStreak по флагу freezeConsumed.
+    if (dayDiff === 2 && freezeCount > 0) {
+      return { currentStreak: currentStreak + 1, lastActiveDate: anchor, freezeConsumed: true };
+    }
+    return { currentStreak: 1, lastActiveDate: anchor, freezeConsumed: false };
   }
   // Никогда не был активен — начинаем с 1.
-  return { currentStreak: 1, lastActiveDate: localMidnightUtc(now, timezone) };
+  return {
+    currentStreak: 1,
+    lastActiveDate: localMidnightUtc(now, timezone),
+    freezeConsumed: false,
+  };
 }
 
 /**
@@ -731,14 +748,16 @@ export function computeStreak(
 export async function getUserStreak(userId: string, now: Date = new Date()) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { currentStreak: true, lastActiveDate: true, timezone: true },
+    select: { currentStreak: true, lastActiveDate: true, timezone: true, streakFreezeCount: true },
   });
-  return computeStreak(
+  const streak = computeStreak(
     user?.currentStreak ?? 0,
     user?.lastActiveDate ?? null,
     now,
     user?.timezone ?? 'UTC',
+    user?.streakFreezeCount ?? 0,
   );
+  return { ...streak, streakFreezeCount: user?.streakFreezeCount ?? 0 };
 }
 
 /**
@@ -762,10 +781,53 @@ export async function touchStreak(
 ) {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { currentStreak: true, lastActiveDate: true, timezone: true },
+    select: {
+      currentStreak: true,
+      lastActiveDate: true,
+      timezone: true,
+      streakFreezeCount: true,
+      lastFreezeGrantAt: true,
+    },
   });
-  if (!user) return { currentStreak: 0, lastActiveDate: null };
-  const next = computeStreak(user.currentStreak, user.lastActiveDate, now, user.timezone ?? 'UTC');
+  if (!user) {
+    return { currentStreak: 0, lastActiveDate: null, freezeConsumed: false, streakFreezeCount: 0 };
+  }
+
+  // Начисление страховок (v0.7): 1 за календарный месяц активности,
+  // максимум 2 накоплено. Месяц — по серверному календарю; условная
+  // запись через updateMany не даёт начислить дважды при гонке.
+  let freezeCount = user.streakFreezeCount;
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (freezeCount < 2 && (!user.lastFreezeGrantAt || user.lastFreezeGrantAt < monthStart)) {
+    const granted = await db.user.updateMany({
+      where: {
+        id: userId,
+        streakFreezeCount: { lt: 2 },
+        OR: [{ lastFreezeGrantAt: null }, { lastFreezeGrantAt: { lt: monthStart } }],
+      },
+      data: { streakFreezeCount: { increment: 1 }, lastFreezeGrantAt: now },
+    });
+    if (granted.count === 1) freezeCount += 1;
+  }
+
+  const next = computeStreak(
+    user.currentStreak,
+    user.lastActiveDate,
+    now,
+    user.timezone ?? 'UTC',
+    freezeCount,
+  );
+
+  // Списание страховки: только когда она реально сохранила серию
+  // (dayDiff === 2). Условный decrement защищает от ухода в минус.
+  if (next.freezeConsumed) {
+    await db.user.updateMany({
+      where: { id: userId, streakFreezeCount: { gt: 0 } },
+      data: { streakFreezeCount: { decrement: 1 } },
+    });
+    freezeCount -= 1;
+  }
+
   await db.user.updateMany({
     where: {
       id: userId,
@@ -773,7 +835,7 @@ export async function touchStreak(
     },
     data: { currentStreak: next.currentStreak, lastActiveDate: next.lastActiveDate },
   });
-  return next;
+  return { ...next, streakFreezeCount: Math.max(0, freezeCount) };
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -805,6 +805,13 @@ input {
   color: var(--tone-4);
 }
 
+.pinyin-display {
+  display: inline-flex;
+  gap: 0.3em;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
 /* ===== Settings screen (PLAN_Features_v0.3 #18) =====
    Единая сетка карточек на экране настроек:
    .settings-container    — внешний контейнер с max-width и центрированием;
@@ -1055,6 +1062,32 @@ input {
 .flashcard-ex-ru {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.flashcard-mnemonic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--accent-bg);
+  max-width: 100%;
+}
+
+.flashcard-mnemonic span {
+  overflow-wrap: anywhere;
+}
+
+.feedback-mnemonic {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .flashcard-audio-btn {
@@ -5940,4 +5973,137 @@ button[style*="background: var(--accent)"]:active {
 
 .bottom-nav-btn:active {
   transform: scale(0.95);
+}
+
+/* ── FSRS-инсайты (v0.7) ─────────────────────────────────────────── */
+
+.fsrs-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fsrs-forecast-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fsrs-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.fsrs-chip-overdue {
+  color: #e57373;
+  background: rgba(229, 115, 115, 0.12);
+}
+
+.fsrs-forecast {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.fsrs-forecast-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 26px;
+  flex: 1;
+}
+
+.fsrs-forecast-count {
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1;
+  min-height: 12px;
+}
+
+.fsrs-forecast-bar {
+  width: 100%;
+  max-width: 22px;
+  border-radius: 4px 4px 2px 2px;
+  background: var(--accent-bg);
+  border: 1px solid var(--border-default);
+  transition: height 0.4s ease;
+}
+
+.fsrs-forecast-bar-today {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.fsrs-forecast-day {
+  font-size: 9px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.fsrs-histos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.fsrs-histo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fsrs-histo-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.fsrs-histo-row {
+  display: grid;
+  grid-template-columns: 74px 1fr 30px;
+  align-items: center;
+  gap: 6px;
+}
+
+.fsrs-histo-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fsrs-histo-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.fsrs-histo-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  opacity: 0.75;
+  transition: width 0.4s ease;
+}
+
+.fsrs-histo-count {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.fsrs-note {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin: 0;
 }

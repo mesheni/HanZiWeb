@@ -88,7 +88,9 @@ describe('processSync — offline answers (PLANCorrection #15, #16)', () => {
       expect(res.results).toHaveLength(1);
       expect(res.results[0]?.outcome).toBe('applied');
       const expected = recalcFsrs(3, 5, 5, 'review', 1);
-      expect(res.results[0]?.newStability).toBe(expected.newStability);
+      expect('newStability' in res.results[0]! ? res.results[0]!.newStability : undefined).toBe(
+        expected.newStability,
+      );
 
       const progress = await prisma.userWordProgress.findUnique({
         where: { userId_wordId: { userId: uid, wordId: wid } },

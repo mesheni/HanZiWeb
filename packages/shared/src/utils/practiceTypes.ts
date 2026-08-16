@@ -29,6 +29,7 @@ export const TRAINING_PRACTICE_TYPES: readonly PracticeType[] = [
   'syllable-constructor',
   'cloze',
   'character_assembly',
+  'listening',
 ] as const;
 
 /** Set-форма для O(1) lookup-а (избегаем `.includes()` на каждом рендере). */

@@ -1,7 +1,13 @@
 import { prisma } from '../../lib/prisma.js';
 import type { ReadingTextDetail, ReadingTextListItem, WordState } from '@hanzi/shared';
 
-export async function listTexts(userId: string, hskLevel?: number): Promise<ReadingTextListItem[]> {
+export type ReadingSort = 'default' | 'familiarity';
+
+export async function listTexts(
+  userId: string,
+  hskLevel?: number,
+  sort: ReadingSort = 'default',
+): Promise<ReadingTextListItem[]> {
   const texts = await prisma.readingText.findMany({
     where: hskLevel !== undefined ? { hskLevel } : {},
     orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
@@ -20,19 +26,31 @@ export async function listTexts(userId: string, hskLevel?: number): Promise<Read
   });
   const readMap = new Map(readingProgress.map((p) => [p.textId, p.readAt.toISOString()]));
 
-  return texts.map((text) => {
+  const items = texts.map((text) => {
     const knownWordsCount = text.words.filter((w) => knownWordIds.has(w.wordId)).length;
+    // Знакомость считаем по сопоставленным токенам (text.words), а не по
+    // общему wordCount — так процент отражает именно изученную лексику.
+    const tokensTotal = text.words.length;
+    const familiarPercent = tokensTotal > 0 ? Math.round((knownWordsCount / tokensTotal) * 100) : 0;
     return {
       id: text.id,
       title: text.title,
       hskLevel: text.hskLevel,
       wordCount: text.wordCount,
       knownWordsCount,
+      familiarPercent,
       author: text.author,
       source: text.source,
       readAt: readMap.get(text.id) ?? null,
     };
   });
+
+  if (sort === 'familiarity') {
+    // «По знакомости»: от самого понятного к самому новому — быстрый
+    // выбор «что почитать прямо сейчас без словаря».
+    return items.sort((a, b) => b.familiarPercent - a.familiarPercent);
+  }
+  return items;
 }
 
 export async function getText(userId: string, textId: string): Promise<ReadingTextDetail | null> {

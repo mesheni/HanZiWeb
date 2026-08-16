@@ -1,6 +1,23 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, Library, PenLine, BarChart3, Settings, LogOut, Wifi, WifiOff, Heart, Moon, Sun, ClipboardList, Glasses } from 'lucide-react';
+import {
+  Home,
+  BookOpen,
+  Library,
+  PenLine,
+  BarChart3,
+  Settings,
+  LogOut,
+  Wifi,
+  WifiOff,
+  Heart,
+  Moon,
+  Sun,
+  ClipboardList,
+  Glasses,
+  Search,
+} from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import { useUiStore } from '@/stores/uiStore';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { useTheme } from '@/ui/useTheme';
 
@@ -25,6 +42,7 @@ export default function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const isOnline = useOnlineStatus();
   const { toggle, isDark } = useTheme();
+  const setCommandPaletteOpen = useUiStore((s) => s.setCommandPaletteOpen);
 
   const isActive = (route: string) =>
     route === '/'
@@ -40,6 +58,17 @@ export default function Sidebar() {
         aria-label="На главную"
       >
         汉
+      </button>
+
+      <button
+        type="button"
+        className="sidebar-btn"
+        onClick={() => setCommandPaletteOpen(true)}
+        aria-label="Поиск (Ctrl+K)"
+        title="Поиск (Ctrl+K)"
+      >
+        <Search size={20} />
+        <span>Поиск</span>
       </button>
 
       <nav className="sidebar-nav">
@@ -81,11 +110,7 @@ export default function Sidebar() {
           <span>{isDark ? 'Светлая' : 'Тёмная'}</span>
         </button>
 
-        <button
-          className="sidebar-btn"
-          onClick={() => logout()}
-          aria-label="Выйти"
-        >
+        <button className="sidebar-btn" onClick={() => logout()} aria-label="Выйти">
           <LogOut size={20} />
           <span>Выйти</span>
         </button>
@@ -108,7 +133,11 @@ export default function Sidebar() {
           background: isOnline ? 'rgba(34,197,94,0.1)' : 'var(--accent-bg)',
         }}
       >
-        {isOnline ? <Wifi size={17} aria-hidden="true" /> : <WifiOff size={17} aria-hidden="true" />}
+        {isOnline ? (
+          <Wifi size={17} aria-hidden="true" />
+        ) : (
+          <WifiOff size={17} aria-hidden="true" />
+        )}
       </div>
     </aside>
   );
