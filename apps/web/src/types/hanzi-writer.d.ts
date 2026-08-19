@@ -36,6 +36,10 @@ declare module 'hanzi-writer' {
 
   interface WriterInstance {
     animateCharacter(options?: { onComplete?: () => void }): void;
+    animateStroke(strokeNum: number, options?: { onComplete?: () => void }): void;
+    highlightStroke(strokeNum: number, options?: { onComplete?: () => void }): void;
+    hideCharacter(options?: { duration?: number; onComplete?: () => void }): void;
+    showCharacter(options?: { duration?: number; onComplete?: () => void }): void;
     loopCharacterAnimation(): void;
     quiz(options?: Partial<QuizOptions>): void;
     cancelQuiz(): void;
