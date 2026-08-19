@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { deckAccessWhere, findAccessibleDeck } from '../../lib/deckAccess.js';
+import { WORD_EXAMPLES_INCLUDE } from '../words/words.service.js';
 import { computeElapsedDays, sanitizeClientTimestamp } from './timePolicy.js';
 import type { Prisma } from '@prisma/client';
 import { recalcFsrs } from './srs.js';
@@ -130,7 +131,7 @@ async function loadPriorityCards(userId: string, cardLimit: number): Promise<Pro
   const progressRecords = await prisma.userWordProgress.findMany({
     where: { userId, wordId: { in: selected.map((p) => p.wordId) } },
     include: {
-      word: { include: { examples: true, tags: { include: { tag: true } } } },
+      word: { include: { examples: WORD_EXAMPLES_INCLUDE, tags: { include: { tag: true } } } },
     },
   });
 
@@ -219,7 +220,7 @@ export async function startSession(userId: string, input: StartSession) {
             ...progressWhere,
           },
           include: {
-            word: { include: { examples: true, tags: { include: { tag: true } } } },
+            word: { include: { examples: WORD_EXAMPLES_INCLUDE, tags: { include: { tag: true } } } },
           },
           orderBy: [
             { dueDate: 'asc' },
@@ -254,7 +255,7 @@ export async function startSession(userId: string, input: StartSession) {
         ...wordWhere,
         NOT: { progress: { some: { userId } } },
       },
-      include: { examples: true, tags: { include: { tag: true } } },
+      include: { examples: WORD_EXAMPLES_INCLUDE, tags: { include: { tag: true } } },
       orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
       take: newWordsNeeded,
     });
@@ -277,7 +278,7 @@ export async function startSession(userId: string, input: StartSession) {
         wordId: { in: freshWords.map((w: { id: string }) => w.id) },
       },
       include: {
-        word: { include: { examples: true, tags: { include: { tag: true } } } },
+        word: { include: { examples: WORD_EXAMPLES_INCLUDE, tags: { include: { tag: true } } } },
       },
       orderBy: [{ word: { hskLevel: 'asc' } }, { word: { createdAt: 'asc' } }],
     })) as ProgressWithWord[];
@@ -669,7 +670,7 @@ export async function getRandomWords(
   const skip = Math.max(0, Math.floor(Math.random() * Math.max(0, total - count)));
   return prisma.word.findMany({
     where,
-    include: { examples: true, tags: { include: { tag: true } } },
+    include: { examples: WORD_EXAMPLES_INCLUDE, tags: { include: { tag: true } } },
     orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
     skip,
     take: count,
@@ -700,7 +701,7 @@ export async function getRandomCharacterDistractorWords(targetWordId: string, co
   const skip = Math.max(0, Math.floor(Math.random() * Math.max(0, total - take)));
   const words = await prisma.word.findMany({
     where,
-    include: { examples: true, tags: { include: { tag: true } } },
+    include: { examples: WORD_EXAMPLES_INCLUDE, tags: { include: { tag: true } } },
     orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
     skip,
     take,

@@ -19,7 +19,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "audio:generate": "tsx scripts/generate-audio.ts",
-    "examples:seed": "tsx scripts/seed-examples.ts",
+    "audio:import-sentences": "tsx scripts/import-sentence-audio.ts",
+    "examples:seed": "tsx scripts/seed-sentences.ts",
     "reading:seed": "tsx scripts/seed-reading-texts.ts",
     "clean": "rm -rf dist"
   },

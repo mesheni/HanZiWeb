@@ -1,9 +1,4 @@
 import { prisma } from '../../lib/prisma.js';
-import {
-  getSentencesWithTranslations,
-  getTranslationsForSentence,
-  pickRussianTranslation,
-} from '../../lib/tatoeba.js';
 import type { Prisma } from '@prisma/client';
 
 /** Список примеров для слова. */
@@ -49,71 +44,6 @@ export async function deleteExample(exampleId: string) {
   }
   await prisma.example.delete({ where: { id: exampleId } });
   return { deleted: exampleId };
-}
-
-/**
- * Стрим-импорт примеров из Tatoeba для слова.
- * `limit` — максимум новых примеров.
- * Идемпотентно: не вставляет дубликаты (по tatoebaId).
- */
-export async function fetchExamplesFromTatoeba(
-  wordId: string,
-  options: { limit?: number } = {},
-) {
-  const word = await prisma.word.findUnique({
-    where: { id: wordId },
-    select: { id: true, character: true },
-  });
-  if (!word) {
-    throw Object.assign(new Error('Word not found'), { statusCode: 404, code: 'NOT_FOUND' });
-  }
-
-  const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
-
-  const sentences = await getSentencesWithTranslations({
-    word: word.character,
-    lang: 'cmn',
-    transLang: 'rus',
-    limit: limit * 2,
-  });
-
-  let added = 0;
-  const created: Array<{ id: string; chinese: string; russian: string }> = [];
-
-  for (const s of sentences) {
-    if (added >= limit) break;
-
-    const ru =
-      pickRussianTranslation(s, 'rus') ??
-      (await fallbackTranslate(s.id, 'rus').catch(() => null));
-    if (!ru) continue;
-
-    const exists = await prisma.example.findFirst({ where: { tatoebaId: BigInt(s.id) } });
-    if (exists) continue;
-
-    const example = await prisma.example.create({
-      data: {
-        wordId: word.id,
-        chinese: s.text,
-        russian: ru.text,
-        source: 'tatoeba',
-        tatoebaId: BigInt(s.id),
-      },
-    });
-    created.push({ id: example.id, chinese: example.chinese, russian: example.russian });
-    added++;
-  }
-
-  return { requested: limit, added, items: created };
-}
-
-/** Если переводы не пришли в основном запросе, дотягиваем отдельным вызовом. */
-async function fallbackTranslate(
-  sentenceId: number,
-  lang: string,
-): Promise<{ text: string } | null> {
-  const translations = await getTranslationsForSentence(sentenceId, lang);
-  return translations[0] ? { text: translations[0].text } : null;
 }
 
 /**

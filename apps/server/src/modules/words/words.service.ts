@@ -10,9 +10,19 @@ import type {
 } from '@hanzi/shared';
 import type { Prisma } from '@prisma/client';
 
-/** Какие relations подгружаются по умолчанию при запросах Word. */
+/** Какие relations подгружаются по умолчанию при запросах Word.
+ *  Примеры capped: иначе популярные иероглифы тянут 40+ предложений
+ *  в каждый ответ word/session (hsk_audio-датасет). Полный список —
+ *  через GET /words/:id/examples. */
+const WORD_EXAMPLES_INCLUDE = {
+  orderBy: [{ hskLevel: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+  take: 5,
+} satisfies Prisma.WordInclude['examples'];
+
+export { WORD_EXAMPLES_INCLUDE };
+
 const WORD_INCLUDE = {
-  examples: true,
+  examples: WORD_EXAMPLES_INCLUDE,
   tags: { include: { tag: true } },
 } satisfies Prisma.WordInclude;
 

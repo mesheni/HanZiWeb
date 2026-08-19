@@ -1,16 +1,12 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react';
-import { Volume2, Plus, Trash2, Sparkles, Loader2, WholeWord, X } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Volume2, Plus, Trash2, Loader2, WholeWord, X } from 'lucide-react';
 import Modal from './ui/Modal';
 import EtymologyCard from './EtymologyCard';
+import SentenceAudioButtons from './SentenceAudioButtons';
 import { PinyinDisplay } from '../utils/toneColors';
 import { useAudio } from '../hooks/useAudio';
 import { useToastStore } from '../stores/toastStore';
-import {
-  useWordExamples,
-  useCreateExample,
-  useDeleteExample,
-  useFetchTatoebaExamples,
-} from '../queries/examples';
+import { useWordExamples, useCreateExample, useDeleteExample } from '../queries/examples';
 import { useMnemonic, useSaveMnemonic, useDeleteMnemonic } from '../queries/mnemonics';
 import { buildClozeQuestion } from '@hanzi/shared';
 import { cn } from '../utils/cn';
@@ -26,17 +22,15 @@ interface WordDetailModalProps {
 /**
  * Расширенный модал слова:
  *  - пиньинь, перевод, HSK-уровень, мнемоника
- *  - TTS для самого слова + TTS для каждого примера-предложения
- *  - список примеров с TTS и удалением
- *  - ручное добавление примера
- *  - «Подтянуть из Tatoeba» (POST /words/:id/examples/fetch)
+ *  - TTS для самого слова
+ *  - список примеров: пиньинь, перевод, аудио носителя (обычное/медленное)
+ *  - ручное добавление/удаление примера (ADMIN)
  *  - кнопка «Тренировать в режиме подстановки»
  */
 export default function WordDetailModal({ word, onClose, onStartCloze }: WordDetailModalProps) {
   const { data: examples = [], isLoading: examplesLoading } = useWordExamples(word?.id);
   const createMut = useCreateExample();
   const deleteMut = useDeleteExample();
-  const fetchMut = useFetchTatoebaExamples();
   const addToast = useToastStore((s) => s.addToast);
   const audio = useAudio(word?.id);
 
@@ -52,23 +46,6 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
       setNewRu('');
     }
   }, [word]);
-
-  const handleFetchTatoeba = useCallback(async () => {
-    if (!word) return;
-    try {
-      const res = await fetchMut.mutateAsync({ wordId: word.id, limit: 3 });
-      if (res.added === 0) {
-        addToast('Tatoeba не нашёл новых предложений', 'info');
-      } else {
-        addToast(`Добавлено примеров: ${res.added}`, 'success');
-      }
-    } catch (err) {
-      addToast(
-        err instanceof Error ? err.message : 'Не удалось получить примеры из Tatoeba',
-        'error',
-      );
-    }
-  }, [word, fetchMut, addToast]);
 
   const handleAddManual = useCallback(async () => {
     if (!word) return;
@@ -167,9 +144,7 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
               <Loader2 size={14} />
             </div>
           ) : examples.length === 0 ? (
-            <div className="word-detail-empty">
-              Пока нет примеров. Подтяните из Tatoeba или добавьте вручную.
-            </div>
+            <div className="word-detail-empty">Пока нет примеров.</div>
           ) : (
             <ul className="word-detail-examples">
               {examples.map((ex) => (
@@ -179,19 +154,6 @@ export default function WordDetailModal({ word, onClose, onStartCloze }: WordDet
           )}
 
           <div className="word-detail-actions">
-            <button
-              type="button"
-              className="word-detail-action"
-              onClick={() => void handleFetchTatoeba()}
-              disabled={fetchMut.isPending}
-            >
-              {fetchMut.isPending ? (
-                <Loader2 size={13} className="spinner-inline" />
-              ) : (
-                <Sparkles size={13} />
-              )}
-              Из Tatoeba
-            </button>
             <button
               type="button"
               className={cn('word-detail-action', showAddForm && 'word-detail-action-active')}
@@ -309,46 +271,21 @@ function PersonalMnemonicEditor({ word }: { word: Word }) {
 }
 
 function ExampleRow({ example, onDelete }: { example: Example; onDelete: () => void }) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const playSentence = () => {
-    // Приоритет — серверное аудио через /audio/generate.
-    // Если credentials нет (501), fallback на браузерный TTS.
-    if (typeof window === 'undefined') return;
-    window.speechSynthesis?.cancel();
-    const utter = new SpeechSynthesisUtterance(example.chinese);
-    utter.lang = 'zh-CN';
-    utter.rate = 0.9;
-    utter.onstart = () => setIsPlaying(true);
-    utter.onend = () => setIsPlaying(false);
-    utter.onerror = () => setIsPlaying(false);
-    window.speechSynthesis.speak(utter);
-  };
-
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause();
-    };
-  }, []);
-
   return (
     <li className="word-detail-example">
       <div className="word-detail-example-text">
         <div className="word-detail-example-zh">{example.chinese}</div>
+        {example.pinyin && (
+          <PinyinDisplay pinyin={example.pinyin} className="word-detail-example-pinyin" />
+        )}
         <div className="word-detail-example-ru">{example.russian}</div>
       </div>
       <div className="word-detail-example-actions">
-        <button
-          type="button"
-          className="word-detail-example-tts"
-          onClick={playSentence}
-          disabled={isPlaying}
-          aria-label="Прослушать предложение"
-          title="Прослушать предложение"
-        >
-          <Volume2 size={14} />
-        </button>
+        <SentenceAudioButtons
+          audioUrl={example.audioUrl}
+          audioSlowUrl={example.audioSlowUrl}
+          fallbackText={example.chinese}
+        />
         <button
           type="button"
           className="word-detail-example-del"

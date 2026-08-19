@@ -1,18 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Fastify from 'fastify';
 import jwt from 'jsonwebtoken';
 import { ZodError } from 'zod';
 import authPlugin from '../../plugins/auth.js';
 import { prisma } from '../../lib/prisma.js';
 import { examplesRoutes } from './examples.routes.js';
-
-// Tatoeba не дёргаем в тестах: fetch-эндпоинт с мокнутым upstream
-// возвращает «ничего не добавлено», а не уходит в реальный HTTP.
-vi.mock('../../lib/tatoeba.js', () => ({
-  getSentencesWithTranslations: vi.fn().mockResolvedValue([]),
-  getTranslationsForSentence: vi.fn().mockResolvedValue([]),
-  pickRussianTranslation: vi.fn().mockReturnValue(null),
-}));
 
 const testRunId = Date.now();
 let userId = '';
@@ -101,22 +93,6 @@ describe('examples write guard (fix v0.4 §22 follow-up)', () => {
     }
   });
 
-  it('USER → 403 на POST /words/:wordId/examples/fetch (исходящий HTTP к Tatoeba)', async () => {
-    const app = await buildTestApp();
-    try {
-      const token = await issueAccessToken(userId);
-      const res = await app.inject({
-        method: 'POST',
-        url: `/words/${wordId}/examples/fetch`,
-        headers: { authorization: `Bearer ${token}` },
-      });
-      expect(res.statusCode).toBe(403);
-      expect(res.json().error.code).toBe('FORBIDDEN');
-    } finally {
-      await app.close();
-    }
-  });
-
   it('ADMIN → 201 на POST (ручное создание) и 200 на DELETE', async () => {
     const app = await buildTestApp();
     try {
@@ -142,24 +118,6 @@ describe('examples write guard (fix v0.4 §22 follow-up)', () => {
 
       const remaining = await prisma.example.findMany({ where: { wordId } });
       expect(remaining).toHaveLength(0);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('ADMIN → 200 на POST fetch (Tatoeba замокан)', async () => {
-    const app = await buildTestApp();
-    try {
-      const token = await issueAccessToken(adminId);
-      const res = await app.inject({
-        method: 'POST',
-        url: `/words/${wordId}/examples/fetch?limit=2`,
-        headers: { authorization: `Bearer ${token}` },
-      });
-      expect(res.statusCode).toBe(200);
-      const body = res.json();
-      expect(body.success).toBe(true);
-      expect(body.data.added).toBe(0);
     } finally {
       await app.close();
     }

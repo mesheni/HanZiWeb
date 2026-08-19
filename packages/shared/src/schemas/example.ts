@@ -5,9 +5,17 @@ export const ExampleSchema = z.object({
   id: z.string().uuid(),
   wordId: z.string().uuid(),
   chinese: z.string(),
+  /** Пиньинь предложения (датасет hsk_audio). */
+  pinyin: z.string().nullable().default(null),
   russian: z.string(),
+  /** Откуда пример: hsk_audio | manual. */
   source: z.string().default('manual'),
-  tatoebaId: z.number().int().nullable().default(null),
+  /** Уровень HSK предложения (1..6). */
+  hskLevel: z.number().int().nullable().default(null),
+  /** Аудио носителя: обычная скорость. */
+  audioUrl: z.string().nullable().default(null),
+  /** Аудио носителя: замедленная скорость. */
+  audioSlowUrl: z.string().nullable().default(null),
   createdAt: z.string().datetime(),
 });
 export type Example = z.infer<typeof ExampleSchema>;
@@ -18,26 +26,6 @@ export const CreateExampleSchema = z.object({
   russian: z.string().min(1).max(400),
 });
 export type CreateExample = z.infer<typeof CreateExampleSchema>;
-
-/** Query-параметр выборки примеров из Tatoeba. */
-export const FetchExamplesQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(10).default(3),
-});
-export type FetchExamplesQuery = z.infer<typeof FetchExamplesQuerySchema>;
-
-/** DTO ответа на fetch — что нового добавили. */
-export const FetchExamplesResultSchema = z.object({
-  requested: z.number().int(),
-  added: z.number().int(),
-  items: z.array(
-    z.object({
-      id: z.string().uuid(),
-      chinese: z.string(),
-      russian: z.string(),
-    }),
-  ),
-});
-export type FetchExamplesResult = z.infer<typeof FetchExamplesResultSchema>;
 
 /** Запись попытки cloze. */
 export const RecordClozeSchema = z.object({

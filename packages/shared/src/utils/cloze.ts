@@ -40,7 +40,7 @@ export function buildClozeQuestion(
 
   if (fallbackToPinyin) {
     // Берём первый слог пиньиня (без тона) — он встречается в предложениях,
-    // где иероглиф написан транслитом (например, в Tatoeba).
+    // где иероглиф написан транслитом.
     const pinyin = normalizePinyinKey(word.pinyin);
     if (pinyin && sentence.toLowerCase().includes(pinyin.toLowerCase())) {
       const clozeSentence = replaceCaseInsensitive(sentence, pinyin, CLOZE_MARKER);

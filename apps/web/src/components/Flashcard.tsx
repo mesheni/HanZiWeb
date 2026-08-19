@@ -6,6 +6,7 @@ import { PinyinDisplay } from '../utils/toneColors';
 import { cn } from '../utils/cn';
 import { useStudyStore } from '../stores/studyStore';
 import { useMnemonic } from '../queries/mnemonics';
+import SentenceAudioButtons from './SentenceAudioButtons';
 import type { Word } from '@hanzi/shared';
 
 type Direction = 'enter-right' | 'exit-left' | 'idle';
@@ -148,8 +149,22 @@ export default function Flashcard({
 
           {displayedWord.examples && displayedWord.examples.length > 0 && (
             <div className="flashcard-example">
-              <div className="flashcard-ex-zh">{displayedWord.examples[0]!.chinese}</div>
-              <div className="flashcard-ex-ru">{displayedWord.examples[0]!.russian}</div>
+              <div className="flashcard-ex-text">
+                <div className="flashcard-ex-zh">{displayedWord.examples[0]!.chinese}</div>
+                {displayedWord.examples[0]!.pinyin && (
+                  <PinyinDisplay
+                    pinyin={displayedWord.examples[0]!.pinyin}
+                    className="flashcard-ex-pinyin"
+                  />
+                )}
+                <div className="flashcard-ex-ru">{displayedWord.examples[0]!.russian}</div>
+              </div>
+              <SentenceAudioButtons
+                audioUrl={displayedWord.examples[0]!.audioUrl}
+                audioSlowUrl={displayedWord.examples[0]!.audioSlowUrl}
+                fallbackText={displayedWord.examples[0]!.chinese}
+                size={13}
+              />
             </div>
           )}
 

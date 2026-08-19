@@ -1,8 +1,13 @@
-import { createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb';
+import { addRxPlugin, createRxDatabase, type RxDatabase, type RxCollection } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import { RxDBMigrationPlugin } from 'rxdb/plugins/migration-schema';
+
+// Схема words v1 (поля аудио в примерах) требует миграций — плагин
+// глобальный, регистрируется при импорте модуля (в т.ч. в тестах).
+addRxPlugin(RxDBMigrationPlugin);
 
 const WORDS_SCHEMA = {
-  version: 0,
+  version: 1,
   primaryKey: 'id',
   type: 'object',
   properties: {
@@ -21,7 +26,11 @@ const WORDS_SCHEMA = {
         properties: {
           id: { type: 'string' },
           chinese: { type: 'string' },
+          pinyin: { type: ['string', 'null'] },
           russian: { type: 'string' },
+          hskLevel: { type: ['number', 'null'] },
+          audioUrl: { type: ['string', 'null'] },
+          audioSlowUrl: { type: ['string', 'null'] },
         },
       },
     },
@@ -209,7 +218,9 @@ async function createDatabase(): Promise<RxDatabase<DbCollections>> {
   } as any);
 
   await db.addCollections({
-    words: { schema: WORDS_SCHEMA },
+    // v0→v1: в items примеров добавлены pinyin/hskLevel/audioUrl/audioSlowUrl.
+    // Поля опциональные — старые документы валидны без преобразований.
+    words: { schema: WORDS_SCHEMA, migrationStrategies: { 1: (doc) => doc } },
     progress: { schema: PROGRESS_SCHEMA },
     pending_changes: { schema: PENDING_CHANGES_SCHEMA },
   });

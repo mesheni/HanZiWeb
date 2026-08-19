@@ -42,13 +42,26 @@ import { useMnemonic } from '../queries/mnemonics';
 import { STUDY_MODE_LABELS, getPracticeTypeInfo, isTrainingPractice } from '../utils/practiceTypes';
 import type { SrsRating, StudyMode, PracticeType, Word, SessionFilters } from '@hanzi/shared';
 
-function precacheAudioUrls(cards: Array<{ word: { audioUrl?: string | null } }>) {
+function precacheAudioUrls(
+  cards: Array<{
+    word: {
+      audioUrl?: string | null;
+      examples?: Array<{ audioUrl?: string | null; audioSlowUrl?: string | null }> | null;
+    };
+  }>,
+) {
   if ('caches' in window) {
     cards.forEach((card) => {
-      if (card.word.audioUrl) {
-        caches.open('audio-cache').then((cache) => {
-          cache.add(card.word.audioUrl!).catch(() => {});
-        });
+      const urls: Array<string | null | undefined> = [card.word.audioUrl];
+      for (const ex of card.word.examples ?? []) {
+        urls.push(ex.audioUrl, ex.audioSlowUrl);
+      }
+      for (const url of urls) {
+        if (url) {
+          caches.open('audio-cache').then((cache) => {
+            cache.add(url).catch(() => {});
+          });
+        }
       }
     });
   }
@@ -268,7 +281,7 @@ export default function StudyScreen() {
 
   // Примеры для текущего слова — нужны cloze-карточке.
   // Берём встроенные примеры из слова, а если их нет — подгружаем
-  // /words/:id/examples (там могут быть доп. Tatoeba-примеры).
+  // /words/:id/examples (там могут быть доп. примеры сверх инлайн-капа).
   const clozeExamples = currentCard?.word.examples ?? [];
   const { data: extraExamples } = useWordExamples(
     storePracticeType === 'cloze' ? currentCard?.word.id : null,

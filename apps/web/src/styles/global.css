@@ -1008,6 +1008,7 @@ input {
 .flashcard-back {
   transform: rotateY(180deg);
   gap: 4px;
+  overflow-y: auto;
 }
 
 .flashcard-char {
@@ -1047,21 +1048,72 @@ input {
 
 .flashcard-example {
   border-top: 1px solid var(--border-default);
-  padding-top: 10px;
+  padding-top: 8px;
   text-align: center;
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flashcard-ex-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .flashcard-ex-zh {
   font-size: 13px;
   color: var(--text-secondary);
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   font-family: var(--font-cjk);
+}
+
+.flashcard-ex-pinyin {
+  font-size: 11px;
+  margin-bottom: 2px;
 }
 
 .flashcard-ex-ru {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+/* Кнопки аудио предложения (обычное/медленное): флеш-карточка,
+   модал слова. stopPropagation — карточка переворачивается по клику. */
+.sentence-audio-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sentence-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.sentence-audio-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.sentence-audio-active {
+  color: var(--accent);
+}
+
+.sentence-audio-spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
 }
 
 .flashcard-mnemonic {
@@ -2942,6 +2994,11 @@ input {
   word-break: break-word;
 }
 
+.word-detail-example-pinyin {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .word-detail-example-ru {
   font-size: 12px;
   color: var(--text-muted);
@@ -2950,11 +3007,11 @@ input {
 .word-detail-example-actions {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
   flex-shrink: 0;
 }
 
-.word-detail-example-tts,
 .word-detail-example-del {
   display: inline-flex;
   align-items: center;
@@ -2967,16 +3024,6 @@ input {
   border: none;
   cursor: pointer;
   transition: all 0.12s;
-}
-
-.word-detail-example-tts:hover:not(:disabled) {
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-
-.word-detail-example-tts:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .word-detail-example-del:hover {

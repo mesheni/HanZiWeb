@@ -8,6 +8,10 @@ build/
 .next/
 apps/web/public/hanzi-writer-data/
 
+# Медиа-датасеты (импортируются скриптами, не в git)
+/hsk_audio/
+apps/server/storage/
+
 # Environment
 .env
 .env.local

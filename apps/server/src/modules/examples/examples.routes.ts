@@ -7,10 +7,6 @@ const CreateExampleSchema = z.object({
   russian: z.string().min(1).max(400),
 });
 
-const FetchQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(10).default(3),
-});
-
 const RecordClozeSchema = z.object({
   exampleId: z.string().uuid(),
   correct: z.boolean(),
@@ -48,7 +44,7 @@ export async function examplesRoutes(app: FastifyInstance) {
   /**
    * DELETE /words/:wordId/examples/:exampleId — удаление примера.
    * Только ADMIN: иначе любой залогиненный мог бы удалить чужие и
-   * общие (tatoeba/seed) примеры — вандализм словаря.
+   * общие (hsk_audio) примеры — вандализм словаря.
    */
   app.delete<{ Params: { wordId: string; exampleId: string } }>(
     '/words/:wordId/examples/:exampleId',
@@ -56,34 +52,6 @@ export async function examplesRoutes(app: FastifyInstance) {
     async (request, reply) => {
       await examplesService.deleteExample(request.params.exampleId);
       return reply.send({ success: true });
-    },
-  );
-
-  /**
-   * POST /words/:wordId/examples/fetch — стянуть новые примеры из Tatoeba.
-   * Только ADMIN: эндпоинт инициирует исходящие HTTP к внешнему API
-   * (лимиты/бан по IP сервера) и пишет в общий словарь.
-   */
-  app.post<{ Params: { wordId: string } }>(
-    '/words/:wordId/examples/fetch',
-    { preHandler: [app.authenticate, app.requireAdmin] },
-    async (request, reply) => {
-      const q = FetchQuerySchema.parse(request.query);
-      try {
-        const result = await examplesService.fetchExamplesFromTatoeba(request.params.wordId, {
-          limit: q.limit,
-        });
-        return reply.send({ success: true, data: result });
-      } catch (err) {
-        const e = err as { statusCode?: number; code?: string; message?: string };
-        if (e.statusCode) {
-          return reply.status(e.statusCode).send({
-            success: false,
-            error: { code: e.code ?? 'ERROR', message: e.message ?? 'Upstream error' },
-          });
-        }
-        throw err;
-      }
     },
   );
 

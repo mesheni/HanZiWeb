@@ -200,11 +200,17 @@ model Example {
   wordId    String
   word      Word     @relation(fields: [wordId], references: [id], onDelete: Cascade)
   chinese   String
+  /// Пиньинь предложения (датасет hsk-sentences)
+  pinyin    String?
   russian   String
-  /// Откуда взят пример: tatoeba | manual | seed
+  /// Откуда взят пример: hsk_audio | manual
   source    String   @default("manual")
-  /// Tatoeba sentence id (для дедупликации и обратной ссылки)
-  tatoebaId BigInt?  @unique
+  /// Уровень HSK предложения (1..6)
+  hskLevel  Int?
+  /// Аудио носителя: обычная скорость (детерминированный URL хранилища)
+  audioUrl     String?
+  /// Аудио носителя: замедленная скорость
+  audioSlowUrl String?
   createdAt DateTime @default(now())
 
   @@index([wordId])

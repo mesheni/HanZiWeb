@@ -17,11 +17,11 @@ describe('normalizeBigInts', () => {
 
   it('рекурсивно проходит вложенные объекты и массивы', () => {
     const payload = {
-      data: { examples: [{ tatoebaId: 42n, text: '你好' }, { tatoebaId: null }] },
+      data: { items: [{ externalId: 42n, text: '你好' }, { externalId: null }] },
       meta: [1n, 2n],
     };
     expect(normalizeBigInts(payload)).toEqual({
-      data: { examples: [{ tatoebaId: 42, text: '你好' }, { tatoebaId: null }] },
+      data: { items: [{ externalId: 42, text: '你好' }, { externalId: null }] },
       meta: [1, 2],
     });
   });
@@ -51,10 +51,10 @@ describe('preSerialization хук (регрессия F01)', () => {
   const examplePayload = {
     success: true,
     data: {
-      examples: [
+      items: [
         {
           id: 'e1',
-          tatoebaId: 1234567890n,
+          externalId: 1234567890n,
           createdAt: new Date('2026-01-01T00:00:00.000Z'),
         },
       ],
@@ -70,14 +70,14 @@ describe('preSerialization хук (регрессия F01)', () => {
     return app;
   }
 
-  it('ответ с BigInt в payload не падает: 200, tatoebaId приходит number', async () => {
+  it('ответ с BigInt в payload не падает: 200, externalId приходит number', async () => {
     const app = buildApp(true);
     try {
       const res = await app.inject({ method: 'GET', url: '/word' });
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.data.examples[0].tatoebaId).toBe(1234567890);
-      expect(typeof body.data.examples[0].tatoebaId).toBe('number');
+      expect(body.data.items[0].externalId).toBe(1234567890);
+      expect(typeof body.data.items[0].externalId).toBe('number');
     } finally {
       await app.close();
     }

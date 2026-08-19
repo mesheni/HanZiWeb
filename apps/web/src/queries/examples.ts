@@ -1,11 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiDelete } from '../api/client';
-import type {
-  Example,
-  CreateExample,
-  FetchExamplesResult,
-  RecordCloze,
-} from '@hanzi/shared';
+import type { Example, CreateExample, RecordCloze } from '@hanzi/shared';
 
 /** Список примеров для одного слова. */
 export function useWordExamples(wordId: string | null | undefined) {
@@ -35,22 +30,6 @@ export function useDeleteExample() {
   return useMutation({
     mutationFn: (input: { wordId: string; exampleId: string }) =>
       apiDelete<void>(`/words/${input.wordId}/examples/${input.exampleId}`),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: ['word-examples', vars.wordId] });
-    },
-  });
-}
-
-/** Стрим-импорт из Tatoeba. */
-export function useFetchTatoebaExamples() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { wordId: string; limit?: number }) => {
-      const limit = input.limit ?? 3;
-      return apiPost<FetchExamplesResult>(
-        `/words/${input.wordId}/examples/fetch?limit=${limit}`,
-      );
-    },
     onSuccess: (_data, vars) => {
       void qc.invalidateQueries({ queryKey: ['word-examples', vars.wordId] });
     },
