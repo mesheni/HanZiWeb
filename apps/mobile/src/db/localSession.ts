@@ -33,13 +33,36 @@ export async function buildLocalSession(
   userId: string | null,
   options: { cardLimit: number; includeNew: boolean },
 ): Promise<LocalSession | null> {
-  const [wordRows, progressRows] = await Promise.all([
-    db.get<WordModel>('words').query().fetch(),
+  const progressRows = await db
+    .get<ProgressModel>('progress')
+    .query(...(userId ? [Q.where('user_id', userId)] : []))
+    .fetch();
+
+  // Полный fetch словаря материализовал 5000+ строк ради ~20 карточек.
+  // Вместо этого: due-слова — точной выборкой по id из прогресса, а
+  // кандидаты в новые — префикс словаря (сервер выдаёт новые слова
+  // в том же порядке hskLevel/createdAt, см. sessions.service.ts).
+  const now = Date.now();
+  const dueIds = progressRows
+    .filter((p) => Date.parse(p.dueDate) <= now)
+    .map((p) => p.wordId);
+
+  const [dueWordRows, newWordRows] = await Promise.all([
+    dueIds.length > 0
+      ? db.get<WordModel>('words').query(Q.where('id', Q.oneOf(dueIds))).fetch()
+      : Promise.resolve([] as WordModel[]),
     db
-      .get<ProgressModel>('progress')
-      .query(...(userId ? [Q.where('user_id', userId)] : []))
+      .get<WordModel>('words')
+      .query(Q.take(Math.max(options.cardLimit * 5, options.cardLimit)))
       .fetch(),
   ]);
+
+  const seenIds = new Set<string>();
+  const wordRows = [...dueWordRows, ...newWordRows].filter((w) => {
+    if (seenIds.has(w.id)) return false;
+    seenIds.add(w.id);
+    return true;
+  });
 
   const cards = selectLocalCards(
     wordRows.map((w) => ({

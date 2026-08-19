@@ -36,6 +36,18 @@ export async function updateUserSettings(
     data.dailyGoal = patch.dailyGoal;
   }
   if (patch.timezone !== undefined) {
+    // Битая IANA-таймзона уронила бы Intl.DateTimeFormat в каждом
+    // последующем streak/dashboard-запросе — валидируем на входе.
+    if (patch.timezone !== null) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: patch.timezone });
+      } catch {
+        throw Object.assign(new Error('Invalid timezone'), {
+          statusCode: 400,
+          code: 'INVALID_TIMEZONE',
+        });
+      }
+    }
     data.timezone = patch.timezone;
   }
 

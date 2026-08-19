@@ -28,6 +28,9 @@ interface Card {
     character: string;
     pinyin: string;
     translation: string;
+    /** Присутствует в серверных карточках (Word.audioUrl) — озвучка
+     *  без дополнительного запроса /words/:id. */
+    audioUrl?: string | null;
   };
   state: WordState;
   /** FSRS stability на момент выдачи карточки (PLAN_Features_v0.4 §50). */
@@ -194,8 +197,9 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
   }, [session, currentIndex, practiceType]);
 
   // F22d: озвучка текущего слова + автоплей при смене карточки.
-  const currentWordId = session?.cards[currentIndex]?.word.id ?? null;
-  const audio = useWordAudio(currentWordId);
+  const currentCard = session?.cards[currentIndex];
+  const currentWordId = currentCard?.word.id ?? null;
+  const audio = useWordAudio(currentWordId, currentCard?.word.audioUrl);
   useEffect(() => {
     if (!audio.isAvailable || submitting) return;
     const t = setTimeout(() => void audio.play(), 300);
@@ -268,7 +272,9 @@ export function StudyScreen({ navigation }: Props): React.ReactElement {
       }
     };
 
-    if (isOnline()) {
+    // Локальная сессия не существует на сервере: live-post всегда 404,
+    // каждая карточка платила полный сетевой раунд. Сразу в очередь.
+    if (isOnline() && !session.local) {
       const liveResult = await api.post(`/sessions/${session.id}/answer`, {
         wordId: card.word.id,
         rating,

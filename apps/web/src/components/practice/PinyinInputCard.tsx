@@ -49,6 +49,9 @@ export default function PinyinInputCard({
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Enter в IME подтверждает композицию, а не ответ: сабмит до коммита
+    // пиньиня оценивал недонабранный текст (ложные «неверно»).
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter') {
       e.preventDefault();
       submit();

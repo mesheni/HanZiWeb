@@ -134,7 +134,14 @@ export const createAuthStore = (options: AuthStoreOptions = {}) =>
       }
 
       const gen = getAuthGeneration();
-      const result = await doRefresh();
+      // Сетевой сбой refresh при старте не должен подвешивать
+      // isHydrating навсегда — считаем эквивалентом «сессии нет».
+      let result: AuthResponse | null;
+      try {
+        result = await doRefresh();
+      } catch {
+        result = null;
+      }
       // logout случился во время hydrate — сессию не восстанавливаем
       // (isHydrating уже сброшен в logout(), F09 §5).
       if (gen !== getAuthGeneration()) return;

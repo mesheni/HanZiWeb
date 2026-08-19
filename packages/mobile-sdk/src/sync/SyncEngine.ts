@@ -62,7 +62,7 @@ export class SyncEngine {
   private unsubscribeNetwork: (() => void) | null = null;
   private isStarted = false;
   private isDestroyed = false;
-  private onServerChange?: (change: ServerChange) => void;
+  private onServerChange?: (change: ServerChange) => void | Promise<void>;
   /**
    * F32: курсор инкрементального sync — монотонный id последней
    * полученной записи серверного журнала. Слается как `sinceCursor`;
@@ -113,7 +113,7 @@ export class SyncEngine {
   }
 
   /** Subscribe to server-pushed changes (used to update local progress). */
-  setOnServerChange(handler: (change: ServerChange) => void): void {
+  setOnServerChange(handler: (change: ServerChange) => void | Promise<void>): void {
     this.onServerChange = handler;
   }
 
@@ -231,15 +231,27 @@ export class SyncEngine {
           }
         }
 
+        // Ошибка применения serverChange не должна продвигать курсор:
+        // иначе изменения с других устройств терялись на этом устройстве
+        // навсегда (курсор уже ушёл вперёд, ретрая не будет).
+        let appliedAll = true;
         for (const serverChange of data.serverChanges) {
-          this.onServerChange?.(serverChange);
+          try {
+            await this.onServerChange?.(serverChange);
+          } catch (err) {
+            appliedAll = false;
+            console.error('[SyncEngine] failed to apply server change', err);
+            break;
+          }
         }
 
         // F32: продвигаем курсор до nextCursor сервера (монотонный id
         // журнала) — журнал, а не timestamp, теперь источник правды.
-        this.lastSyncAt = data.nextCursor;
-        if (this.currentUserId) {
-          writeSyncCursor(this.currentUserId, this.lastSyncAt);
+        if (appliedAll) {
+          this.lastSyncAt = data.nextCursor;
+          if (this.currentUserId) {
+            writeSyncCursor(this.currentUserId, this.lastSyncAt);
+          }
         }
 
         this.retryDelay = this.initialRetryDelay;

@@ -1,7 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, constants, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { Storage, type Bucket } from '@google-cloud/storage';
 import { prisma } from '../../lib/prisma.js';
 import { getRedis } from '../../lib/redis.js';
@@ -44,11 +43,18 @@ export function createLocalStorage(config: Config): AudioStorage {
   const dir = config.AUDIO_STORAGE_PATH;
   return {
     async exists(fileName) {
-      return existsSync(join(dir, fileName));
+      try {
+        await access(join(dir, fileName), constants.F_OK);
+        return true;
+      } catch {
+        return false;
+      }
     },
     async save(fileName, bytes) {
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, fileName), bytes);
+      // Асинхронный I/O: sync-варианты блокировали event loop на весь
+      // объём файла и стопорили остальные запросы.
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, fileName), bytes);
     },
     publicUrl(fileName) {
       return `${config.AUDIO_PUBLIC_BASE_URL}/${fileName}`;
@@ -118,10 +124,8 @@ export function resolveStorage(config: Config = loadConfig()): AudioStorage {
 }
 
 /** Локальная директория существует? Создаём при необходимости. */
-function ensureStorageDir(): void {
-  if (!existsSync(STORAGE_DIR)) {
-    mkdirSync(STORAGE_DIR, { recursive: true });
-  }
+async function ensureStorageDir(): Promise<void> {
+  await mkdir(STORAGE_DIR, { recursive: true });
 }
 
 /** Дневной лимит платных TTS-генераций на пользователя (PLANCorrection #19). */
@@ -180,11 +184,16 @@ export function localAudioPath(text: string, language: string): string {
 async function getGoogleAccessToken(): Promise<string | null> {
   const config = loadConfig();
   const credentialsPath = config.GOOGLE_APPLICATION_CREDENTIALS;
-  if (!credentialsPath || !existsSync(credentialsPath)) {
+  if (!credentialsPath) {
     return null;
   }
 
-  const raw = await readFile(credentialsPath, 'utf-8');
+  let raw: string;
+  try {
+    raw = await readFile(credentialsPath, 'utf-8');
+  } catch {
+    return null;
+  }
   const creds = JSON.parse(raw) as {
     client_email: string;
     private_key: string;
@@ -290,7 +299,7 @@ export async function generateAudio(
   language: string = 'zh-CN',
   options: { userId?: string } = {},
 ): Promise<GenerateAudioResult> {
-  ensureStorageDir();
+  await ensureStorageDir();
 
   const config = loadConfig();
   const storage = resolveStorage(config);
@@ -374,15 +383,19 @@ export async function generateAudio(
  * Возвращает содержимое аудиофайла для раздачи через Fastify-маршрут.
  * Используется только для локального dev-хранилища.
  */
-export function readAudioFile(fileName: string): { data: Buffer; mime: string } | null {
+export async function readAudioFile(
+  fileName: string,
+): Promise<{ data: Buffer; mime: string } | null> {
   // Проверяем имя файла на безопасность (только base64hex.mp3)
   if (!/^[a-f0-9]+\.mp3$/.test(fileName)) return null;
 
   const filePath = join(STORAGE_DIR, fileName);
-  if (!existsSync(filePath)) return null;
-
-  const data = readFileSync(filePath);
-  return { data, mime: 'audio/mpeg' };
+  try {
+    const data = await readFile(filePath);
+    return { data, mime: 'audio/mpeg' };
+  } catch {
+    return null;
+  }
 }
 
 /**

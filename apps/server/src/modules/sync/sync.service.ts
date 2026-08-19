@@ -347,7 +347,20 @@ export async function processSync(userId: string, input: SyncRequest): Promise<S
     );
     nextCursor = page.length > 0 ? Number(page[page.length - 1]!.id) : input.sinceCursor;
   } else {
-    const allProgress = await prisma.userWordProgress.findMany({ where: { userId } });
+    const allProgress = await prisma.userWordProgress.findMany({
+      where: { userId },
+      // Только поля протокола sync: выборка всех колонок раздувала
+      // первый снапшот (сотни КБ у активных пользователей).
+      select: {
+        wordId: true,
+        state: true,
+        stability: true,
+        difficulty: true,
+        reps: true,
+        dueDate: true,
+        lastReviewDate: true,
+      },
+    });
     serverChanges = allProgress.map((p) => ({
       wordId: p.wordId,
       state: p.state,

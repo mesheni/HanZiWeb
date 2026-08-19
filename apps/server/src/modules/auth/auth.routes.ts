@@ -105,41 +105,48 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /** POST /auth/refresh — обновление токенов */
-  app.post('/refresh', async (request, reply) => {
-    // Accept the refresh token from either the HttpOnly cookie (web)
-    // or the request body / Authorization header (mobile clients
-    // running through `@hanzi/mobile-sdk` can't rely on cookies).
-    const body = request.body as { refreshToken?: string } | undefined;
-    const authHeader = request.headers.authorization;
-    const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  // Refresh вызывается автоматически при истечении access-токена
+  // (несколько вкладок, фоновый sync мобильного клиента), поэтому
+  // общий auth-лимит здесь перекрыт отдельным роутовым.
+  app.post(
+    '/refresh',
+    { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      // Accept the refresh token from either the HttpOnly cookie (web)
+      // or the request body / Authorization header (mobile clients
+      // running through `@hanzi/mobile-sdk` can't rely on cookies).
+      const body = request.body as { refreshToken?: string } | undefined;
+      const authHeader = request.headers.authorization;
+      const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
 
-    const refreshToken = request.cookies.refreshToken ?? body?.refreshToken ?? bearer;
-    if (!refreshToken) {
-      return reply.status(401).send({
-        success: false,
-        error: { code: 'NO_TOKEN', message: 'Refresh token missing' },
-      });
-    }
-    const result = await authService.refreshTokens(refreshToken);
-    // Always rotate the HttpOnly cookie for web clients; mobile
-    // clients read the new refresh token from the response body.
-    reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
-    const data: {
-      user: typeof result.user;
-      accessToken: string;
-      expiresIn: number;
-      refreshToken?: string;
-    } = {
-      user: result.user,
-      accessToken: result.accessToken,
-      expiresIn: accessExpirySec,
-    };
-    if (isNonCookieClient(request)) {
-      data.refreshToken = result.refreshToken;
-      markTokenBodyNoStore(reply);
-    }
-    return reply.send({ success: true, data });
-  });
+      const refreshToken = request.cookies.refreshToken ?? body?.refreshToken ?? bearer;
+      if (!refreshToken) {
+        return reply.status(401).send({
+          success: false,
+          error: { code: 'NO_TOKEN', message: 'Refresh token missing' },
+        });
+      }
+      const result = await authService.refreshTokens(refreshToken);
+      // Always rotate the HttpOnly cookie for web clients; mobile
+      // clients read the new refresh token from the response body.
+      reply.setCookie('refreshToken', result.refreshToken, cookieOptions);
+      const data: {
+        user: typeof result.user;
+        accessToken: string;
+        expiresIn: number;
+        refreshToken?: string;
+      } = {
+        user: result.user,
+        accessToken: result.accessToken,
+        expiresIn: accessExpirySec,
+      };
+      if (isNonCookieClient(request)) {
+        data.refreshToken = result.refreshToken;
+        markTokenBodyNoStore(reply);
+      }
+      return reply.send({ success: true, data });
+    },
+  );
 
   /** POST /auth/logout — выход */
   app.post('/logout', async (request, reply) => {

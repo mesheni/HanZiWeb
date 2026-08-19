@@ -88,7 +88,7 @@ export async function audioRoutes(app: FastifyInstance) {
    * Раздаёт локально сохранённые аудиофайлы (только для dev-хранилища).
    */
   app.get<{ Params: { fileName: string } }>('/files/:fileName', async (request, reply) => {
-    const file = audioService.readAudioFile(request.params.fileName);
+    const file = await audioService.readAudioFile(request.params.fileName);
     if (!file) {
       return reply.status(404).send({
         success: false,

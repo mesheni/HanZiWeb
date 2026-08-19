@@ -44,17 +44,26 @@ export function initCronJobs(logger: CronLogger) {
   logger.info({ component: 'cron', jobs: 2 }, 'Cron jobs initialized');
 }
 
+function localHourIn(timezone: string | null, now: Date): number | null {
+  try {
+    return Number(
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone ?? 'UTC',
+        hour: 'numeric',
+        hourCycle: 'h23',
+      }).format(now),
+    );
+  } catch {
+    // Битая таймзона в старых записях — пропускаем пользователя.
+    return null;
+  }
+}
+
 export async function sendDueReminders(logger: CronLogger) {
   const config = loadConfig();
   if (!config.VAPID_PUBLIC_KEY) return;
 
   const now = new Date();
-  const hour = now.getHours();
-
-  const isMorning = hour >= 7 && hour < 12;
-  const isEvening = hour >= 18 && hour < 23;
-
-  if (!isMorning && !isEvening) return;
 
   const users = await prisma.user.findMany({
     where: {
@@ -63,22 +72,35 @@ export async function sendDueReminders(logger: CronLogger) {
     },
     include: { devices: true },
   });
+  if (users.length === 0) return;
+
+  // Один groupBy вместо COUNT'а на каждого пользователя (N+1).
+  const dueCounts = await prisma.userWordProgress.groupBy({
+    by: ['userId'],
+    where: {
+      userId: { in: users.map((u) => u.id) },
+      dueDate: { lte: now },
+      state: { in: ['learning', 'review'] },
+    },
+    _count: true,
+  });
+  const dueByUser = new Map(dueCounts.map((row) => [row.userId, row._count]));
 
   let pushes = 0;
   for (const user of users) {
+    const wordsDueToday = dueByUser.get(user.id) ?? 0;
+    if (wordsDueToday === 0) continue;
+
+    // Окно morning/evening — по локальным часам пользователя, а не сервера.
+    const localHour = localHourIn(user.timezone, now);
+    if (localHour === null) continue;
+    const isMorning = localHour >= 7 && localHour < 12;
+    const isEvening = localHour >= 18 && localHour < 23;
+
     const timePref = user.notificationTime;
     if (timePref === 'morning' && !isMorning) continue;
     if (timePref === 'evening' && !isEvening) continue;
-
-    const wordsDueToday = await prisma.userWordProgress.count({
-      where: {
-        userId: user.id,
-        dueDate: { lte: now },
-        state: { in: ['learning', 'review'] },
-      },
-    });
-
-    if (wordsDueToday === 0) continue;
+    if (!isMorning && !isEvening) continue;
 
     const payload = JSON.stringify({
       title: 'HanZi — Время повторения!',

@@ -52,9 +52,10 @@ export default function App(): React.ReactElement {
         //    серверного прогресса), иначе прогресс, изменённый на
         //    других устройствах, терялся бы.
         setQueueStorage(createWatermelonQueueStorage(db), (change) => {
-          applyServerChange(db, change, useAuthStore.getState().user?.id ?? null).catch(() => {
-            // Pull-merge best-effort: сбой не должен ронять sync-flush.
-          });
+          // Ошибки применения теперь видит SyncEngine: он не продвинет
+          // курсор и повторит пачку на следующем flush. Раньше сбой
+          // глотался здесь и молча терял прогресс с других устройств.
+          return applyServerChange(db, change, useAuthStore.getState().user?.id ?? null);
         });
 
         // 3. Try to hydrate the auth session. The mobile `api.post`

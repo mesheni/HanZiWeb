@@ -66,7 +66,7 @@ async function main() {
   // Initialize Redis (lazy-connect — used by rate limit, health check)
   const redis = getRedis();
 
-  // ── Auth scope: 5 requests/minute/IP ──────────────────────────────
+  // ── Auth scope: 20 requests/minute/IP (refresh — отдельный лимит на роуте)
   await app.register(
     async (child) => {
       await child.register(rateLimit, {

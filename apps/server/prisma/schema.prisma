@@ -267,6 +267,7 @@ model UserWordProgress {
   lastReviewDate DateTime?
 
   @@unique([userId, wordId])
+  @@index([userId, state])
 }
 
 model Session {
@@ -285,6 +286,8 @@ model Session {
   completedAt    DateTime?
 
   answers SessionAnswer[]
+
+  @@index([userId, startedAt])
 }
 
 model SessionAnswer {
@@ -302,6 +305,9 @@ model SessionAnswer {
   // (live-post + офлайн-flush), когда оба пути пишут SessionAnswer
   // (fix v0.4 §45 follow-up).
   @@unique([sessionId, wordId])
+  // Недельный лидерборд фильтрует по answeredAt без верхнего Id —
+  // без индекса это seq scan по всей таблице ответов.
+  @@index([answeredAt])
 }
 
 /// Прогресс пользователя по cloze-упражнениям (подстановка пропусков в предложениях).

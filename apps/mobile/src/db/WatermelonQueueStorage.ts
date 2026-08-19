@@ -37,9 +37,10 @@ export function createWatermelonQueueStorage(db: Database): QueueStorage {
       if (rows.length === 0) return;
       await db.write(async () => {
         for (const row of rows) {
-          await row.update((r) => {
-            r.isSynced = true;
-          });
+          // Реальное удаление вместо пометки is_synced: иначе таблица
+          // росла по строке на каждый ответ, и listPending/clearAll
+          // деградировали вместе с ней.
+          await row.destroyPermanently();
         }
       });
     },

@@ -7,18 +7,24 @@ import type { PendingChangeType, SyncChange, SyncResponse } from '@hanzi/shared'
 let engineInstance: SyncEngine | null = null;
 
 export class SyncEngine {
-  private isSyncing = false;
+  private flushPromise: Promise<void> | null = null;
+  private needsTrailingFlush = false;
   private retryDelay = 1000;
   private maxRetryDelay = 30000;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private periodTimer: ReturnType<typeof setInterval> | null = null;
   private onlineHandler: (() => void) | null = null;
 
   start() {
     this.onlineHandler = () => this.flushChanges();
     window.addEventListener('online', this.onlineHandler);
 
+    // Периодический flush: очередь и serverChanges подтягиваются даже
+    // в долго открытой вкладке, где enqueue/online больше не случится.
+    this.periodTimer = setInterval(() => this.flushChanges(), 5 * 60_000);
+
     if (navigator.onLine) {
-      this.flushChanges();
+      void this.flushChanges();
     }
   }
 
@@ -28,6 +34,9 @@ export class SyncEngine {
     }
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
+    }
+    if (this.periodTimer) {
+      clearInterval(this.periodTimer);
     }
   }
 
@@ -56,8 +65,25 @@ export class SyncEngine {
     }
   }
 
-  async flushChanges() {
-    if (this.isSyncing) return;
+  async flushChanges(): Promise<void> {
+    // Изменение, вставшее в очередь во время полёта flush, подхватывает
+    // trailing-flush после завершения текущего — иначе оно зависало до
+    // следующего enqueueChange/online и терялось при закрытии вкладки.
+    if (this.flushPromise) {
+      this.needsTrailingFlush = true;
+      return this.flushPromise;
+    }
+    this.flushPromise = this.runFlush().finally(() => {
+      this.flushPromise = null;
+      if (this.needsTrailingFlush) {
+        this.needsTrailingFlush = false;
+        void this.flushChanges();
+      }
+    });
+    return this.flushPromise;
+  }
+
+  private async runFlush(): Promise<void> {
     const db = getDb();
     if (!db) return;
 
@@ -65,8 +91,6 @@ export class SyncEngine {
     // per-user, анонимный flush не имеет смысла (logout чистит очередь).
     const userId = useAuthStore.getState().user?.id ?? null;
     if (!userId) return;
-
-    this.isSyncing = true;
 
     try {
       const changes = await db.pending_changes
@@ -76,7 +100,6 @@ export class SyncEngine {
         .exec();
 
       if (changes.length === 0) {
-        this.isSyncing = false;
         return;
       }
 
@@ -140,13 +163,11 @@ export class SyncEngine {
       this.retryDelay = Math.min(this.retryDelay * 2, this.maxRetryDelay);
       if (this.retryTimer) clearTimeout(this.retryTimer);
       this.retryTimer = setTimeout(() => this.flushChanges(), this.retryDelay);
-    } finally {
-      this.isSyncing = false;
     }
   }
 
   getStatus() {
-    return { isSyncing: this.isSyncing };
+    return { isSyncing: this.flushPromise !== null };
   }
 }
 

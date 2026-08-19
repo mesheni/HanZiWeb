@@ -18,6 +18,7 @@ import ProgressExportImport from '@/components/ProgressExportImport';
 import LinkedAccountsCard from '@/components/LinkedAccountsCard';
 import ChangePasswordCard from '@/components/ChangePasswordCard';
 import { clearWordsCollection, resetLocalDatabase } from '@/db/database';
+import { cacheWordListItems } from '@/db/wordsCache';
 import { apiGet, apiPost, apiPut, apiDelete } from '@/api/client';
 import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/api/push';
 import { toast } from '@/stores/toastStore';
@@ -127,19 +128,9 @@ export default function SettingsScreen() {
     const db = getDb();
     if (!db) throw new Error('Database not initialized');
 
-    for (const w of words) {
-      await db.words.upsert({
-        id: w.id,
-        character: w.character,
-        pinyin: w.pinyin,
-        translation: w.translation,
-        hskLevel: w.hskLevel ?? null,
-        audioUrl: null,
-        mnemonic: null,
-        createdAt: new Date().toISOString(),
-        examples: [],
-      });
-    }
+    // F20-merge: list-элементы не содержат rich-полей — существующие
+    // audioUrl/mnemonic/examples/tags из кэша сохраняются.
+    await cacheWordListItems(db, words);
   };
 
   // F16: «взведённое» подтверждение живёт 5 секунд — случайно

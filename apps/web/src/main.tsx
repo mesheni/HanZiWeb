@@ -36,15 +36,30 @@ root.render(<BootScreen />);
 // или пользователь отказался от трекинга (DNT, opt-out).
 initAnalytics();
 
+// Degraded-режим раньше был тихим: пользователь не понимал, почему
+// прогресс не сохраняется. Показываем заметный баннер с причиной.
+function showStorageWarning(): void {
+  const banner = document.createElement('div');
+  banner.setAttribute('role', 'alert');
+  banner.style.cssText =
+    'position:fixed;top:0;left:0;right:0;z-index:9999;padding:8px 16px;' +
+    'background:#b91c1c;color:#fff;font:14px/1.4 system-ui,sans-serif;text-align:center;';
+  banner.textContent =
+    'Локальное хранилище недоступно — прогресс не сохраняется на устройстве. ' +
+    'Закройте другие вкладки приложения и обновите страницу.';
+  document.body.appendChild(banner);
+}
+
 async function bootstrap(): Promise<void> {
   try {
     await initDb();
   } catch (error) {
-    // Storage недоступен (private mode / quota) — приложение работает
-    // в degraded-режиме: без локального зеркала и offline-очереди.
-    // React всё равно монтируется, чтобы не оставлять пользователя
-    // на сплэше навсегда.
+    // Storage недоступен (private mode / quota / блокировка другой
+    // вкладкой) — приложение работает в degraded-режиме: без локального
+    // зеркала и offline-очереди. React всё равно монтируется, чтобы не
+    // оставлять пользователя на сплэше навсегда.
     console.error('Failed to initialize local database:', error);
+    showStorageWarning();
   }
 
   // initSyncEngine() зависит от initDb: стартуем только после того,

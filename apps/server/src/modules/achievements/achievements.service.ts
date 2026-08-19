@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { getTodayUtcRange } from '../stats/stats.service.js';
 import type { AchievementType, UserAchievement } from '@hanzi/shared';
 
 export const STREAK_7_TARGET = 7;
@@ -109,16 +110,20 @@ export function pickGlobalUnlocks(stats: CheckableStats): AchievementType[] {
 }
 
 export async function gatherStats(userId: string): Promise<CheckableStats> {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const today8am = new Date(todayStart);
-  today8am.setHours(8, 0, 0, 0);
-  const tomorrow5am = new Date(todayStart);
-  tomorrow5am.setDate(tomorrow5am.getDate() + 1);
-  tomorrow5am.setHours(5, 0, 0, 0);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { currentStreak: true, xp: true, timezone: true },
+  });
+
+  // Окна early_bird/night_owl — в локальных часах пользователя (как
+  // streaks/daily-goal), а не сервера: setHours брал таймзону процесса.
+  const timezone = user?.timezone ?? 'UTC';
+  const { start: localMidnight } = getTodayUtcRange(new Date(), timezone);
+  const todayStart = localMidnight;
+  const today8am = new Date(localMidnight.getTime() + 8 * 3_600_000);
+  const tomorrow5am = new Date(localMidnight.getTime() + 29 * 3_600_000);
 
   const [
-    user,
     progressCounts,
     totalReviews,
     hsk1Total,
@@ -132,7 +137,6 @@ export async function gatherStats(userId: string): Promise<CheckableStats> {
     hasEarlySession,
     hasNightSession,
   ] = await Promise.all([
-    prisma.user.findUnique({ where: { id: userId }, select: { currentStreak: true, xp: true } }),
     prisma.userWordProgress.groupBy({ by: ['state'], where: { userId }, _count: true }),
     prisma.sessionAnswer.count({ where: { session: { userId } } }),
     prisma.word.count({ where: { hskLevel: 1 } }),

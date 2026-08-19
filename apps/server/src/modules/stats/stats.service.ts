@@ -42,8 +42,9 @@ export function maskEmail(email: string): string {
 
 /**
  * Считает суммарный XP за неделю по пользователю из плоского списка
- * ответов. Чистая функция — используется в `getLeaderboard` и
- * покрыта юнит-тестами.
+ * ответов. Чистая функция — покрыта юнит-тестами; в `getLeaderboard`
+ * та же карта рейтингов переложена в SQL CASE (см. запрос ниже), а
+ * эта реализация остаётся эталоном маппинга rating → XP.
  */
 export function aggregateWeeklyXp(
   answers: Array<{ rating: number; userId: string }>,
@@ -92,13 +93,18 @@ export async function getLeaderboard(
   const weekWindow = period === 'week' ? getCurrentWeekWindow() : null;
   let xpByUser: Map<string, number> = new Map();
   if (weekWindow) {
-    const weekAnswers = await prisma.sessionAnswer.findMany({
-      where: { answeredAt: { gte: weekWindow.start, lt: weekWindow.end } },
-      select: { rating: true, session: { select: { userId: true } } },
-    });
-    xpByUser = aggregateWeeklyXp(
-      weekAnswers.map((a) => ({ rating: a.rating, userId: a.session.userId })),
-    );
+    // Агрегация в Postgres: раньше findMany вытягивал ВСЕ ответы ВСЕХ
+    // пользователей недели (сотни тысяч строк) в память процесса.
+    // CASE повторяет RATING_XP, SUM(int) возвращает bigint.
+    const rows = await prisma.$queryRaw<Array<{ userId: string; xp: bigint }>>`
+      SELECT s."userId" AS "userId",
+             SUM(CASE a."rating" WHEN 4 THEN 5 WHEN 3 THEN 3 WHEN 2 THEN 1 ELSE 0 END) AS "xp"
+      FROM "SessionAnswer" a
+      JOIN "Session" s ON s."id" = a."sessionId"
+      WHERE a."answeredAt" >= ${weekWindow.start} AND a."answeredAt" < ${weekWindow.end}
+      GROUP BY s."userId"
+    `;
+    xpByUser = new Map(rows.map((r) => [r.userId, Number(r.xp)]));
   }
 
   // ── 2. Топ-N по XP ────────────────────────────────────────────

@@ -10,7 +10,9 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      // Возврат к вкладке должен обновлять данные: sync-движок не
+      // пушит их сам, иначе вкладка жила бы на устаревшем кэше.
+      refetchOnWindowFocus: true,
     },
   },
 });

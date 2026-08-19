@@ -222,8 +222,13 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
       return;
     }
 
+    // Локальное зеркало FSRS обновляется только после подтверждения
+    // сервера (онлайн) — иначе при ошибке ответа локальные reps/stability
+    // уже были инкрементированы и накапливали перекос интервалов.
+    // Офлайн — сразу: локальная копия там единственная.
     const db = getDb();
-    if (db) {
+    const applyLocalProgress = () => {
+      if (!db) return;
       db.progress
         .findOne({ selector: { wordId: card.word.id } })
         .exec()
@@ -259,7 +264,9 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
             lastReviewDate: new Date().toISOString(),
           });
         });
+    };
 
+    if (db) {
       const sync = getSyncEngine();
       if (sync) {
         sync.enqueueChange('study_answer', {
@@ -281,6 +288,7 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
         },
         {
           onSuccess: (data) => {
+            applyLocalProgress();
             for (const ach of data.unlockedAchievements ?? []) {
               const meta = ACHIEVEMENT_CATALOG.find(
                 (a) => a.type === (ach.type as AchievementType),
@@ -313,6 +321,8 @@ export function useStudySession(input: UseStudySessionOptions = {}) {
           },
         },
       );
+    } else {
+      applyLocalProgress();
     }
   };
 

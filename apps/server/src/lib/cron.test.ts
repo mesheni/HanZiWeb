@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vites
 vi.mock('./prisma.js', () => ({
   prisma: {
     user: { findMany: vi.fn() },
-    userWordProgress: { count: vi.fn() },
+    userWordProgress: { count: vi.fn(), groupBy: vi.fn() },
     userDevice: { deleteMany: vi.fn() },
   },
 }));
@@ -31,7 +31,7 @@ import { initCronJobs, sendDueReminders, sendInactiveReminders } from './cron.js
 const sendNotification = webpush.sendNotification as ReturnType<typeof vi.fn>;
 const schedule = cron.schedule as ReturnType<typeof vi.fn>;
 const findUsers = prisma.user.findMany as ReturnType<typeof vi.fn>;
-const countDue = prisma.userWordProgress.count as ReturnType<typeof vi.fn>;
+const groupByDue = prisma.userWordProgress.groupBy as ReturnType<typeof vi.fn>;
 const deleteDevices = prisma.userDevice.deleteMany as ReturnType<typeof vi.fn>;
 
 function makeLogger() {
@@ -51,6 +51,7 @@ const user = (id: string, overrides: Partial<Record<string, unknown>> = {}) => (
   notificationEnabled: true,
   notificationTime: 'morning',
   notificationFrequency: 1,
+  timezone: null,
   devices: [device(`dev-${id}`, `tok-${id}`)],
   ...overrides,
 });
@@ -99,26 +100,34 @@ describe('sendDueReminders (F27)', () => {
     process.env.VAPID_PRIVATE_KEY = 'priv';
   });
 
-  it('вне утреннего/вечернего окна — запрос к БД не делается', async () => {
+  it('вне утреннего/вечернего окна пользователя — push не отправляется', async () => {
     vi.useFakeTimers();
+    // 15:00 локального времени машины (+03) = 12:00 UTC: для
+    // пользователя без timezone (UTC) это уже не утро и ещё не вечер.
     vi.setSystemTime(new Date('2026-07-10T15:00:00'));
+    findUsers.mockResolvedValue([user('u1')]);
+    groupByDue.mockResolvedValue([{ userId: 'u1', _count: 5 }]);
+
     const logger = makeLogger();
     await sendDueReminders(logger);
-    expect(findUsers).not.toHaveBeenCalled();
     expect(sendNotification).not.toHaveBeenCalled();
   });
 
   it('утром шлёт только morning-пользователям с due-словами', async () => {
     vi.useFakeTimers();
+    // 10:00 машины (+03) = 07:00 UTC — утро для UTC-пользователя.
     vi.setSystemTime(new Date('2026-07-10T10:00:00'));
     findUsers.mockResolvedValue([user('u1'), user('u2', { notificationTime: 'evening' })]);
-    countDue.mockResolvedValue(3);
+    groupByDue.mockResolvedValue([
+      { userId: 'u1', _count: 3 },
+      { userId: 'u2', _count: 3 },
+    ]);
 
     const logger = makeLogger();
     await sendDueReminders(logger);
 
     expect(findUsers).toHaveBeenCalledOnce();
-    expect(countDue).toHaveBeenCalledTimes(1);
+    expect(groupByDue).toHaveBeenCalledTimes(1);
     expect(sendNotification).toHaveBeenCalledTimes(1);
     const sent = sendNotification.mock.calls[0]![0] as { endpoint: string };
     expect(sent.endpoint).toBe('tok-u1');
@@ -128,11 +137,32 @@ describe('sendDueReminders (F27)', () => {
     );
   });
 
+  it('окно считается в таймзоне пользователя, а не сервера', async () => {
+    vi.useFakeTimers();
+    // 07:00 UTC: Москва (+03) — 10:00 (утро), Владивосток (+10) — 17:00
+    // (уже вне утреннего окна и ещё не вечер).
+    vi.setSystemTime(new Date('2026-07-10T10:00:00'));
+    findUsers.mockResolvedValue([
+      user('u-msk', { timezone: 'Europe/Moscow' }),
+      user('u-vla', { timezone: 'Asia/Vladivostok' }),
+    ]);
+    groupByDue.mockResolvedValue([
+      { userId: 'u-msk', _count: 2 },
+      { userId: 'u-vla', _count: 2 },
+    ]);
+
+    await sendDueReminders(makeLogger());
+
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    const sent = sendNotification.mock.calls[0]![0] as { endpoint: string };
+    expect(sent.endpoint).toBe('tok-u-msk');
+  });
+
   it('0 due-слов — push не отправляется', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-10T10:00:00'));
     findUsers.mockResolvedValue([user('u1')]);
-    countDue.mockResolvedValue(0);
+    groupByDue.mockResolvedValue([]);
 
     await sendDueReminders(makeLogger());
 
@@ -145,7 +175,7 @@ describe('sendDueReminders (F27)', () => {
     findUsers.mockResolvedValue([
       { ...user('u1'), devices: [device('d-gone', 'tok-gone'), device('d-ok', 'tok-ok')] },
     ]);
-    countDue.mockResolvedValue(2);
+    groupByDue.mockResolvedValue([{ userId: 'u1', _count: 2 }]);
     sendNotification.mockRejectedValueOnce({ statusCode: 410 }).mockResolvedValueOnce(undefined);
 
     await sendDueReminders(makeLogger());
@@ -160,7 +190,7 @@ describe('sendDueReminders (F27)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-10T10:00:00'));
     findUsers.mockResolvedValue([{ ...user('u1'), devices: [device('d-err', 'tok-err')] }]);
-    countDue.mockResolvedValue(1);
+    groupByDue.mockResolvedValue([{ userId: 'u1', _count: 1 }]);
     sendNotification.mockRejectedValueOnce(new Error('network'));
 
     const logger = makeLogger();

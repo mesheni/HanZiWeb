@@ -111,7 +111,10 @@ function deleteIndexedDb(name: string): Promise<void> {
     request.onerror = () =>
       reject(request.error ?? new Error(`Failed to delete IndexedDB ${name}`));
     request.onsuccess = () => resolve();
-    request.onblocked = () => resolve();
+    // blocked = другую вкладку держит базу: резолв здесь маскировал
+    // неудачное удаление и выливался в повторную ошибку инициализации.
+    request.onblocked = () =>
+      reject(new Error('IndexedDB delete blocked by another open tab'));
   });
 }
 

@@ -11,7 +11,9 @@ export async function listTexts(
   const texts = await prisma.readingText.findMany({
     where: hskLevel !== undefined ? { hskLevel } : {},
     orderBy: [{ hskLevel: 'asc' }, { createdAt: 'asc' }],
-    include: { words: true },
+    // Для knownWordsCount нужен только wordId каждого токена — полные
+    // join-строки не нужны.
+    include: { words: { select: { wordId: true } } },
   });
 
   const progress = await prisma.userWordProgress.findMany({
@@ -61,7 +63,20 @@ export async function getText(userId: string, textId: string): Promise<ReadingTe
 
   const tokens = await prisma.readingTextWord.findMany({
     where: { textId },
-    include: { word: true },
+    // Полные строки Word не нужны: в токене используются только эти
+    // поля (mnemonic/createdAt/example-отношения не читаются).
+    include: {
+      word: {
+        select: {
+          id: true,
+          character: true,
+          pinyin: true,
+          translation: true,
+          hskLevel: true,
+          audioUrl: true,
+        },
+      },
+    },
     orderBy: { position: 'asc' },
   });
 

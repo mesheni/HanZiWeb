@@ -8,6 +8,7 @@ import { useDashboard } from '../queries/stats';
 import { useRecentWords } from '../queries/words';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { getDb } from '../db/database';
+import { cacheWordListItems } from '../db/wordsCache';
 import { useToastStore } from '../stores/toastStore';
 import Badge from '../components/ui/Badge';
 import { PinyinDisplay } from '../utils/toneColors';
@@ -110,20 +111,7 @@ export default function HomeScreen() {
         }
       }
 
-      for (const w of words as any[]) {
-        await db.words.upsert({
-          id: w.id,
-          character: w.character,
-          pinyin: w.pinyin,
-          translation: w.translation,
-          hskLevel: w.hskLevel,
-          audioUrl: w.audioUrl ?? null,
-          mnemonic: w.mnemonic ?? null,
-          createdAt: w.createdAt ?? new Date().toISOString(),
-          examples: w.examples ?? [],
-          tags: w.tags ?? [],
-        });
-      }
+      await cacheWordListItems(db, words);
       setDlState('done');
       setTimeout(() => setDlState('idle'), 3000);
     } catch (err) {
