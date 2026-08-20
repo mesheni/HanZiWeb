@@ -86,16 +86,23 @@ export async function audioRoutes(app: FastifyInstance) {
   /**
    * GET /audio/files/:fileName
    * Раздаёт локально сохранённые аудиофайлы (только для dev-хранилища).
+   * rateLimit: false — прекеш/офлайн-синхронизация тянет десятки mp3
+   * параллельно; если считать их в общем лимите /api (60/мин), сессия
+   * обучения мгновенно исчерпывает квоту и весь API отвечает 429.
    */
-  app.get<{ Params: { fileName: string } }>('/files/:fileName', async (request, reply) => {
-    const file = await audioService.readAudioFile(request.params.fileName);
-    if (!file) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'NOT_FOUND', message: 'Audio file not found' },
-      });
-    }
-    reply.type(file.mime);
-    return reply.send(file.data);
-  });
+  app.get<{ Params: { fileName: string } }>(
+    '/files/:fileName',
+    { config: { rateLimit: false } },
+    async (request, reply) => {
+      const file = await audioService.readAudioFile(request.params.fileName);
+      if (!file) {
+        return reply.status(404).send({
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Audio file not found' },
+        });
+      }
+      reply.type(file.mime);
+      return reply.send(file.data);
+    },
+  );
 }

@@ -386,8 +386,9 @@ export async function generateAudio(
 export async function readAudioFile(
   fileName: string,
 ): Promise<{ data: Buffer; mime: string } | null> {
-  // Проверяем имя файла на безопасность (только base64hex.mp3)
-  if (!/^[a-f0-9]+\.mp3$/.test(fileName)) return null;
+  // Проверяем имя файла на безопасность: без слэшей и точек в имени —
+  // sha1-хэши TTS (abc123.mp3) и датасетные hsk1-0241_slow.mp3.
+  if (!/^[a-z0-9_-]+\.mp3$/.test(fileName)) return null;
 
   const filePath = join(STORAGE_DIR, fileName);
   try {

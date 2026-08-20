@@ -57,7 +57,7 @@ function audioPublicBase(): string {
   if (process.env.GCS_BUCKET_NAME) {
     return `https://storage.googleapis.com/${process.env.GCS_BUCKET_NAME}`;
   }
-  return process.env.AUDIO_PUBLIC_BASE_URL ?? 'http://localhost:3001/audio/files';
+  return process.env.AUDIO_PUBLIC_BASE_URL ?? '/api/audio/files';
 }
 
 /**

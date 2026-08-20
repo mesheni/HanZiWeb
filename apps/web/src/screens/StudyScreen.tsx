@@ -51,19 +51,24 @@ function precacheAudioUrls(
   }>,
 ) {
   if ('caches' in window) {
-    cards.forEach((card) => {
-      const urls: Array<string | null | undefined> = [card.word.audioUrl];
-      for (const ex of card.word.examples ?? []) {
-        urls.push(ex.audioUrl, ex.audioSlowUrl);
-      }
-      for (const url of urls) {
-        if (url) {
-          caches.open('audio-cache').then((cache) => {
-            cache.add(url).catch(() => {});
-          });
+    // Аудио примеров прекешим только для первых карточек: залп из
+    // сотни mp3 упирается в rate-limit API (60/мин) и валит всю сессию.
+    // Остальное догрузится по требованию через SW CacheFirst.
+    const urls = new Set<string>();
+    cards.forEach((card, index) => {
+      if (card.word.audioUrl) urls.add(card.word.audioUrl);
+      if (index < 3) {
+        for (const ex of card.word.examples ?? []) {
+          if (ex.audioUrl) urls.add(ex.audioUrl);
+          if (ex.audioSlowUrl) urls.add(ex.audioSlowUrl);
         }
       }
     });
+    for (const url of urls) {
+      caches.open('audio-cache').then((cache) => {
+        cache.add(url).catch(() => {});
+      });
+    }
   }
 }
 

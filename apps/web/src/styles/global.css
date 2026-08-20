@@ -960,7 +960,7 @@ input {
 .flashcard-scene {
   width: 100%;
   max-width: 380px;
-  height: 268px;
+  height: 312px;
   margin: 0 auto;
   perspective: 1000px;
   cursor: pointer;
@@ -1008,7 +1008,6 @@ input {
 .flashcard-back {
   transform: rotateY(180deg);
   gap: 4px;
-  overflow-y: auto;
 }
 
 .flashcard-char {
@@ -1026,24 +1025,28 @@ input {
 
 .flashcard-back-char {
   font-family: var(--font-cjk);
-  font-size: 54px;
+  font-size: 44px;
   font-weight: 300;
   line-height: 1;
-  margin-bottom: 7px;
+  margin-bottom: 4px;
 }
 
 .flashcard-pinyin {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   letter-spacing: 0.02em;
 }
 
 .flashcard-translation {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
   text-align: center;
-  margin-top: 4px;
-  margin-bottom: 11px;
+  margin-top: 3px;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .flashcard-example {
@@ -1066,16 +1069,25 @@ input {
   color: var(--text-secondary);
   margin-bottom: 2px;
   font-family: var(--font-cjk);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .flashcard-ex-pinyin {
   font-size: 11px;
   margin-bottom: 2px;
+  max-width: 100%;
 }
 
 .flashcard-ex-ru {
   font-size: 11px;
   color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Кнопки аудио предложения (обычное/медленное): флеш-карточка,
@@ -1118,7 +1130,7 @@ input {
 
 .flashcard-mnemonic {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   margin-top: 10px;
   padding: 6px 10px;
@@ -1130,8 +1142,13 @@ input {
   max-width: 100%;
 }
 
+/* Длинная мнемоника не должна растягивать карточку — максимум 2 строки. */
 .flashcard-mnemonic span {
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .feedback-mnemonic {
@@ -2997,6 +3014,10 @@ input {
 .word-detail-example-pinyin {
   font-size: 12px;
   color: var(--text-muted);
+  /* PinyinDisplay по умолчанию центрирует слоги (inline-flex +
+     justify-content: center) — в левовыровненном списке примеров
+     это уводит пиньинь вправо. */
+  justify-content: flex-start;
 }
 
 .word-detail-example-ru {

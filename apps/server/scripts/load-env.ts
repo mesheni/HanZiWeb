@@ -12,6 +12,10 @@ export async function loadDotEnv(path: string): Promise<void> {
     const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
     if (!m) continue;
     if (process.env[m[1]!] !== undefined) continue;
-    process.env[m[1]!] = m[2]!.replace(/^["']|["']$/g, '');
+    // Пустое значение (VAR= или VAR="") — считаем «не задано»: zod-схема
+    // конфига коэрцирует пустую строкку в 0 и падает на .positive().
+    const value = m[2]!.replace(/^["']|["']$/g, '');
+    if (value === '') continue;
+    process.env[m[1]!] = value;
   }
 }

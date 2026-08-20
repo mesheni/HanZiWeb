@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+/**
+ * Пустая строка в env = «не задано». PrismaClient сам подгружает .env
+ * своим dotenv, который выставляет VAR="" как пустую строку (не пропуская),
+ * и z.coerce.number() превращает её в 0, падая на .positive().
+ */
+const emptyAsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === '' ? undefined : v), schema);
+
 export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3001),
   DATABASE_URL: z.string().url(),
@@ -43,8 +51,10 @@ export const envSchema = z.object({
   // Локальная директория для dev-хранения аудио (по умолчанию ./storage/audio).
   AUDIO_STORAGE_PATH: z.string().default('./storage/audio'),
   // Публичный base URL, по которому клиент может скачать локальное аудио.
-  // В dev это обычно http://localhost:3001/audio/files
-  AUDIO_PUBLIC_BASE_URL: z.string().default('http://localhost:3001/audio/files'),
+  // Аудио-роуты живут под /api (см. index.ts), поэтому дефолт —
+  // относительный путь: web-клиент резолвит его против своего origin
+  // и идёт через vite-прокси без кросс-доменных запросов.
+  AUDIO_PUBLIC_BASE_URL: z.string().default('/api/audio/files'),
 
   // --- Push Notifications (Web Push / VAPID) ---
   VAPID_PUBLIC_KEY: z.string().default(''),
@@ -73,10 +83,10 @@ export const envSchema = z.object({
   // Если SMTP_* не заданы — /auth/forgot-password будет отвечать 503
   // (EMAIL_NOT_CONFIGURED), чтобы dev-окружение не пыталось отправлять
   // письма на несуществующий сервер.
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().int().positive().optional(),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
+  SMTP_HOST: emptyAsUnset(z.string().optional()),
+  SMTP_PORT: emptyAsUnset(z.coerce.number().int().positive().optional()),
+  SMTP_USER: emptyAsUnset(z.string().optional()),
+  SMTP_PASS: emptyAsUnset(z.string().optional()),
   // Использовать TLS (true для 465, false для 587+STARTTLS).
   SMTP_SECURE: z.coerce.boolean().default(false),
   // Адрес отправителя (From:). Должен быть валидным для SMTP-сервера.

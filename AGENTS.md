@@ -25,6 +25,7 @@ Node ≥ 20, pnpm ≥ 9 (pinned `pnpm@9.12.0` via `packageManager`).
 | ---------------------------- | ----------------------------------------------- |
 | Install everything           | `pnpm install`                                  |
 | Dev all (web+server+mobile)  | `pnpm dev` (turbo, persistent)                  |
+| Full dev startup (Windows)   | `.\start-dev.cmd` (docker, ports, migrations, `pnpm dev`) |
 | Dev web only                 | `pnpm --filter @hanzi/web dev`                  |
 | Dev server only              | `pnpm --filter @hanzi/server dev` (tsx watch)   |
 | Dev mobile only              | `pnpm --filter @hanzi/mobile start`             |
@@ -86,8 +87,14 @@ app-specific rules.
   pre-fills the same env vars so `loadConfig()` won't exit on import.
 - Seeds: `prisma/seed.ts` loads `prisma/seeds/hsk{1..6}.json` (Hanzi
   word lists). Run via `pnpm --filter @hanzi/server db:seed`.
-- Scripts: `audio:generate` (Google TTS), `examples:seed` for example
-  sentences.
+- Scripts: `audio:generate` (Google TTS), `examples:seed` (example
+  sentences from the local `prisma/seeds/hsk-sentences.json` dataset,
+  replaces the removed Tatoeba integration) and
+  `audio:import-sentences` (copies `<repoRoot>/hsk_audio/**.mp3` —
+  gitignored — into the audio storage: local `storage/audio` in dev,
+  GCS when `GCS_BUCKET_NAME` is set). Audio URLs are deterministic
+  from the sentence id (`/api/audio/files/hsk{N}-XXXX[_slow].mp3` in
+  dev); switching storage mode requires re-running `examples:seed`.
 
 ## Mobile (`apps/mobile`)
 
